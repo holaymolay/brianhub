@@ -1,0 +1,8 @@
+node_modules/
+logs/
+npm.log
+npm-debug.log*
+.DS_Store
+.env
+.env.*
+.ceres/

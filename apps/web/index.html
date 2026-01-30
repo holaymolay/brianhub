@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BrianHub Task MVP</title>
+    <link rel="stylesheet" href="/apps/web/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>BrianHub</h1>
+      <div class="sync-controls">
+        <button id="new-task-btn" type="button">New Task</button>
+        <button id="sync-btn">Sync Now</button>
+        <span id="sync-status">Local-first (offline ready)</span>
+        <button id="settings-button" class="icon-button" type="button" title="Settings">⚙</button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <div class="app-layout">
+        <aside class="sidebar">
+          <div class="sidebar-header-row">
+            <h2>Workspaces</h2>
+            <div class="workspace-menu-wrapper">
+              <button id="workspace-menu-button" class="icon-button" type="button" title="Workspace settings">⋯</button>
+              <div id="workspace-menu" class="workspace-menu hidden">
+                <label class="workspace-menu-item checkbox-item">
+                  <input type="checkbox" id="show-archived" />
+                  Show archived
+                </label>
+                <button id="new-workspace-btn" class="workspace-menu-item" type="button">New workspace</button>
+              </div>
+            </div>
+          </div>
+          <div id="workspace-list" class="workspace-list"></div>
+          <div class="sidebar-divider"></div>
+          <div id="project-list" class="workspace-list"></div>
+          <button id="new-project-btn" class="subtle-button" type="button">New Project</button>
+          <div class="sidebar-header">
+            <h2>Templates</h2>
+          </div>
+          <div id="template-list" class="workspace-list"></div>
+          <button id="new-template-btn" class="subtle-button" type="button">New Template</button>
+        </aside>
+        <section class="panel content-panel">
+          <div id="task-tree"></div>
+        </section>
+      </div>
+    </main>
+
+    <template id="task-item-template">
+      <div class="task-item">
+        <div class="task-row">
+          <div class="task-main">
+            <button class="task-toggle icon-button" type="button" title="Toggle subtasks">▾</button>
+            <strong class="task-title"></strong>
+            <span class="task-meta"></span>
+            <span class="task-type-badge"></span>
+          </div>
+          <div class="task-actions">
+            <button class="task-complete-button icon-button" type="button" title="Mark complete">✓</button>
+            <button class="edit-task icon-button" type="button" title="Edit">✎</button>
+            <div class="task-menu-wrapper">
+              <button class="task-menu-button icon-button" type="button" title="More">⋯</button>
+              <div class="task-menu hidden">
+                <button class="task-menu-item" type="button" data-action="subtask">Add subtask</button>
+                <button class="task-menu-item" type="button" data-action="duplicate">Duplicate task</button>
+                <button class="task-menu-item template-only hidden" type="button" data-action="start-template">Start plan</button>
+                <button class="task-menu-item template-only hidden" type="button" data-action="defer-template">Defer</button>
+                <button class="task-menu-item template-only hidden" type="button" data-action="dismiss-template">Dismiss</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="task-children"></div>
+      </div>
+    </template>
+
+    <div id="task-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>New Task</h2>
+        <form id="task-modal-form">
+          <label>
+            Type
+            <input id="modal-type" type="text" placeholder="e.g. Bill Due" />
+          </label>
+          <label>
+            Title
+            <input id="modal-title" type="text" required />
+          </label>
+          <label>
+            Priority
+            <select id="modal-priority">
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="low">Low</option>
+              <option value="critical">Critical</option>
+            </select>
+          </label>
+          <label>
+            Project
+            <select id="modal-project"></select>
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="modal-urgency" />
+            Urgent
+          </label>
+          <label>
+            Repeat every
+            <div class="inline">
+              <input id="modal-repeat-interval" type="number" min="1" placeholder="0" />
+              <select id="modal-repeat-unit">
+                <option value="day">Day</option>
+                <option value="week">Week</option>
+                <option value="month">Month</option>
+                <option value="year">Year</option>
+              </select>
+            </div>
+          </label>
+          <label>
+            Reminder (days before)
+            <input id="modal-reminder" type="number" min="0" placeholder="0" />
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="modal-auto-debit" />
+            Auto-debit reminder
+          </label>
+          <label>
+            Status
+            <select id="modal-status">
+              <option value="inbox">Inbox</option>
+              <option value="planned">Planned</option>
+              <option value="in-progress">In Progress</option>
+              <option value="waiting">Waiting</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </label>
+          <label>
+            Start
+            <input id="modal-start" type="datetime-local" />
+          </label>
+          <label>
+            Due
+            <input id="modal-due" type="datetime-local" />
+          </label>
+          <label>
+            Notes
+            <textarea id="modal-desc" rows="4"></textarea>
+          </label>
+          <label>
+            Shopping list items (comma or line separated)
+            <textarea id="modal-shopping-items" rows="4" placeholder="Milk, eggs, bread"></textarea>
+          </label>
+          <button id="modal-parse-items" class="subtle-button" type="button">Parse items</button>
+          <div class="modal-actions">
+            <button type="submit">Create</button>
+            <button type="button" id="modal-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="template-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Template</h2>
+        <form id="template-modal-form">
+          <label>
+            Name
+            <input id="template-name" type="text" required />
+          </label>
+          <label>
+            Steps (one per line, optional \"| -10\" for days before event)
+            <textarea id="template-steps" rows="6" placeholder="Order flowers | -10&#10;Buy gift | -7&#10;Write card | -3"></textarea>
+          </label>
+          <label>
+            Lead time (days before event to start)
+            <input id="template-lead-days" type="number" min="0" placeholder="14" />
+          </label>
+          <label>
+            Project (optional)
+            <select id="template-project"></select>
+          </label>
+          <label>
+            Next event date
+            <input id="template-next-date" type="date" />
+          </label>
+          <label>
+            Repeat every
+            <div class="inline">
+              <input id="template-repeat-interval" type="number" min="1" placeholder="1" />
+              <select id="template-repeat-unit">
+                <option value="year">Year</option>
+                <option value="month">Month</option>
+                <option value="week">Week</option>
+                <option value="day">Day</option>
+              </select>
+            </div>
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Save</button>
+            <button type="button" id="template-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Settings</h2>
+        <div class="settings-section">
+          <h3>Notifications</h3>
+          <label class="toggle">
+            <input id="enable-notifications" type="checkbox" />
+            <span class="toggle-track"></span>
+            <span class="toggle-label">Enable notifications</span>
+          </label>
+          <div id="notification-status" class="sidebar-note"></div>
+        </div>
+        <div class="settings-section">
+          <h3>Profile</h3>
+          <div class="sidebar-note">Profile settings coming soon.</div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="settings-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <aside id="task-editor" class="task-editor">
+      <div class="task-editor-header">
+        <h2>Edit Task</h2>
+        <button id="editor-close" class="icon-button" type="button" title="Close">✕</button>
+      </div>
+      <form id="task-editor-form" class="task-editor-form">
+        <label>
+          Title
+          <input id="editor-title" type="text" required />
+        </label>
+        <label>
+          Type
+          <input id="editor-type" type="text" placeholder="e.g. Bill Due" />
+        </label>
+        <label>
+          Priority
+          <select id="editor-priority">
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="low">Low</option>
+            <option value="critical">Critical</option>
+          </select>
+        </label>
+        <label>
+          Project
+          <select id="editor-project"></select>
+        </label>
+        <label class="inline">
+          <input type="checkbox" id="editor-urgency" />
+          Urgent
+        </label>
+        <label>
+          Repeat every
+          <div class="inline">
+            <input id="editor-repeat-interval" type="number" min="1" placeholder="0" />
+            <select id="editor-repeat-unit">
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="year">Year</option>
+            </select>
+          </div>
+        </label>
+        <label>
+          Reminder (days before)
+          <input id="editor-reminder" type="number" min="0" placeholder="0" />
+        </label>
+        <label class="inline">
+          <input type="checkbox" id="editor-auto-debit" />
+          Auto-debit reminder
+        </label>
+        <label>
+          Status
+          <select id="editor-status">
+            <option value="inbox">Inbox</option>
+            <option value="planned">Planned</option>
+            <option value="in-progress">In Progress</option>
+            <option value="waiting">Waiting</option>
+            <option value="blocked">Blocked</option>
+            <option value="done">Done</option>
+            <option value="canceled">Canceled</option>
+          </select>
+        </label>
+        <label>
+          Start
+          <input id="editor-start" type="datetime-local" />
+        </label>
+        <label>
+          Due
+          <input id="editor-due" type="datetime-local" />
+        </label>
+        <label>
+          Notes
+          <textarea id="editor-desc" rows="4"></textarea>
+        </label>
+        <label>
+          Shopping list items (comma or line separated)
+          <textarea id="editor-shopping-items" rows="4" placeholder="Milk, eggs, bread"></textarea>
+        </label>
+        <button id="editor-parse-items" class="subtle-button" type="button">Parse items</button>
+        <div class="task-editor-actions">
+          <button type="submit">Save</button>
+          <button id="editor-cancel" type="button">Cancel</button>
+          <button id="editor-delete" class="danger-button" type="button">Delete</button>
+        </div>
+      </form>
+    </aside>
+
+    <div id="template-prompt" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2 id="template-prompt-title">Start planning?</h2>
+        <div id="template-prompt-text" class="sidebar-note"></div>
+        <div class="modal-actions">
+          <button id="template-prompt-start" type="button">Start now</button>
+          <button id="template-prompt-defer" type="button">Defer</button>
+          <button id="template-prompt-dismiss" class="subtle-button" type="button">Dismiss</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/apps/web/app.js"></script>
+  </body>
+</html>
