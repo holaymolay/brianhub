@@ -340,6 +340,42 @@
       </div>
     </div>
 
+    <div id="checkin-progress-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Finish this today?</h2>
+        <div id="checkin-progress-title" class="sidebar-note"></div>
+        <div class="checkin-actions">
+          <button type="button" id="checkin-progress-yes">Yes, keep due date</button>
+          <button type="button" id="checkin-progress-no" class="subtle-button">No, reschedule</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="checkin-reschedule-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Reschedule overdue task</h2>
+        <div id="checkin-reschedule-title" class="sidebar-note"></div>
+        <label>
+          Extend current session (minutes)
+          <input id="checkin-extend-minutes" type="number" min="5" step="5" />
+        </label>
+        <div class="checkin-actions">
+          <button type="button" id="checkin-extend-apply">Extend session</button>
+          <button type="button" id="checkin-first-apply" class="subtle-button">Put first in list</button>
+        </div>
+        <label>
+          Reschedule to (default tomorrow)
+          <input id="checkin-custom-due" type="datetime-local" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="checkin-reschedule-apply">Reschedule</button>
+          <button type="button" id="checkin-reschedule-cancel" class="subtle-button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div id="template-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
@@ -399,6 +435,13 @@
             </label>
           </div>
           <div id="notification-status" class="sidebar-note setting-help"></div>
+        </div>
+        <div class="settings-section">
+          <h3>Check-ins</h3>
+          <div class="setting-row">
+            <div class="setting-label">Default session extension (minutes)</div>
+            <input id="checkin-default-minutes" class="setting-input" type="number" min="5" step="5" />
+          </div>
         </div>
         <div class="settings-section">
           <h3>Templates</h3>

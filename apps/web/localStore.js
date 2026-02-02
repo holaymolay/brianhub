@@ -17,7 +17,8 @@ function defaultState() {
       activeView: 'tasks',
       showArchivedShoppingLists: false,
       taskView: 'list',
-      syncCursor: 0
+      syncCursor: 0,
+      checkinExtendMinutes: 60
     }
   };
 }
@@ -48,6 +49,7 @@ function normalizeState(state) {
   if (!('showArchivedShoppingLists' in next.ui)) next.ui.showArchivedShoppingLists = false;
   if (!('taskView' in next.ui)) next.ui.taskView = 'list';
   if (!('syncCursor' in next.ui)) next.ui.syncCursor = 0;
+  if (!('checkinExtendMinutes' in next.ui)) next.ui.checkinExtendMinutes = 60;
   return next;
 }
 
