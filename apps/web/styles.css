@@ -1639,6 +1639,17 @@ button:hover { opacity: 0.9; }
   border-bottom: 1px solid var(--border);
 }
 
+.editor-notes .toastui-editor-toolbar-group,
+.editor-notes .toastui-editor-toolbar-item,
+.editor-notes .toastui-editor-toolbar-divider,
+.editor-notes .toastui-editor-toolbar-icons,
+.editor-notes .toastui-editor-toolbar-icons svg {
+  background: #0f141c;
+  color: var(--text);
+  border-color: var(--border);
+  fill: currentColor;
+}
+
 .editor-notes .toastui-editor-main,
 .editor-notes .toastui-editor-main-container,
 .editor-notes .toastui-editor-ww-container,
@@ -1663,6 +1674,22 @@ button:hover { opacity: 0.9; }
 
 .editor-notes .toastui-editor-main {
   overflow-x: hidden;
+}
+
+.editor-notes .toastui-editor-dropdown-toolbar,
+.editor-notes .toastui-editor-popup {
+  background: #0f141c;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.editor-notes .toastui-editor-dropdown-toolbar .toastui-editor-dropdown-item {
+  color: var(--text);
+}
+
+.editor-notes .toastui-editor-dropdown-toolbar .toastui-editor-dropdown-item:hover,
+.editor-notes .toastui-editor-dropdown-toolbar .toastui-editor-dropdown-item:focus {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .editor-notes .toastui-editor-mode-switch {
