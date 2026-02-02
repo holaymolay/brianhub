@@ -237,6 +237,10 @@ const editorFollowup = document.getElementById('editor-followup');
 const editorFollowupNow = document.getElementById('editor-followup-now');
 const editorFollowupSnooze = document.getElementById('editor-followup-snooze');
 const editorFollowupClear = document.getElementById('editor-followup-clear');
+const editorNotesPreviewBtn = document.getElementById('editor-notes-preview');
+const editorNotesEditBtn = document.getElementById('editor-notes-edit');
+const editorNotesToolbar = document.getElementById('editor-notes-toolbar');
+const editorNotesPreviewPane = document.getElementById('editor-notes-preview-pane');
 const editorStart = document.getElementById('editor-start');
 const editorDue = document.getElementById('editor-due');
 const editorDesc = document.getElementById('editor-desc');
@@ -2118,6 +2122,231 @@ function formatFollowupMeta(task) {
   const label = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const overdue = date.getTime() < Date.now();
   return `follow-up ${label}${overdue ? ' (overdue)' : ''}`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderMarkdownInline(text) {
+  let output = text;
+  output = output.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  output = output.replace(/`([^`]+)`/g, '<code>$1</code>');
+  output = output.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  output = output.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  output = output.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  output = output.replace(/_([^_]+)_/g, '<em>$1</em>');
+  return output;
+}
+
+function renderMarkdown(markdown = '') {
+  if (!markdown) return '';
+  const escaped = escapeHtml(markdown);
+  const lines = escaped.split('\n');
+  const html = [];
+  let inCodeBlock = false;
+  let codeBuffer = [];
+  let listType = null;
+
+  const closeList = () => {
+    if (listType) {
+      html.push(`</${listType}>`);
+      listType = null;
+    }
+  };
+
+  lines.forEach(line => {
+    if (line.trim().startsWith('```')) {
+      if (inCodeBlock) {
+        html.push(`<pre><code>${codeBuffer.join('\n')}</code></pre>`);
+        codeBuffer = [];
+        inCodeBlock = false;
+      } else {
+        closeList();
+        inCodeBlock = true;
+      }
+      return;
+    }
+
+    if (inCodeBlock) {
+      codeBuffer.push(line);
+      return;
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      closeList();
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${renderMarkdownInline(headingMatch[2])}</h${level}>`);
+      return;
+    }
+
+    const orderedMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+    const unorderedMatch = line.match(/^\s*[-*]\s+(.*)$/);
+    if (orderedMatch || unorderedMatch) {
+      const type = orderedMatch ? 'ol' : 'ul';
+      if (listType && listType !== type) {
+        closeList();
+      }
+      if (!listType) {
+        listType = type;
+        html.push(`<${type}>`);
+      }
+      const itemText = orderedMatch ? orderedMatch[1] : unorderedMatch[1];
+      html.push(`<li>${renderMarkdownInline(itemText)}</li>`);
+      return;
+    }
+
+    closeList();
+
+    const quoteMatch = line.match(/^\s*>\s+(.*)$/);
+    if (quoteMatch) {
+      html.push(`<blockquote>${renderMarkdownInline(quoteMatch[1])}</blockquote>`);
+      return;
+    }
+
+    if (!line.trim()) {
+      html.push('');
+      return;
+    }
+
+    html.push(`<p>${renderMarkdownInline(line)}</p>`);
+  });
+
+  if (inCodeBlock) {
+    html.push(`<pre><code>${codeBuffer.join('\n')}</code></pre>`);
+  }
+  if (listType) {
+    html.push(`</${listType}>`);
+  }
+  return html.join('\n');
+}
+
+function getEditorNotesMode() {
+  return state.ui?.editorNotesMode ?? 'preview';
+}
+
+function setEditorNotesMode(mode) {
+  state.ui = state.ui ?? {};
+  state.ui.editorNotesMode = mode;
+  updateEditorNotesModeUI();
+}
+
+function updateEditorNotesModeUI() {
+  const isPreview = getEditorNotesMode() === 'preview';
+  editorNotesPreviewPane?.classList.toggle('hidden', !isPreview);
+  editorDesc?.classList.toggle('hidden', isPreview);
+  editorNotesPreviewBtn?.classList.toggle('active', isPreview);
+  editorNotesEditBtn?.classList.toggle('active', !isPreview);
+  if (!isPreview) {
+    editorDesc?.focus();
+  } else {
+    renderEditorNotesPreview();
+  }
+}
+
+function renderEditorNotesPreview() {
+  if (!editorNotesPreviewPane || !editorDesc) return;
+  const value = editorDesc.value ?? '';
+  if (!value.trim()) {
+    editorNotesPreviewPane.innerHTML = '<div class="markdown-placeholder">No notes yet.</div>';
+    return;
+  }
+  editorNotesPreviewPane.innerHTML = renderMarkdown(value);
+}
+
+function replaceMarkdownSelection(text) {
+  if (!editorDesc) return;
+  const start = editorDesc.selectionStart ?? 0;
+  const end = editorDesc.selectionEnd ?? 0;
+  const value = editorDesc.value ?? '';
+  editorDesc.value = `${value.slice(0, start)}${text}${value.slice(end)}`;
+  const cursor = start + text.length;
+  editorDesc.setSelectionRange(cursor, cursor);
+  renderEditorNotesPreview();
+}
+
+function wrapMarkdownSelection(prefix, suffix, placeholder) {
+  if (!editorDesc) return;
+  const start = editorDesc.selectionStart ?? 0;
+  const end = editorDesc.selectionEnd ?? 0;
+  const value = editorDesc.value ?? '';
+  const selected = value.slice(start, end) || placeholder;
+  const nextValue = `${value.slice(0, start)}${prefix}${selected}${suffix}${value.slice(end)}`;
+  editorDesc.value = nextValue;
+  const cursorStart = start + prefix.length;
+  const cursorEnd = cursorStart + selected.length;
+  editorDesc.setSelectionRange(cursorStart, cursorEnd);
+  renderEditorNotesPreview();
+}
+
+function prefixMarkdownLines(prefix) {
+  if (!editorDesc) return;
+  const start = editorDesc.selectionStart ?? 0;
+  const end = editorDesc.selectionEnd ?? 0;
+  const value = editorDesc.value ?? '';
+  const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+  const lineEnd = value.indexOf('\n', end);
+  const segmentEnd = lineEnd === -1 ? value.length : lineEnd;
+  const segment = value.slice(lineStart, segmentEnd);
+  const lines = segment.split('\n').map(line => (line ? `${prefix}${line}` : prefix.trim() ? prefix : line));
+  const nextValue = `${value.slice(0, lineStart)}${lines.join('\n')}${value.slice(segmentEnd)}`;
+  editorDesc.value = nextValue;
+  const newEnd = lineStart + lines.join('\n').length;
+  editorDesc.setSelectionRange(lineStart, newEnd);
+  renderEditorNotesPreview();
+}
+
+function applyMarkdownAction(action) {
+  if (!editorDesc) return;
+  setEditorNotesMode('edit');
+  const value = editorDesc.value ?? '';
+  const start = editorDesc.selectionStart ?? 0;
+  const end = editorDesc.selectionEnd ?? 0;
+  const selected = value.slice(start, end);
+  if (action === 'bold') {
+    wrapMarkdownSelection('**', '**', 'bold text');
+    return;
+  }
+  if (action === 'italic') {
+    wrapMarkdownSelection('*', '*', 'italic text');
+    return;
+  }
+  if (action === 'heading') {
+    prefixMarkdownLines('# ');
+    return;
+  }
+  if (action === 'quote') {
+    prefixMarkdownLines('> ');
+    return;
+  }
+  if (action === 'ul') {
+    prefixMarkdownLines('- ');
+    return;
+  }
+  if (action === 'ol') {
+    prefixMarkdownLines('1. ');
+    return;
+  }
+  if (action === 'link') {
+    const url = prompt('Link URL');
+    if (!url) return;
+    const text = selected || 'link text';
+    replaceMarkdownSelection(`[${text}](${url})`);
+    return;
+  }
+  if (action === 'code') {
+    if (selected.includes('\n')) {
+      wrapMarkdownSelection('```\n', '\n```', 'code');
+    } else {
+      wrapMarkdownSelection('`', '`', 'code');
+    }
+  }
 }
 
 function parseStoreAndDateFromTitle(title) {
@@ -4888,6 +5117,8 @@ function populateTaskEditor(task) {
   editorStart.value = toDatetimeLocal(task.start_at);
   editorDue.value = toDatetimeLocal(task.due_at);
   editorDesc.value = task.description_md ?? '';
+  renderEditorNotesPreview();
+  updateEditorNotesModeUI();
   renderTaskEditorSubtasks(task);
   renderTaskEditorDependencies(task);
   populateDependencySelect(task);
@@ -5514,6 +5745,22 @@ editorFollowupSnooze?.addEventListener('click', () => {
 });
 editorFollowupClear?.addEventListener('click', () => {
   if (editorFollowup) editorFollowup.value = '';
+});
+editorNotesPreviewBtn?.addEventListener('click', () => {
+  setEditorNotesMode('preview');
+});
+editorNotesEditBtn?.addEventListener('click', () => {
+  setEditorNotesMode('edit');
+});
+editorNotesToolbar?.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const action = target.dataset.action;
+  if (!action) return;
+  applyMarkdownAction(action);
+});
+editorDesc?.addEventListener('input', () => {
+  renderEditorNotesPreview();
 });
 editorAddDependencyBtn?.addEventListener('click', async () => {
   if (!activeTaskId || !editorDependencySelect) return;

@@ -705,6 +705,23 @@
         </label>
         <label>
           Notes
+          <div class="markdown-controls">
+            <div class="markdown-toggle">
+              <button id="editor-notes-preview" type="button" class="subtle-button">Preview</button>
+              <button id="editor-notes-edit" type="button" class="subtle-button">Markdown</button>
+            </div>
+            <div id="editor-notes-toolbar" class="markdown-toolbar">
+              <button type="button" data-action="bold" title="Bold">B</button>
+              <button type="button" data-action="italic" title="Italic">I</button>
+              <button type="button" data-action="heading" title="Heading">H</button>
+              <button type="button" data-action="quote" title="Quote">“</button>
+              <button type="button" data-action="ul" title="Bulleted list">•</button>
+              <button type="button" data-action="ol" title="Numbered list">1.</button>
+              <button type="button" data-action="link" title="Link">🔗</button>
+              <button type="button" data-action="code" title="Code">&lt;/&gt;</button>
+            </div>
+          </div>
+          <div id="editor-notes-preview-pane" class="markdown-preview"></div>
           <textarea id="editor-desc" rows="4"></textarea>
         </label>
         <div class="task-editor-subtasks">
