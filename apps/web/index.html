@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>BrianHub Task MVP</title>
+    <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
+    <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor-dark.min.css" />
     <link rel="stylesheet" href="/apps/web/styles.css" />
   </head>
   <body>
@@ -705,26 +707,8 @@
         </label>
         <label>
           Notes
-          <div class="markdown-controls">
-            <div class="markdown-toggle">
-              <button id="editor-notes-preview" type="button" class="subtle-button">Preview</button>
-              <button id="editor-notes-edit" type="button" class="subtle-button">Markdown</button>
-            </div>
-            <div id="editor-notes-toolbar" class="markdown-toolbar">
-              <button type="button" data-action="bold" title="Bold">B</button>
-              <button type="button" data-action="italic" title="Italic">I</button>
-              <button type="button" data-action="heading" title="Heading">H</button>
-              <button type="button" data-action="quote" title="Quote">“</button>
-              <button type="button" data-action="ul" title="Bulleted list">•</button>
-              <button type="button" data-action="ol" title="Numbered list">1.</button>
-              <button type="button" data-action="link" title="Link">🔗</button>
-              <button type="button" data-action="code" title="Code">&lt;/&gt;</button>
-            </div>
-          </div>
-          <div class="markdown-split">
-            <div id="editor-notes-preview-pane" class="markdown-preview"></div>
-            <textarea id="editor-desc" rows="4"></textarea>
-          </div>
+          <div id="editor-notes" class="editor-notes"></div>
+          <textarea id="editor-desc" class="editor-desc-fallback" rows="4" placeholder="Write notes..."></textarea>
         </label>
         <div class="task-editor-subtasks">
           <div class="task-editor-subtasks-header">
@@ -818,6 +802,7 @@
       </div>
     </div>
 
+    <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
     <script type="module" src="/apps/web/app.js"></script>
   </body>
 </html>
