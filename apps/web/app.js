@@ -238,6 +238,9 @@ const editorFollowupNow = document.getElementById('editor-followup-now');
 const editorFollowupSnooze = document.getElementById('editor-followup-snooze');
 const editorFollowupClear = document.getElementById('editor-followup-clear');
 const editorNotesContainer = document.getElementById('editor-notes');
+const notesEditorWrapper = document.getElementById('notes-editor');
+const notesModeButtons = notesEditorWrapper ? Array.from(notesEditorWrapper.querySelectorAll('.notes-mode')) : [];
+const notesFormatButtons = notesEditorWrapper ? Array.from(notesEditorWrapper.querySelectorAll('.notes-toolbar-left .notes-btn')) : [];
 const editorStart = document.getElementById('editor-start');
 const editorDue = document.getElementById('editor-due');
 const editorDesc = document.getElementById('editor-desc');
@@ -280,7 +283,15 @@ let activeCheckinTaskId = null;
 let checkinProgressTaskId = null;
 let checkinRescheduleContext = null;
 const checkinSnoozes = new Map();
-let notesEditor = null;
+let notesEditorView = null;
+let notesEditorStateCtor = null;
+let notesMarkdownParser = null;
+let notesMarkdownSerializer = null;
+let notesSchema = null;
+let notesEditorPlugins = [];
+let notesMode = notesEditorWrapper?.classList.contains('is-markdown') ? 'markdown' : 'rich';
+let notesEditorInitPromise = null;
+let pendingNotesContent = '';
 let undoToastTimer = null;
 let undoToastEl = null;
 
@@ -2123,75 +2134,271 @@ function formatFollowupMeta(task) {
 }
 
 function getNotesContent() {
-  if (notesEditor) return notesEditor.getMarkdown();
-  return editorDesc?.value ?? '';
+  if (notesMode === 'markdown' || !notesEditorView || !notesMarkdownSerializer) {
+    return editorDesc?.value ?? '';
+  }
+  return notesMarkdownSerializer.serialize(notesEditorView.state.doc);
 }
 
 function setNotesContent(value = '') {
-  if (notesEditor) {
-    notesEditor.setMarkdown(value || '');
-  }
-  if (editorDesc) {
-    editorDesc.value = value ?? '';
+  pendingNotesContent = value ?? '';
+  if (editorDesc) editorDesc.value = pendingNotesContent;
+  if (notesEditorView && notesMarkdownParser) {
+    updateNotesEditorDoc(pendingNotesContent);
   }
 }
 
-function initNotesEditor() {
-  if (!editorNotesContainer) return;
-  if (!globalThis.toastui?.Editor) return;
-  notesEditor = new globalThis.toastui.Editor({
-    el: editorNotesContainer,
-    height: '320px',
-    initialEditType: 'wysiwyg',
-    previewStyle: 'tab',
-    usageStatistics: false,
-    theme: 'dark',
-    toolbarItems: [
-      ['heading', 'bold', 'italic', 'strike'],
-      ['hr', 'quote'],
-      ['ul', 'ol', 'task', 'indent', 'outdent'],
-      ['table', 'link'],
-      ['code', 'codeblock']
-    ]
+function updateNotesEditorDoc(markdown) {
+  if (!notesEditorView || !notesMarkdownParser || !notesEditorStateCtor || !notesSchema) return;
+  let doc;
+  try {
+    doc = notesMarkdownParser.parse(markdown || '');
+  } catch {
+    doc = notesSchema.topNodeType.createAndFill();
+  }
+  const nextState = notesEditorStateCtor.create({
+    schema: notesSchema,
+    doc,
+    plugins: notesEditorPlugins
   });
-  document.body.classList.add('notes-editor-ready');
-  notesEditor.on('change', () => {
-    if (editorDesc) editorDesc.value = notesEditor.getMarkdown();
+  notesEditorView.updateState(nextState);
+}
+
+function isNotesCommandAvailable(command) {
+  if (!notesSchema) return false;
+  switch (command) {
+    case 'heading':
+      return Boolean(notesSchema.nodes.heading);
+    case 'bold':
+      return Boolean(notesSchema.marks.strong);
+    case 'italic':
+      return Boolean(notesSchema.marks.em);
+    case 'bullet':
+      return Boolean(notesSchema.nodes.bullet_list);
+    case 'ordered':
+      return Boolean(notesSchema.nodes.ordered_list);
+    case 'quote':
+      return Boolean(notesSchema.nodes.blockquote);
+    case 'code':
+      return Boolean(notesSchema.marks.code);
+    case 'codeblock':
+      return Boolean(notesSchema.nodes.code_block);
+    case 'link':
+      return Boolean(notesSchema.marks.link);
+    default:
+      return false;
+  }
+}
+
+function updateNotesToolbarState() {
+  notesModeButtons.forEach(button => {
+    const isActive = button.dataset.mode === notesMode;
+    button.classList.toggle('is-active', isActive);
   });
-  const closeToastDropdowns = () => {
-    document.querySelectorAll('.toastui-editor-dropdown-toolbar.show').forEach(dropdown => {
-      dropdown.classList.remove('show');
+  notesFormatButtons.forEach(button => {
+    const command = button.dataset.command;
+    const available = isNotesCommandAvailable(command);
+    button.disabled = !available || notesMode === 'markdown' || !notesEditorView;
+  });
+}
+
+function setNotesMode(mode) {
+  const nextMode = mode === 'markdown' ? 'markdown' : 'rich';
+  if (!notesEditorView && nextMode === 'rich') {
+    notesMode = 'markdown';
+  } else {
+    notesMode = nextMode;
+  }
+  if (notesEditorWrapper) {
+    notesEditorWrapper.classList.toggle('is-markdown', notesMode === 'markdown');
+    notesEditorWrapper.classList.toggle('is-rich', notesMode !== 'markdown');
+  }
+  if (notesMode === 'markdown' && notesEditorView && notesMarkdownSerializer && editorDesc) {
+    editorDesc.value = notesMarkdownSerializer.serialize(notesEditorView.state.doc);
+  }
+  if (notesMode !== 'markdown' && notesEditorView && notesMarkdownParser) {
+    updateNotesEditorDoc(editorDesc?.value ?? '');
+    notesEditorView.focus();
+  }
+  updateNotesToolbarState();
+}
+
+let notesToolbarBound = false;
+
+function bindNotesToolbar(commands) {
+  if (notesToolbarBound || !notesEditorWrapper) return;
+  notesToolbarBound = true;
+  const { toggleMark, setBlockType, wrapIn, wrapInList } = commands;
+
+  notesModeButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const mode = button.dataset.mode || 'rich';
+      setNotesMode(mode);
     });
-    document.querySelectorAll('.toastui-editor-popup').forEach(popup => {
-      popup.style.display = 'none';
+  });
+
+  notesFormatButtons.forEach(button => {
+    const command = button.dataset.command;
+    const level = Number(button.dataset.level || 0);
+    button.addEventListener('click', () => {
+      if (notesMode === 'markdown' || !notesEditorView) return;
+      if (!isNotesCommandAvailable(command)) return;
+      const { state, dispatch } = notesEditorView;
+      let executed = false;
+      switch (command) {
+        case 'heading': {
+          const node = notesSchema.nodes.heading;
+          if (!node) break;
+          const nextLevel = Number.isFinite(level) && level > 0 ? level : 1;
+          executed = setBlockType(node, { level: nextLevel })(state, dispatch);
+          break;
+        }
+        case 'bold': {
+          const mark = notesSchema.marks.strong;
+          executed = toggleMark(mark)(state, dispatch);
+          break;
+        }
+        case 'italic': {
+          const mark = notesSchema.marks.em;
+          executed = toggleMark(mark)(state, dispatch);
+          break;
+        }
+        case 'bullet': {
+          const node = notesSchema.nodes.bullet_list;
+          executed = wrapInList(node)(state, dispatch);
+          break;
+        }
+        case 'ordered': {
+          const node = notesSchema.nodes.ordered_list;
+          executed = wrapInList(node)(state, dispatch);
+          break;
+        }
+        case 'quote': {
+          const node = notesSchema.nodes.blockquote;
+          executed = wrapIn(node)(state, dispatch);
+          break;
+        }
+        case 'code': {
+          const mark = notesSchema.marks.code;
+          executed = toggleMark(mark)(state, dispatch);
+          break;
+        }
+        case 'codeblock': {
+          const node = notesSchema.nodes.code_block;
+          executed = setBlockType(node)(state, dispatch);
+          break;
+        }
+        case 'link': {
+          const mark = notesSchema.marks.link;
+          if (!mark) break;
+          const { from, to } = state.selection;
+          const hasLink = state.doc.rangeHasMark(from, to, mark);
+          if (hasLink) {
+            executed = toggleMark(mark)(state, dispatch);
+          } else {
+            const href = prompt('Link URL');
+            if (!href) break;
+            executed = toggleMark(mark, { href })(state, dispatch);
+          }
+          break;
+        }
+        default:
+          break;
+      }
+      if (executed) {
+        notesEditorView.focus();
+      }
     });
-  };
-  document.addEventListener('click', (event) => {
-    if (!notesEditor) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    if (target.closest('.toastui-editor-toolbar')) return;
-    if (target.closest('.toastui-editor-dropdown-toolbar')) return;
-    if (target.closest('.toastui-editor-popup')) return;
-    closeToastDropdowns();
   });
-  editorNotesContainer.addEventListener('click', (event) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    if (target.closest('.toastui-editor-toolbar')) return;
-    if (target.closest('.toastui-editor-dropdown-toolbar')) return;
-    if (target.closest('.toastui-editor-popup')) return;
-    if (target.closest('.toastui-editor-contents')) {
-      closeToastDropdowns();
+}
+
+async function initNotesEditor() {
+  if (!editorNotesContainer || !notesEditorWrapper) return;
+  if (notesEditorInitPromise) return notesEditorInitPromise;
+  notesEditorInitPromise = (async () => {
+    try {
+      const [
+        statePkg,
+        viewPkg,
+        markdownPkg,
+        keymapPkg,
+        historyPkg,
+        commandsPkg,
+        listPkg
+      ] = await Promise.all([
+        import('https://esm.sh/prosemirror-state@1.4.3'),
+        import('https://esm.sh/prosemirror-view@1.35.0'),
+        import('https://esm.sh/prosemirror-markdown@1.10.0'),
+        import('https://esm.sh/prosemirror-keymap@1.2.2'),
+        import('https://esm.sh/prosemirror-history@1.3.0'),
+        import('https://esm.sh/prosemirror-commands@1.6.2'),
+        import('https://esm.sh/prosemirror-schema-list@1.3.0')
+      ]);
+
+      const { EditorState } = statePkg;
+      const { EditorView } = viewPkg;
+      const { schema, defaultMarkdownParser, defaultMarkdownSerializer } = markdownPkg;
+      const { keymap } = keymapPkg;
+      const { history, undo, redo } = historyPkg;
+      const { baseKeymap, toggleMark, setBlockType, wrapIn } = commandsPkg;
+      const { wrapInList, liftListItem, sinkListItem } = listPkg;
+
+      notesEditorStateCtor = EditorState;
+      notesSchema = schema;
+      notesMarkdownParser = defaultMarkdownParser;
+      notesMarkdownSerializer = defaultMarkdownSerializer;
+
+      const plugins = [
+        history(),
+        keymap({
+          'Mod-z': undo,
+          'Shift-Mod-z': redo,
+          'Mod-y': redo,
+          'Mod-b': toggleMark(notesSchema.marks.strong),
+          'Mod-i': toggleMark(notesSchema.marks.em),
+          'Mod-`': toggleMark(notesSchema.marks.code)
+        })
+      ];
+
+      if (notesSchema.nodes.list_item) {
+        plugins.push(keymap({
+          Tab: sinkListItem(notesSchema.nodes.list_item),
+          'Shift-Tab': liftListItem(notesSchema.nodes.list_item)
+        }));
+      }
+
+      plugins.push(keymap(baseKeymap));
+
+      notesEditorPlugins = plugins;
+
+      const markdown = editorDesc?.value ?? pendingNotesContent ?? '';
+      const doc = notesMarkdownParser.parse(markdown || '');
+      const state = EditorState.create({
+        schema: notesSchema,
+        doc,
+        plugins
+      });
+      notesEditorView = new EditorView(editorNotesContainer, { state });
+
+      bindNotesToolbar({ toggleMark, setBlockType, wrapIn, wrapInList });
+      setNotesMode(notesMode || 'rich');
+      setNotesContent(markdown);
+    } catch (err) {
+      console.warn('Notes editor failed to load', err);
+      notesEditorView = null;
+      notesMarkdownParser = null;
+      notesMarkdownSerializer = null;
+      notesSchema = null;
+      notesEditorPlugins = [];
+      notesMode = 'markdown';
+      if (notesEditorWrapper) {
+        notesEditorWrapper.classList.remove('is-rich');
+        notesEditorWrapper.classList.add('is-markdown');
+      }
+      updateNotesToolbarState();
     }
-  });
-  editorNotesContainer.addEventListener('keydown', (event) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    if (target.closest('.toastui-editor-contents')) {
-      closeToastDropdowns();
-    }
-  });
+  })();
+  return notesEditorInitPromise;
 }
 
 function parseStoreAndDateFromTitle(title) {

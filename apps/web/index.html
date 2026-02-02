@@ -4,8 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>BrianHub Task MVP</title>
-    <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
-    <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor-dark.min.css" />
     <link rel="stylesheet" href="/apps/web/styles.css" />
   </head>
   <body>
@@ -707,8 +705,28 @@
         </label>
         <label>
           Notes
-          <div id="editor-notes" class="editor-notes"></div>
-          <textarea id="editor-desc" class="editor-desc-fallback" rows="4" placeholder="Write notes..."></textarea>
+          <div class="notes-editor is-rich" id="notes-editor">
+            <div class="notes-toolbar">
+              <div class="notes-toolbar-left">
+                <button type="button" class="notes-btn" data-command="heading" data-level="1">H1</button>
+                <button type="button" class="notes-btn" data-command="heading" data-level="2">H2</button>
+                <button type="button" class="notes-btn" data-command="bold"><strong>B</strong></button>
+                <button type="button" class="notes-btn" data-command="italic"><em>I</em></button>
+                <button type="button" class="notes-btn" data-command="bullet">• List</button>
+                <button type="button" class="notes-btn" data-command="ordered">1. List</button>
+                <button type="button" class="notes-btn" data-command="quote">Quote</button>
+                <button type="button" class="notes-btn" data-command="code">Code</button>
+                <button type="button" class="notes-btn" data-command="codeblock">Code block</button>
+                <button type="button" class="notes-btn" data-command="link">Link</button>
+              </div>
+              <div class="notes-toolbar-right">
+                <button type="button" class="notes-btn notes-mode is-active" data-mode="rich">Rich</button>
+                <button type="button" class="notes-btn notes-mode" data-mode="markdown">Markdown</button>
+              </div>
+            </div>
+            <div id="editor-notes" class="editor-notes"></div>
+            <textarea id="editor-desc" class="editor-desc-fallback" rows="6" placeholder="Write notes..."></textarea>
+          </div>
         </label>
         <div class="task-editor-subtasks">
           <div class="task-editor-subtasks-header">
@@ -802,7 +820,6 @@
       </div>
     </div>
 
-    <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
     <script type="module" src="/apps/web/app.js"></script>
   </body>
 </html>
