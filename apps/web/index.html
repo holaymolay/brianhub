@@ -683,6 +683,17 @@
             <option value="canceled">Canceled</option>
           </select>
         </label>
+        <div id="editor-followup-section" class="task-editor-followup hidden">
+          <label>
+            Follow-up
+            <input id="editor-followup" type="datetime-local" />
+          </label>
+          <div class="task-editor-followup-actions">
+            <button id="editor-followup-now" type="button" class="subtle-button">Follow up now</button>
+            <button id="editor-followup-snooze" type="button" class="subtle-button">Snooze 3 days</button>
+            <button id="editor-followup-clear" type="button" class="subtle-button">Clear follow-up</button>
+          </div>
+        </div>
         <label>
           Start
           <input id="editor-start" type="datetime-local" />

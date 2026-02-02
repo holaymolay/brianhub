@@ -232,6 +232,11 @@ const editorRecurringButton = document.getElementById('editor-recurring-button')
 const editorRecurringSummary = document.getElementById('editor-recurring-summary');
 const editorReminder = document.getElementById('editor-reminder');
 const editorStatus = document.getElementById('editor-status');
+const editorFollowupSection = document.getElementById('editor-followup-section');
+const editorFollowup = document.getElementById('editor-followup');
+const editorFollowupNow = document.getElementById('editor-followup-now');
+const editorFollowupSnooze = document.getElementById('editor-followup-snooze');
+const editorFollowupClear = document.getElementById('editor-followup-clear');
 const editorStart = document.getElementById('editor-start');
 const editorDue = document.getElementById('editor-due');
 const editorDesc = document.getElementById('editor-desc');
@@ -1175,6 +1180,26 @@ function closeCheckinNoModal() {
   checkinNoModal?.classList.add('hidden');
 }
 
+function updateEditorFollowupVisibility(statusKey) {
+  if (!editorFollowupSection) return;
+  const show = isWaitingStatusKey(statusKey);
+  editorFollowupSection.classList.toggle('hidden', !show);
+}
+
+function setEditorFollowupValue(value) {
+  if (!editorFollowup) return;
+  editorFollowup.value = value ? toDatetimeLocal(value) : '';
+}
+
+function ensureEditorWaitingStatus() {
+  if (!editorStatus) return;
+  if (!isWaitingStatusKey(editorStatus.value)) {
+    const waitingKey = getStatusKeyByKind(TaskStatus.WAITING) ?? TaskStatus.WAITING;
+    editorStatus.value = waitingKey;
+  }
+  updateEditorFollowupVisibility(editorStatus.value);
+}
+
 function openCheckinRescheduleModal(task, response, origin = null) {
   if (!checkinRescheduleModal) return;
   const resolvedOrigin = origin ?? checkinRescheduleContext?.origin ?? 'checkin';
@@ -1767,8 +1792,14 @@ async function updateTaskRecord(id, patch) {
   if (patch.status) {
     const statusKind = getStatusKind(patch.status);
     if (statusKind === TaskStatus.WAITING) {
-      const waitingTask = applyWaitingFollowup({ ...next, status: TaskStatus.WAITING }, new Date());
-      next.next_checkin_at = waitingTask.next_checkin_at;
+      if (patch.next_checkin_at) {
+        next.next_checkin_at = patch.next_checkin_at;
+      } else if (patch.waiting_followup_at) {
+        next.next_checkin_at = patch.waiting_followup_at;
+      } else {
+        const waitingTask = applyWaitingFollowup({ ...next, status: TaskStatus.WAITING }, new Date());
+        next.next_checkin_at = waitingTask.next_checkin_at;
+      }
     }
     if (statusKind === TaskStatus.DONE && !next.completed_at) {
       next.completed_at = new Date().toISOString();
@@ -2076,6 +2107,16 @@ function formatShortDateFromInput(value) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return formatShortDate();
   return formatShortDate(date);
+}
+
+function formatFollowupMeta(task) {
+  const followup = task?.waiting_followup_at ?? task?.next_checkin_at ?? null;
+  if (!followup) return 'follow-up unscheduled';
+  const date = new Date(followup);
+  if (Number.isNaN(date.getTime())) return 'follow-up unscheduled';
+  const label = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const overdue = date.getTime() < Date.now();
+  return `follow-up ${label}${overdue ? ' (overdue)' : ''}`;
 }
 
 function parseStoreAndDateFromTitle(title) {
@@ -4098,6 +4139,9 @@ function renderKanbanCard(task) {
   if (childCount) {
     metaParts.push(`${childCount} subtask${childCount > 1 ? 's' : ''}`);
   }
+  if (isWaitingStatusKey(task.status ?? getDefaultStatusKey())) {
+    metaParts.push(formatFollowupMeta(task));
+  }
   meta.textContent = metaParts.join(' · ');
 
   card.appendChild(title);
@@ -4294,7 +4338,8 @@ function renderTask(task) {
   const projectText = projectName ? ` · ${projectName}` : '';
   const childCount = countDescendants(task);
   const childText = childCount ? ` · ${childCount} subtask${childCount > 1 ? 's' : ''}` : '';
-  metaEl.textContent = `priority ${task.priority}${projectText}${childText}`;
+  const waitingText = isWaitingStatusKey(statusKey) ? ` · ${formatFollowupMeta(task)}` : '';
+  metaEl.textContent = `priority ${task.priority}${projectText}${childText}${waitingText}`;
   const recurrenceText = task.recurrence_interval && task.recurrence_unit
     ? ` · repeats every ${task.recurrence_interval} ${task.recurrence_unit}${task.recurrence_interval > 1 ? 's' : ''}`
     : '';
@@ -4498,7 +4543,8 @@ async function handleCheckIn(task, response) {
   await updateTaskRecord(task.id, {
     status: updated.status,
     completed_at: updated.completed_at ?? null,
-    next_checkin_at: updated.next_checkin_at ?? null
+    next_checkin_at: updated.next_checkin_at ?? null,
+    waiting_followup_at: updated.status === TaskStatus.WAITING ? task.waiting_followup_at ?? null : null
   });
   if (isDoneStatusKey(updated.status)) {
     await maybeCreateRecurringTask(state.tasks[task.id]);
@@ -4829,6 +4875,9 @@ function populateTaskEditor(task) {
   setRecurrenceState('editor', task.recurrence_interval ?? null, task.recurrence_unit ?? 'month');
   editorReminder.value = task.reminder_offset_days ?? '';
   populateStatusSelect(editorStatus, task.status ?? getDefaultStatusKey());
+  updateEditorFollowupVisibility(editorStatus.value);
+  const followupValue = task.waiting_followup_at ?? task.next_checkin_at ?? null;
+  setEditorFollowupValue(followupValue);
   editorStart.value = toDatetimeLocal(task.start_at);
   editorDue.value = toDatetimeLocal(task.due_at);
   editorDesc.value = task.description_md ?? '';
@@ -5440,6 +5489,25 @@ storeRulesModal?.querySelector('.modal-backdrop')?.addEventListener('click', clo
 
 editorCancel?.addEventListener('click', closeTaskEditor);
 editorClose?.addEventListener('click', closeTaskEditor);
+editorStatus?.addEventListener('change', () => {
+  updateEditorFollowupVisibility(editorStatus.value);
+  if (isWaitingStatusKey(editorStatus.value) && editorFollowup && !editorFollowup.value) {
+    const next = addInterval(new Date(), 3, 'day');
+    editorFollowup.value = toDatetimeLocal(next.toISOString());
+  }
+});
+editorFollowupNow?.addEventListener('click', () => {
+  ensureEditorWaitingStatus();
+  setEditorFollowupValue(new Date().toISOString());
+});
+editorFollowupSnooze?.addEventListener('click', () => {
+  ensureEditorWaitingStatus();
+  const next = addInterval(new Date(), 3, 'day');
+  setEditorFollowupValue(next.toISOString());
+});
+editorFollowupClear?.addEventListener('click', () => {
+  if (editorFollowup) editorFollowup.value = '';
+});
 editorAddDependencyBtn?.addEventListener('click', async () => {
   if (!activeTaskId || !editorDependencySelect) return;
   const dependsOnId = editorDependencySelect.value;
@@ -5495,9 +5563,21 @@ taskEditorForm?.addEventListener('submit', async (event) => {
   if (parentChanged) {
     patch.sort_order = getNextTaskSortOrder(nextParentId, nextParentId ? null : nextStatus);
   }
+  const wasWaiting = isWaitingStatusKey(task.status ?? getDefaultStatusKey());
   if (isWaitingStatusKey(nextStatus)) {
-    const withFollowup = applyWaitingFollowup({ ...task, status: TaskStatus.WAITING }, new Date());
-    patch.next_checkin_at = withFollowup.next_checkin_at;
+    const followupAt = fromDatetimeLocal(editorFollowup?.value ?? '');
+    patch.waiting_followup_at = followupAt;
+    if (followupAt) {
+      patch.next_checkin_at = followupAt;
+    } else {
+      const withFollowup = applyWaitingFollowup({ ...task, status: TaskStatus.WAITING }, new Date());
+      patch.next_checkin_at = withFollowup.next_checkin_at;
+    }
+  } else if (wasWaiting) {
+    patch.waiting_followup_at = null;
+    if (task.waiting_followup_at && task.next_checkin_at === task.waiting_followup_at) {
+      patch.next_checkin_at = null;
+    }
   }
   if (isDoneStatusKey(nextStatus)) {
     patch.completed_at = task.completed_at ?? nowIso();

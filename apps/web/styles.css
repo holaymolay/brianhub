@@ -1595,6 +1595,21 @@ button:hover { opacity: 0.9; }
   gap: 0.5rem;
 }
 
+.task-editor-followup {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.task-editor-followup-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.task-editor-followup-actions button {
+  flex: 1 1 0;
+}
+
 .task-editor-deps-list {
   display: grid;
   gap: 0.35rem;

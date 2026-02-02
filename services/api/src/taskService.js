@@ -1064,8 +1064,13 @@ export function updateTask(db, id, patch, clientId = null) {
       throw new Error('Invalid status');
     }
     if (statusRow.kind === TaskStatus.WAITING) {
-      const waitingTask = applyWaitingFollowup({ ...next, status: TaskStatus.WAITING }, new Date(), DEFAULT_WAITING_DAYS);
-      next.next_checkin_at = waitingTask.next_checkin_at;
+      const explicitFollowup = patch.next_checkin_at ?? patch.waiting_followup_at ?? null;
+      if (explicitFollowup) {
+        next.next_checkin_at = explicitFollowup;
+      } else {
+        const waitingTask = applyWaitingFollowup({ ...next, status: TaskStatus.WAITING }, new Date(), DEFAULT_WAITING_DAYS);
+        next.next_checkin_at = waitingTask.next_checkin_at;
+      }
     }
     if (statusRow.kind === TaskStatus.DONE) {
       next.completed_at = next.completed_at ?? nowIso();
