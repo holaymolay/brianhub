@@ -2067,64 +2067,6 @@ function renderTaskViewToggle() {
   }
 }
 
-function renderNotices() {
-  if (!state.workspace) return;
-  const notices = (state.notices ?? [])
-    .filter(notice => notice.workspace_id === state.workspace.id && !notice.dismissed_at)
-    .sort((a, b) => new Date(a.notify_at).getTime() - new Date(b.notify_at).getTime());
-  if (!notices.length) return;
-
-  const wrapper = document.createElement('section');
-  wrapper.className = 'status-section notice-section';
-  const header = document.createElement('div');
-  header.className = 'status-header';
-  const dot = document.createElement('span');
-  dot.className = 'status-dot';
-  const label = document.createElement('span');
-  label.textContent = 'Notices';
-  header.appendChild(dot);
-  header.appendChild(label);
-  wrapper.appendChild(header);
-
-  notices.forEach(notice => {
-    const item = document.createElement('div');
-    item.className = 'notice-item';
-
-    const title = document.createElement('div');
-    title.className = 'notice-title';
-    title.textContent = notice.title;
-
-    const meta = document.createElement('div');
-    meta.className = 'notice-meta';
-    const date = new Date(notice.notify_at);
-    const typeLabel = getNoticeTypeLabel(notice.notice_type);
-    const whenText = Number.isNaN(date.getTime())
-      ? notice.notify_at
-      : date.toLocaleString();
-    meta.textContent = `${typeLabel} · ${whenText}`;
-
-    const actions = document.createElement('div');
-    actions.className = 'notice-actions';
-    const dismissBtn = document.createElement('button');
-    dismissBtn.type = 'button';
-    dismissBtn.className = 'icon-button';
-    dismissBtn.textContent = '✓';
-    dismissBtn.title = 'Dismiss notice';
-    dismissBtn.addEventListener('click', async () => {
-      await updateNoticeRecord(notice.id, { dismissed_at: nowIso() });
-      render();
-    });
-
-    actions.appendChild(dismissBtn);
-    item.appendChild(title);
-    item.appendChild(meta);
-    item.appendChild(actions);
-    wrapper.appendChild(item);
-  });
-
-  taskTreeEl.appendChild(wrapper);
-}
-
 function renderProjectList() {
   if (!projectListEl) return;
   if (!state.workspace) {
