@@ -1495,6 +1495,29 @@ button:hover { opacity: 0.9; }
   overflow-y: auto;
 }
 
+.task-editor {
+  scrollbar-color: #2b3240 #0f141c;
+  scrollbar-width: thin;
+}
+
+.task-editor::-webkit-scrollbar {
+  width: 10px;
+}
+
+.task-editor::-webkit-scrollbar-track {
+  background: #0f141c;
+}
+
+.task-editor::-webkit-scrollbar-thumb {
+  background: #2b3240;
+  border-radius: 999px;
+  border: 2px solid #0f141c;
+}
+
+.task-editor::-webkit-scrollbar-thumb:hover {
+  background: #3b4352;
+}
+
 .task-editor.is-open {
   transform: translateX(0);
 }
