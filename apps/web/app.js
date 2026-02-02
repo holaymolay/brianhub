@@ -2346,7 +2346,7 @@ async function initNotesEditor() {
         import('https://esm.sh/prosemirror-schema-list@1.3.0')
       ]);
 
-      const { EditorState } = statePkg;
+      const { EditorState, Plugin } = statePkg;
       const { EditorView } = viewPkg;
       const { schema, defaultMarkdownParser, defaultMarkdownSerializer } = markdownPkg;
       const { keymap } = keymapPkg;
@@ -2360,6 +2360,19 @@ async function initNotesEditor() {
       notesMarkdownSerializer = defaultMarkdownSerializer;
 
       const plugins = [
+        new Plugin({
+          appendTransaction(transactions, oldState, newState) {
+            if (!transactions.some(tr => tr.docChanged)) return null;
+            if (oldState.doc.textContent.trim()) return null;
+            if (newState.doc.childCount !== 1) return null;
+            const first = newState.doc.firstChild;
+            if (!first) return null;
+            if (!newState.schema.nodes.heading || !newState.schema.nodes.paragraph) return null;
+            if (first.type !== newState.schema.nodes.heading) return null;
+            const replacement = newState.schema.nodes.paragraph.create(null, first.content);
+            return newState.tr.replaceWith(0, newState.doc.content.size, replacement);
+          }
+        }),
         history(),
         keymap({
           'Mod-z': undo,
