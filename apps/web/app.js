@@ -2363,6 +2363,21 @@ async function initNotesEditor() {
       notesMarkdownParser = defaultMarkdownParser;
       notesMarkdownSerializer = defaultMarkdownSerializer;
 
+      const keyBindings = {
+        ...baseKeymap,
+        'Mod-z': undo,
+        'Shift-Mod-z': redo,
+        'Mod-y': redo,
+        'Mod-b': toggleMark(notesSchema.marks.strong),
+        'Mod-i': toggleMark(notesSchema.marks.em),
+        'Mod-`': toggleMark(notesSchema.marks.code)
+      };
+
+      if (notesSchema.nodes.list_item) {
+        keyBindings.Tab = sinkListItem(notesSchema.nodes.list_item);
+        keyBindings['Shift-Tab'] = liftListItem(notesSchema.nodes.list_item);
+      }
+
       const plugins = [
         new Plugin({
           appendTransaction(transactions, oldState, newState) {
@@ -2378,24 +2393,8 @@ async function initNotesEditor() {
           }
         }),
         history(),
-        keymap({
-          'Mod-z': undo,
-          'Shift-Mod-z': redo,
-          'Mod-y': redo,
-          'Mod-b': toggleMark(notesSchema.marks.strong),
-          'Mod-i': toggleMark(notesSchema.marks.em),
-          'Mod-`': toggleMark(notesSchema.marks.code)
-        })
+        keymap(keyBindings)
       ];
-
-      if (notesSchema.nodes.list_item) {
-        plugins.push(keymap({
-          Tab: sinkListItem(notesSchema.nodes.list_item),
-          'Shift-Tab': liftListItem(notesSchema.nodes.list_item)
-        }));
-      }
-
-      plugins.push(keymap(baseKeymap));
 
       notesEditorPlugins = plugins;
 
