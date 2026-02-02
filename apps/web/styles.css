@@ -1,4 +1,5 @@
 :root {
+  --ui-scale: 0.8;
   --bg: #0f1216;
   --panel: #1a1f27;
   --text: #f5f7fb;
@@ -8,6 +9,19 @@
 }
 
 * { box-sizing: border-box; }
+
+html {
+  zoom: var(--ui-scale);
+}
+
+@supports not (zoom: 1) {
+  body {
+    transform: scale(var(--ui-scale));
+    transform-origin: 0 0;
+    width: calc(100% / var(--ui-scale));
+    min-height: calc(100% / var(--ui-scale));
+  }
+}
 
 body {
   margin: 0;
