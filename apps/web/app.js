@@ -295,6 +295,7 @@ document.addEventListener('click', (event) => {
   if (!(target instanceof Element)) return;
   if (target.closest('#task-editor')) return;
   if (target.closest('.modal')) return;
+  if (target.closest('.task-item') || target.closest('.kanban-card')) return;
   closeTaskEditor();
 });
 
