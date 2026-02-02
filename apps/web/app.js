@@ -4544,7 +4544,6 @@ function renderTask(task) {
   const statusTag = node.querySelector('.task-status-tag');
   const typeBadge = node.querySelector('.task-type-badge');
   const toggleBtn = node.querySelector('.task-toggle');
-  const editBtn = node.querySelector('.edit-task');
   const completeButton = node.querySelector('.task-complete-button');
   const menuButton = node.querySelector('.task-menu-button');
   const menu = node.querySelector('.task-menu');
@@ -4683,6 +4682,9 @@ function renderTask(task) {
         });
         render();
       }
+      if (action === 'edit') {
+        openTaskEditor(task.id);
+      }
       if (action === 'start-template') {
         const template = (state.templates ?? []).find(t => t.id === task.template_id);
         if (template) {
@@ -4724,10 +4726,6 @@ function renderTask(task) {
     } else {
       item.classList.add('hidden');
     }
-  });
-
-  editBtn.addEventListener('click', () => {
-    openTaskEditor(task.id);
   });
 
   task.children.forEach(child => childrenEl.appendChild(renderTask(child)));
