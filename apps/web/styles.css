@@ -1481,8 +1481,9 @@ button:hover { opacity: 0.9; }
   position: fixed;
   top: 0;
   right: 0;
+  bottom: 0;
   width: min(820px, 96vw);
-  height: 100vh;
+  height: 100dvh;
   background: var(--panel);
   border-left: 1px solid var(--border);
   padding: 1.5rem;
