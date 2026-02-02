@@ -292,6 +292,10 @@ let notesEditorPlugins = [];
 let notesMode = notesEditorWrapper?.classList.contains('is-markdown') ? 'markdown' : 'rich';
 let notesEditorInitPromise = null;
 let pendingNotesContent = '';
+let taskEditorAutosaveTimer = null;
+let taskEditorAutosaveInFlight = false;
+let taskEditorAutosaveQueued = false;
+let isPopulatingTaskEditor = false;
 let undoToastTimer = null;
 let undoToastEl = null;
 
@@ -1057,6 +1061,9 @@ function setRecurrenceState(context, interval, unit) {
     editorRecurrence = { interval: nextInterval, unit: nextUnit };
     if (editorRecurringSummary) {
       editorRecurringSummary.textContent = formatRecurrence(nextInterval, nextUnit);
+    }
+    if (!isPopulatingTaskEditor) {
+      scheduleTaskEditorAutosave('recurrence', 400);
     }
   } else {
     modalRecurrence = { interval: nextInterval, unit: nextUnit };
@@ -2234,6 +2241,130 @@ function setNotesMode(mode) {
   updateNotesToolbarState();
 }
 
+function buildTaskEditorPatch(task) {
+  if (!task) return { patch: null, parentChanged: false };
+  const titleInput = editorTitle?.value.trim() ?? '';
+  const title = titleInput || task.title;
+  const nextStatus = editorStatus?.value ?? task.status ?? getDefaultStatusKey();
+  const nextParentId = editorParent?.value || null;
+  const description = getNotesContent();
+  const typeLabel = editorType?.value ? editorType.value.trim() : null;
+  const recurrence = editorRecurrence ?? { interval: null, unit: null };
+  const reminderValue = parseInt(editorReminder?.value ?? '', 10);
+  const reminder = Number.isFinite(reminderValue) ? reminderValue : null;
+  const startAt = fromDatetimeLocal(editorStart?.value ?? '');
+  const dueAt = fromDatetimeLocal(editorDue?.value ?? '');
+  const projectId = editorProject?.value || null;
+  const priority = editorPriority?.value ?? task.priority ?? 'medium';
+
+  const patch = {};
+  if (title && title !== task.title) patch.title = title;
+  if (description !== (task.description_md ?? '')) patch.description_md = description;
+  if ((typeLabel ?? null) !== (task.type_label ?? null)) patch.type_label = typeLabel;
+  if (priority !== (task.priority ?? 'medium')) patch.priority = priority;
+  if ((projectId ?? null) !== (task.project_id ?? null)) patch.project_id = projectId;
+  if ((recurrence.interval ?? null) !== (task.recurrence_interval ?? null)) {
+    patch.recurrence_interval = recurrence.interval ?? null;
+  }
+  const nextRecurrenceUnit = recurrence.interval ? recurrence.unit : null;
+  if ((nextRecurrenceUnit ?? null) !== (task.recurrence_unit ?? null)) {
+    patch.recurrence_unit = nextRecurrenceUnit ?? null;
+  }
+  if ((reminder ?? null) !== (task.reminder_offset_days ?? null)) patch.reminder_offset_days = reminder;
+  if ((startAt ?? null) !== (task.start_at ?? null)) patch.start_at = startAt;
+  if ((dueAt ?? null) !== (task.due_at ?? null)) patch.due_at = dueAt;
+  if (nextStatus !== (task.status ?? getDefaultStatusKey())) patch.status = nextStatus;
+
+  const wasWaiting = isWaitingStatusKey(task.status ?? getDefaultStatusKey());
+  if (isWaitingStatusKey(nextStatus)) {
+    const followupAt = fromDatetimeLocal(editorFollowup?.value ?? '');
+    patch.waiting_followup_at = followupAt;
+    if (followupAt) {
+      patch.next_checkin_at = followupAt;
+    } else {
+      const withFollowup = applyWaitingFollowup({ ...task, status: TaskStatus.WAITING }, new Date());
+      patch.next_checkin_at = withFollowup.next_checkin_at;
+    }
+  } else if (wasWaiting) {
+    patch.waiting_followup_at = null;
+    if (task.waiting_followup_at && task.next_checkin_at === task.waiting_followup_at) {
+      patch.next_checkin_at = null;
+    }
+  }
+
+  if (patch.status) {
+    if (isDoneStatusKey(nextStatus)) {
+      patch.completed_at = task.completed_at ?? nowIso();
+    } else {
+      patch.completed_at = null;
+    }
+  }
+
+  const parentChanged = (task.parent_id ?? null) !== (nextParentId ?? null);
+  if (parentChanged) {
+    patch.sort_order = getNextTaskSortOrder(nextParentId, nextParentId ? null : nextStatus);
+  }
+
+  if (!Object.keys(patch).length && !parentChanged) {
+    return { patch: null, parentChanged: false };
+  }
+  return { patch, parentChanged, nextParentId, nextStatus };
+}
+
+async function performTaskEditorAutosave(options = {}) {
+  const { force = false, taskId = activeTaskId } = options;
+  if (!taskId) return;
+  if (!force && !taskEditor?.classList.contains('is-open')) return;
+  if (taskEditorAutosaveInFlight) {
+    taskEditorAutosaveQueued = true;
+    return;
+  }
+  taskEditorAutosaveInFlight = true;
+  try {
+    const task = state.tasks[taskId];
+    if (!task) return;
+    const { patch, parentChanged, nextParentId, nextStatus } = buildTaskEditorPatch(task);
+    if (!patch && !parentChanged) return;
+    if (parentChanged) {
+      try {
+        await reparentTaskRecord(task.id, nextParentId);
+      } catch (err) {
+        alert(err?.message ?? 'Unable to move task.');
+        return;
+      }
+    }
+    if (patch) {
+      const updated = await updateTaskRecord(task.id, patch);
+      const statusChanged = patch.status && patch.status !== task.status;
+      if (statusChanged && isDoneStatusKey(nextStatus)) {
+        await maybeCreateRecurringTask(updated ?? state.tasks[task.id]);
+        await maybePromptCompleteParent(task.id);
+      }
+    }
+    if (!taskEditor?.contains(document.activeElement)) {
+      render();
+    }
+  } finally {
+    taskEditorAutosaveInFlight = false;
+    if (taskEditorAutosaveQueued) {
+      taskEditorAutosaveQueued = false;
+      scheduleTaskEditorAutosave('queued', 200);
+    }
+  }
+}
+
+function scheduleTaskEditorAutosave(reason = 'change', delay = 600) {
+  if (!activeTaskId || !taskEditor?.classList.contains('is-open')) return;
+  if (isPopulatingTaskEditor) return;
+  if (taskEditorAutosaveTimer) {
+    clearTimeout(taskEditorAutosaveTimer);
+  }
+  taskEditorAutosaveTimer = setTimeout(() => {
+    taskEditorAutosaveTimer = null;
+    performTaskEditorAutosave();
+  }, delay);
+}
+
 let notesToolbarBound = false;
 
 function bindNotesToolbar(commands) {
@@ -2390,6 +2521,17 @@ async function initNotesEditor() {
             if (first.type !== newState.schema.nodes.heading) return null;
             const replacement = newState.schema.nodes.paragraph.create(null, first.content);
             return newState.tr.replaceWith(0, newState.doc.content.size, replacement);
+          }
+        }),
+        new Plugin({
+          view() {
+            return {
+              update(view, prevState) {
+                if (notesMode === 'markdown') return;
+                if (prevState.doc.eq(view.state.doc)) return;
+                scheduleTaskEditorAutosave('notes', 700);
+              }
+            };
           }
         }),
         history(),
@@ -5180,23 +5322,28 @@ function closeShoppingItemModal() {
 
 function populateTaskEditor(task) {
   if (!task) return;
-  editorTitle.value = task.title ?? '';
-  populateTaskTypeSelect(editorType, task.type_label ?? '');
-  editorPriority.value = task.priority ?? 'medium';
-  populateProjectSelect(editorProject, task.project_id ?? '', true);
-  populateParentSelect(editorParent, task.id, task.parent_id ?? null);
-  setRecurrenceState('editor', task.recurrence_interval ?? null, task.recurrence_unit ?? 'month');
-  editorReminder.value = task.reminder_offset_days ?? '';
-  populateStatusSelect(editorStatus, task.status ?? getDefaultStatusKey());
-  updateEditorFollowupVisibility(editorStatus.value);
-  const followupValue = task.waiting_followup_at ?? task.next_checkin_at ?? null;
-  setEditorFollowupValue(followupValue);
-  editorStart.value = toDatetimeLocal(task.start_at);
-  editorDue.value = toDatetimeLocal(task.due_at);
-  setNotesContent(task.description_md ?? '');
-  renderTaskEditorSubtasks(task);
-  renderTaskEditorDependencies(task);
-  populateDependencySelect(task);
+  isPopulatingTaskEditor = true;
+  try {
+    editorTitle.value = task.title ?? '';
+    populateTaskTypeSelect(editorType, task.type_label ?? '');
+    editorPriority.value = task.priority ?? 'medium';
+    populateProjectSelect(editorProject, task.project_id ?? '', true);
+    populateParentSelect(editorParent, task.id, task.parent_id ?? null);
+    setRecurrenceState('editor', task.recurrence_interval ?? null, task.recurrence_unit ?? 'month');
+    editorReminder.value = task.reminder_offset_days ?? '';
+    populateStatusSelect(editorStatus, task.status ?? getDefaultStatusKey());
+    updateEditorFollowupVisibility(editorStatus.value);
+    const followupValue = task.waiting_followup_at ?? task.next_checkin_at ?? null;
+    setEditorFollowupValue(followupValue);
+    editorStart.value = toDatetimeLocal(task.start_at);
+    editorDue.value = toDatetimeLocal(task.due_at);
+    setNotesContent(task.description_md ?? '');
+    renderTaskEditorSubtasks(task);
+    renderTaskEditorDependencies(task);
+    populateDependencySelect(task);
+  } finally {
+    isPopulatingTaskEditor = false;
+  }
 }
 
 function renderTaskEditorSubtasks(task) {
@@ -5295,6 +5442,11 @@ function openTaskEditor(taskId) {
   if (!task) return;
   const isOpen = taskEditor.classList.contains('is-open');
   if (isOpen && activeTaskId && activeTaskId !== taskId) {
+    if (taskEditorAutosaveTimer) {
+      clearTimeout(taskEditorAutosaveTimer);
+      taskEditorAutosaveTimer = null;
+    }
+    void performTaskEditorAutosave({ force: true, taskId: activeTaskId });
     if (taskEditorSwapTimer) clearTimeout(taskEditorSwapTimer);
     taskEditor.classList.remove('is-open');
     taskEditorSwapTimer = setTimeout(() => {
@@ -5315,6 +5467,13 @@ function openTaskEditor(taskId) {
 }
 
 function closeTaskEditor() {
+  if (taskEditorAutosaveTimer) {
+    clearTimeout(taskEditorAutosaveTimer);
+    taskEditorAutosaveTimer = null;
+  }
+  if (activeTaskId) {
+    void performTaskEditorAutosave({ force: true, taskId: activeTaskId });
+  }
   taskEditor.classList.remove('is-open');
   if (taskEditorSwapTimer) {
     clearTimeout(taskEditorSwapTimer);
@@ -5802,24 +5961,40 @@ storeRulesModal?.querySelector('.modal-backdrop')?.addEventListener('click', clo
 
 editorCancel?.addEventListener('click', closeTaskEditor);
 editorClose?.addEventListener('click', closeTaskEditor);
+editorTitle?.addEventListener('input', () => scheduleTaskEditorAutosave('title', 700));
+editorTitle?.addEventListener('blur', () => scheduleTaskEditorAutosave('title-blur', 200));
+editorType?.addEventListener('change', () => scheduleTaskEditorAutosave('type', 300));
+editorPriority?.addEventListener('change', () => scheduleTaskEditorAutosave('priority', 300));
+editorProject?.addEventListener('change', () => scheduleTaskEditorAutosave('project', 300));
+editorParent?.addEventListener('change', () => scheduleTaskEditorAutosave('parent', 300));
+editorReminder?.addEventListener('input', () => scheduleTaskEditorAutosave('reminder', 500));
+editorReminder?.addEventListener('change', () => scheduleTaskEditorAutosave('reminder', 300));
+editorStart?.addEventListener('change', () => scheduleTaskEditorAutosave('start', 300));
+editorDue?.addEventListener('change', () => scheduleTaskEditorAutosave('due', 300));
+editorFollowup?.addEventListener('change', () => scheduleTaskEditorAutosave('followup', 300));
+editorDesc?.addEventListener('input', () => scheduleTaskEditorAutosave('notes', 700));
 editorStatus?.addEventListener('change', () => {
   updateEditorFollowupVisibility(editorStatus.value);
   if (isWaitingStatusKey(editorStatus.value) && editorFollowup && !editorFollowup.value) {
     const next = addInterval(new Date(), 3, 'day');
     editorFollowup.value = toDatetimeLocal(next.toISOString());
   }
+  scheduleTaskEditorAutosave('status', 300);
 });
 editorFollowupNow?.addEventListener('click', () => {
   ensureEditorWaitingStatus();
   setEditorFollowupValue(new Date().toISOString());
+  scheduleTaskEditorAutosave('followup-now', 300);
 });
 editorFollowupSnooze?.addEventListener('click', () => {
   ensureEditorWaitingStatus();
   const next = addInterval(new Date(), 3, 'day');
   setEditorFollowupValue(next.toISOString());
+  scheduleTaskEditorAutosave('followup-snooze', 300);
 });
 editorFollowupClear?.addEventListener('click', () => {
   if (editorFollowup) editorFollowup.value = '';
+  scheduleTaskEditorAutosave('followup-clear', 300);
 });
 editorAddDependencyBtn?.addEventListener('click', async () => {
   if (!activeTaskId || !editorDependencySelect) return;
