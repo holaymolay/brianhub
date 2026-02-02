@@ -2158,6 +2158,14 @@ function initNotesEditor() {
   notesEditor.on('change', () => {
     if (editorDesc) editorDesc.value = notesEditor.getMarkdown();
   });
+  const closeToastDropdowns = () => {
+    document.querySelectorAll('.toastui-editor-dropdown-toolbar.show').forEach(dropdown => {
+      dropdown.classList.remove('show');
+    });
+    document.querySelectorAll('.toastui-editor-popup').forEach(popup => {
+      popup.style.display = 'none';
+    });
+  };
   document.addEventListener('click', (event) => {
     if (!notesEditor) return;
     const target = event.target;
@@ -2165,9 +2173,24 @@ function initNotesEditor() {
     if (target.closest('.toastui-editor-toolbar')) return;
     if (target.closest('.toastui-editor-dropdown-toolbar')) return;
     if (target.closest('.toastui-editor-popup')) return;
-    document.querySelectorAll('.toastui-editor-dropdown-toolbar.show').forEach(dropdown => {
-      dropdown.classList.remove('show');
-    });
+    closeToastDropdowns();
+  });
+  editorNotesContainer.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('.toastui-editor-toolbar')) return;
+    if (target.closest('.toastui-editor-dropdown-toolbar')) return;
+    if (target.closest('.toastui-editor-popup')) return;
+    if (target.closest('.toastui-editor-contents')) {
+      closeToastDropdowns();
+    }
+  });
+  editorNotesContainer.addEventListener('keydown', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('.toastui-editor-contents')) {
+      closeToastDropdowns();
+    }
   });
 }
 
