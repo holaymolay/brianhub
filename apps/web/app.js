@@ -2158,6 +2158,17 @@ function initNotesEditor() {
   notesEditor.on('change', () => {
     if (editorDesc) editorDesc.value = notesEditor.getMarkdown();
   });
+  document.addEventListener('click', (event) => {
+    if (!notesEditor) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('.toastui-editor-toolbar')) return;
+    if (target.closest('.toastui-editor-dropdown-toolbar')) return;
+    if (target.closest('.toastui-editor-popup')) return;
+    document.querySelectorAll('.toastui-editor-dropdown-toolbar.show').forEach(dropdown => {
+      dropdown.classList.remove('show');
+    });
+  });
 }
 
 function parseStoreAndDateFromTitle(title) {
