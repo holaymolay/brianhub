@@ -18,7 +18,9 @@ function defaultState() {
       showArchivedShoppingLists: false,
       taskView: 'list',
       syncCursor: 0,
-      checkinExtendMinutes: 60
+      checkinExtendMinutes: 60,
+      selectedTaskIds: [],
+      bulkUndoStack: []
     }
   };
 }
@@ -50,6 +52,8 @@ function normalizeState(state) {
   if (!('taskView' in next.ui)) next.ui.taskView = 'list';
   if (!('syncCursor' in next.ui)) next.ui.syncCursor = 0;
   if (!('checkinExtendMinutes' in next.ui)) next.ui.checkinExtendMinutes = 60;
+  if (!Array.isArray(next.ui.selectedTaskIds)) next.ui.selectedTaskIds = [];
+  if (!Array.isArray(next.ui.bulkUndoStack)) next.ui.bulkUndoStack = [];
   return next;
 }
 

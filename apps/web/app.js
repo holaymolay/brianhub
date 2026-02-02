@@ -51,6 +51,14 @@ const taskSortButton = document.getElementById('task-sort-button');
 const taskSortMenu = document.getElementById('task-sort-menu');
 const taskViewSelect = document.getElementById('task-view-select');
 const taskColumnsButton = document.getElementById('task-columns-button');
+const taskBulkBar = document.getElementById('task-bulk-bar');
+const taskBulkCount = document.getElementById('task-bulk-count');
+const taskBulkEditBtn = document.getElementById('task-bulk-edit');
+const taskBulkDeleteBtn = document.getElementById('task-bulk-delete');
+const taskBulkClearBtn = document.getElementById('task-bulk-clear');
+const taskBulkUndoButton = document.getElementById('task-bulk-undo-button');
+const taskBulkUndoMenu = document.getElementById('task-bulk-undo-menu');
+const taskContextMenu = document.getElementById('task-context-menu');
 const taskColumnsModal = document.getElementById('task-columns-modal');
 const taskColumnsList = document.getElementById('task-columns-list');
 const taskColumnName = document.getElementById('task-column-name');
@@ -261,6 +269,24 @@ const templatePromptText = document.getElementById('template-prompt-text');
 const templatePromptStart = document.getElementById('template-prompt-start');
 const templatePromptDefer = document.getElementById('template-prompt-defer');
 const templatePromptDismiss = document.getElementById('template-prompt-dismiss');
+const bulkEditModal = document.getElementById('bulk-edit-modal');
+const bulkEditForm = document.getElementById('bulk-edit-form');
+const bulkEditCount = document.getElementById('bulk-edit-count');
+const bulkEditApplyStatus = document.getElementById('bulk-edit-apply-status');
+const bulkEditStatus = document.getElementById('bulk-edit-status');
+const bulkEditApplyPriority = document.getElementById('bulk-edit-apply-priority');
+const bulkEditPriority = document.getElementById('bulk-edit-priority');
+const bulkEditApplyProject = document.getElementById('bulk-edit-apply-project');
+const bulkEditProject = document.getElementById('bulk-edit-project');
+const bulkEditApplyType = document.getElementById('bulk-edit-apply-type');
+const bulkEditType = document.getElementById('bulk-edit-type');
+const bulkEditApplyStart = document.getElementById('bulk-edit-apply-start');
+const bulkEditStart = document.getElementById('bulk-edit-start');
+const bulkEditApplyDue = document.getElementById('bulk-edit-apply-due');
+const bulkEditDue = document.getElementById('bulk-edit-due');
+const bulkEditApplyReminder = document.getElementById('bulk-edit-apply-reminder');
+const bulkEditReminder = document.getElementById('bulk-edit-reminder');
+const bulkEditCancel = document.getElementById('bulk-edit-cancel');
 let openMenu = null;
 let editingTemplateId = null;
 let activeTaskId = null;
@@ -303,6 +329,15 @@ document.addEventListener('click', () => {
   if (openMenu) {
     openMenu.classList.add('hidden');
     openMenu = null;
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const hasSelection = getSelectedTaskIds().length > 0;
+  const modalOpen = Boolean(document.querySelector('.modal:not(.hidden)'));
+  if (hasSelection && !modalOpen) {
+    clearSelectedTasks();
   }
 });
 
@@ -2365,6 +2400,106 @@ function scheduleTaskEditorAutosave(reason = 'change', delay = 600) {
   }, delay);
 }
 
+function getSelectedTaskIds() {
+  return Array.isArray(state.ui?.selectedTaskIds) ? state.ui.selectedTaskIds : [];
+}
+
+function setSelectedTaskIds(ids) {
+  state.ui = state.ui ?? {};
+  const validIds = (ids ?? []).filter(id => state.tasks?.[id]);
+  state.ui.selectedTaskIds = Array.from(new Set(validIds));
+  render();
+}
+
+function clearSelectedTasks() {
+  setSelectedTaskIds([]);
+}
+
+function isTaskSelected(taskId) {
+  return getSelectedTaskIds().includes(taskId);
+}
+
+function renderBulkSelectionBar() {
+  if (!taskBulkBar || !taskBulkCount) return;
+  const selected = getSelectedTaskIds();
+  const hasHistory = getBulkUndoStack().length > 0;
+  if (!selected.length && !hasHistory) {
+    taskBulkBar.classList.add('hidden');
+    return;
+  }
+  taskBulkCount.textContent = selected.length ? `${selected.length} selected` : 'No selection';
+  taskBulkBar.classList.remove('hidden');
+  if (taskBulkEditBtn) taskBulkEditBtn.disabled = !selected.length;
+  if (taskBulkDeleteBtn) taskBulkDeleteBtn.disabled = !selected.length;
+  if (taskBulkClearBtn) taskBulkClearBtn.disabled = !selected.length;
+  renderBulkUndoMenu();
+}
+
+function getBulkUndoStack() {
+  return Array.isArray(state.ui?.bulkUndoStack) ? state.ui.bulkUndoStack : [];
+}
+
+function pushBulkUndo(entry) {
+  state.ui = state.ui ?? {};
+  const stack = getBulkUndoStack();
+  const next = [entry, ...stack];
+  state.ui.bulkUndoStack = next.slice(0, 50);
+  renderBulkUndoMenu();
+}
+
+function removeBulkUndoEntry(entryId) {
+  state.ui = state.ui ?? {};
+  state.ui.bulkUndoStack = getBulkUndoStack().filter(entry => entry.id !== entryId);
+  renderBulkUndoMenu();
+}
+
+function renderBulkUndoMenu() {
+  if (!taskBulkUndoMenu) return;
+  const stack = getBulkUndoStack();
+  taskBulkUndoMenu.innerHTML = '';
+  if (!stack.length) {
+    const empty = document.createElement('div');
+    empty.className = 'workspace-menu-item';
+    empty.textContent = 'No bulk history';
+    empty.disabled = true;
+    taskBulkUndoMenu.appendChild(empty);
+    return;
+  }
+  stack.forEach(entry => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'workspace-menu-item';
+    const timestamp = entry.created_at ? new Date(entry.created_at) : null;
+    const timeLabel = timestamp && !Number.isNaN(timestamp.getTime())
+      ? ` · ${timestamp.toLocaleString()}`
+      : '';
+    button.textContent = `${entry.label}${timeLabel}`;
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await undoBulkAction(entry.id);
+      taskBulkUndoMenu.classList.add('hidden');
+      openMenu = null;
+    });
+    taskBulkUndoMenu.appendChild(button);
+  });
+}
+
+async function undoBulkAction(entryId) {
+  const stack = getBulkUndoStack();
+  const entry = stack.find(item => item.id === entryId);
+  if (!entry) return;
+  if (entry.kind === 'edit') {
+    for (const snapshot of entry.tasks) {
+      if (!state.tasks[snapshot.id]) continue;
+      await updateTaskRecord(snapshot.id, snapshot.before);
+    }
+  } else if (entry.kind === 'delete') {
+    await restoreTasksFromSnapshots(entry.tasks);
+  }
+  removeBulkUndoEntry(entryId);
+  render();
+}
+
 let notesToolbarBound = false;
 
 function bindNotesToolbar(commands) {
@@ -3043,6 +3178,12 @@ function getTaskSortComparator() {
 }
 
 function render() {
+  const currentSelected = getSelectedTaskIds();
+  const validSelected = currentSelected.filter(id => state.tasks?.[id]);
+  if (validSelected.length !== currentSelected.length) {
+    state.ui = state.ui ?? {};
+    state.ui.selectedTaskIds = validSelected;
+  }
   renderWorkspaceList();
   renderAccountMenu();
   renderProjectList();
@@ -3060,6 +3201,7 @@ function render() {
   renderNoticeFilter();
   renderNoticeSort();
   renderTaskViewToggle();
+  renderBulkSelectionBar();
   if (activeTaskId && !state.tasks[activeTaskId]) {
     closeTaskEditor();
   }
@@ -4569,9 +4711,28 @@ function renderKanban(roots) {
 function renderKanbanCard(task) {
   const card = document.createElement('div');
   card.className = 'kanban-card' + (isDoneStatusKey(task.status) ? ' completed' : '');
+  card.classList.toggle('is-selected', isTaskSelected(task.id));
+  card.addEventListener('click', (event) => {
+    if (suppressTaskClick) return;
+    if (event.button !== 0) return;
+    const selected = getSelectedTaskIds();
+    if (!selected.length) return;
+    event.preventDefault();
+    if (!selected.includes(task.id)) {
+      setSelectedTaskIds([...selected, task.id]);
+    } else if (event.metaKey || event.ctrlKey) {
+      setSelectedTaskIds(selected.filter(id => id !== task.id));
+    }
+  });
   card.addEventListener('dblclick', () => {
     if (suppressTaskClick) return;
+    if (getSelectedTaskIds().length) return;
     openTaskEditor(task.id);
+  });
+  card.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showTaskContextMenu(task.id, event.clientX, event.clientY);
   });
   attachKanbanDragHandlers(card, task);
 
@@ -4780,6 +4941,7 @@ function renderTask(task) {
   titleEl.textContent = task.title;
   item.dataset.status = statusKey;
   attachTaskDragHandlers(item, task);
+  item.classList.toggle('is-selected', isTaskSelected(task.id));
   item.style.borderLeft = `3px solid ${getStatusColor(statusKey)}`;
   if (statusTag) {
     statusTag.textContent = getStatusLabel(statusKey);
@@ -4812,10 +4974,32 @@ function renderTask(task) {
     item.classList.add('completed');
   }
 
+  item.addEventListener('click', (event) => {
+    if (suppressTaskClick) return;
+    if (event.button !== 0) return;
+    if (event.target.closest('button')) return;
+    if (event.target.closest('.task-drag-handle')) return;
+    const selected = getSelectedTaskIds();
+    if (!selected.length) return;
+    event.preventDefault();
+    if (!selected.includes(task.id)) {
+      setSelectedTaskIds([...selected, task.id]);
+    } else if (event.metaKey || event.ctrlKey) {
+      setSelectedTaskIds(selected.filter(id => id !== task.id));
+    }
+  });
+
   item.addEventListener('dblclick', (event) => {
     if (suppressTaskClick) return;
     if (event.target.closest('button')) return;
+    if (getSelectedTaskIds().length) return;
     openTaskEditor(task.id);
+  });
+
+  item.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showTaskContextMenu(task.id, event.clientX, event.clientY);
   });
 
   if (hasChildren) {
@@ -5031,6 +5215,89 @@ function getDescendants(taskId) {
   return descendants;
 }
 
+function getRootTaskIds(taskIds) {
+  const ids = new Set(taskIds);
+  const descendants = new Set();
+  taskIds.forEach(id => {
+    getDescendants(id).forEach(task => descendants.add(task.id));
+  });
+  return taskIds.filter(id => !descendants.has(id));
+}
+
+function collectTaskSnapshots(taskIds) {
+  const snapshots = [];
+  const seen = new Set();
+  taskIds.forEach(id => {
+    const task = state.tasks[id];
+    if (!task) return;
+    if (!seen.has(task.id)) {
+      snapshots.push({ ...task });
+      seen.add(task.id);
+    }
+    getDescendants(id).forEach(desc => {
+      if (seen.has(desc.id)) return;
+      snapshots.push({ ...desc });
+      seen.add(desc.id);
+    });
+  });
+  return snapshots;
+}
+
+async function restoreTasksFromSnapshots(snapshots) {
+  if (!snapshots.length) return;
+  const snapshotMap = new Map(snapshots.map(task => [task.id, task]));
+  const depthCache = new Map();
+  const getDepth = (taskId) => {
+    if (depthCache.has(taskId)) return depthCache.get(taskId);
+    const task = snapshotMap.get(taskId);
+    if (!task || !task.parent_id || !snapshotMap.has(task.parent_id)) {
+      depthCache.set(taskId, 0);
+      return 0;
+    }
+    const depth = getDepth(task.parent_id) + 1;
+    depthCache.set(taskId, depth);
+    return depth;
+  };
+  const sorted = [...snapshots].sort((a, b) => getDepth(a.id) - getDepth(b.id));
+  const idMap = new Map();
+  for (const task of sorted) {
+    const parentId = task.parent_id && idMap.has(task.parent_id) ? idMap.get(task.parent_id) : null;
+    const created = await createTaskRecord({
+      title: task.title,
+      description_md: task.description_md ?? '',
+      status: task.status ?? getDefaultStatusKey(),
+      priority: task.priority ?? 'medium',
+      type_label: task.type_label ?? null,
+      project_id: task.project_id ?? null,
+      parent_id: parentId,
+      recurrence_interval: task.recurrence_interval ?? null,
+      recurrence_unit: task.recurrence_unit ?? null,
+      reminder_offset_days: task.reminder_offset_days ?? null,
+      auto_debit: task.auto_debit ?? 0,
+      reminder_sent_at: task.reminder_sent_at ?? null,
+      recurrence_parent_id: task.recurrence_parent_id ?? null,
+      recurrence_generated_at: task.recurrence_generated_at ?? null,
+      template_id: task.template_id ?? null,
+      template_state: task.template_state ?? null,
+      template_event_date: task.template_event_date ?? null,
+      template_lead_days: task.template_lead_days ?? null,
+      template_defer_until: task.template_defer_until ?? null,
+      template_prompt_pending: task.template_prompt_pending ?? null,
+      start_at: task.start_at ?? null,
+      due_at: task.due_at ?? null,
+      waiting_followup_at: task.waiting_followup_at ?? null,
+      next_checkin_at: task.next_checkin_at ?? null,
+      sort_order: task.sort_order ?? null,
+      task_type: task.task_type ?? 'task'
+    });
+    if (!created) continue;
+    idMap.set(task.id, created.id);
+    if (task.completed_at) {
+      await updateTaskRecord(created.id, { completed_at: task.completed_at });
+    }
+  }
+}
+
 function hasIncompleteDescendants(taskId) {
   return getDescendants(taskId).some(task => !isDoneStatusKey(task.status));
 }
@@ -5162,6 +5429,235 @@ function openProfile() {
 
 function closeProfile() {
   profileModal?.classList.add('hidden');
+}
+
+function openBulkEditModal() {
+  if (!bulkEditModal) return;
+  const selected = getSelectedTaskIds();
+  if (!selected.length) return;
+  if (bulkEditCount) {
+    bulkEditCount.textContent = `${selected.length} task${selected.length > 1 ? 's' : ''} selected`;
+  }
+  if (bulkEditApplyStatus) bulkEditApplyStatus.checked = false;
+  if (bulkEditApplyPriority) bulkEditApplyPriority.checked = false;
+  if (bulkEditApplyProject) bulkEditApplyProject.checked = false;
+  if (bulkEditApplyType) bulkEditApplyType.checked = false;
+  if (bulkEditApplyStart) bulkEditApplyStart.checked = false;
+  if (bulkEditApplyDue) bulkEditApplyDue.checked = false;
+  if (bulkEditApplyReminder) bulkEditApplyReminder.checked = false;
+  populateStatusSelect(bulkEditStatus, getDefaultStatusKey());
+  populateProjectSelect(bulkEditProject, '', true);
+  populateTaskTypeSelect(bulkEditType, '');
+  if (bulkEditPriority) bulkEditPriority.value = 'medium';
+  if (bulkEditStart) bulkEditStart.value = '';
+  if (bulkEditDue) bulkEditDue.value = '';
+  if (bulkEditReminder) bulkEditReminder.value = '';
+  bulkEditModal.classList.remove('hidden');
+}
+
+function closeBulkEditModal() {
+  bulkEditModal?.classList.add('hidden');
+}
+
+function buildBulkEditTemplate() {
+  const template = {};
+  const fields = new Set();
+  if (bulkEditApplyStatus?.checked && bulkEditStatus?.value) {
+    template.status = bulkEditStatus.value;
+    fields.add('status');
+    fields.add('waiting_followup_at');
+    fields.add('next_checkin_at');
+    fields.add('completed_at');
+  }
+  if (bulkEditApplyPriority?.checked && bulkEditPriority?.value) {
+    template.priority = bulkEditPriority.value;
+    fields.add('priority');
+  }
+  if (bulkEditApplyProject?.checked) {
+    template.project_id = bulkEditProject?.value || null;
+    fields.add('project_id');
+  }
+  if (bulkEditApplyType?.checked) {
+    template.type_label = bulkEditType?.value || null;
+    fields.add('type_label');
+  }
+  if (bulkEditApplyStart?.checked) {
+    template.start_at = fromDatetimeLocal(bulkEditStart?.value ?? '');
+    fields.add('start_at');
+  }
+  if (bulkEditApplyDue?.checked) {
+    template.due_at = fromDatetimeLocal(bulkEditDue?.value ?? '');
+    fields.add('due_at');
+  }
+  if (bulkEditApplyReminder?.checked) {
+    const reminderValue = parseInt(bulkEditReminder?.value ?? '', 10);
+    template.reminder_offset_days = Number.isFinite(reminderValue) ? reminderValue : null;
+    fields.add('reminder_offset_days');
+  }
+  return { template, fields: Array.from(fields) };
+}
+
+function buildBulkUndoSnapshot(task, fields) {
+  const before = {};
+  fields.forEach(field => {
+    before[field] = task[field] ?? null;
+  });
+  return { id: task.id, before };
+}
+
+function buildBulkPatchForTask(task, template) {
+  const patch = { ...template };
+  if ('status' in template) {
+    const nextStatus = template.status;
+    if (isWaitingStatusKey(nextStatus)) {
+      if (!('waiting_followup_at' in patch)) {
+        const waitingTask = applyWaitingFollowup({ ...task, status: TaskStatus.WAITING }, new Date());
+        patch.next_checkin_at = waitingTask.next_checkin_at;
+      }
+    } else {
+      patch.waiting_followup_at = null;
+      if (task.waiting_followup_at && task.next_checkin_at === task.waiting_followup_at) {
+        patch.next_checkin_at = null;
+      }
+    }
+    if (isDoneStatusKey(nextStatus)) {
+      patch.completed_at = task.completed_at ?? nowIso();
+    } else {
+      patch.completed_at = null;
+    }
+  }
+  return patch;
+}
+
+async function applyBulkEdit() {
+  const selected = getSelectedTaskIds();
+  if (!selected.length) return;
+  const { template, fields } = buildBulkEditTemplate();
+  if (!Object.keys(template).length) {
+    closeBulkEditModal();
+    return;
+  }
+  const snapshots = [];
+  for (const taskId of selected) {
+    const task = state.tasks[taskId];
+    if (!task) continue;
+    snapshots.push(buildBulkUndoSnapshot(task, fields));
+    const patch = buildBulkPatchForTask(task, template);
+    await updateTaskRecord(task.id, patch);
+    if (patch.status && isDoneStatusKey(patch.status)) {
+      await maybeCreateRecurringTask(state.tasks[task.id]);
+      await maybePromptCompleteParent(task.id);
+    }
+  }
+  pushBulkUndo({
+    id: createId(),
+    kind: 'edit',
+    created_at: nowIso(),
+    label: `Bulk edit (${snapshots.length} task${snapshots.length > 1 ? 's' : ''})`,
+    tasks: snapshots
+  });
+  closeBulkEditModal();
+  render();
+}
+
+async function handleBulkDelete() {
+  const selected = getSelectedTaskIds();
+  if (!selected.length) return;
+  const roots = getRootTaskIds(selected);
+  const snapshots = collectTaskSnapshots(roots);
+  const confirmed = confirm(`Delete ${roots.length} task${roots.length > 1 ? 's' : ''} and all subtasks?`);
+  if (!confirmed) return;
+  for (const taskId of roots) {
+    await deleteTaskSubtree(taskId);
+  }
+  pushBulkUndo({
+    id: createId(),
+    kind: 'delete',
+    created_at: nowIso(),
+    label: `Bulk delete (${snapshots.length} task${snapshots.length > 1 ? 's' : ''})`,
+    tasks: snapshots
+  });
+  clearSelectedTasks();
+  render();
+}
+
+function showTaskContextMenu(taskId, x, y) {
+  if (!taskContextMenu) return;
+  if (openMenu && openMenu !== taskContextMenu) {
+    openMenu.classList.add('hidden');
+  }
+  const selected = getSelectedTaskIds();
+  const isSelected = selected.includes(taskId);
+  taskContextMenu.innerHTML = '';
+
+  const selectItem = document.createElement('button');
+  selectItem.type = 'button';
+  selectItem.className = 'workspace-menu-item';
+  selectItem.textContent = isSelected ? 'Deselect task' : 'Select task';
+  selectItem.addEventListener('click', () => {
+    if (isSelected) {
+      setSelectedTaskIds(selected.filter(id => id !== taskId));
+    } else {
+      setSelectedTaskIds([...selected, taskId]);
+    }
+    taskContextMenu.classList.add('hidden');
+    openMenu = null;
+  });
+  taskContextMenu.appendChild(selectItem);
+
+  const bulkEditItem = document.createElement('button');
+  bulkEditItem.type = 'button';
+  bulkEditItem.className = 'workspace-menu-item';
+  bulkEditItem.textContent = 'Bulk edit';
+  bulkEditItem.disabled = selected.length === 0 && !isSelected;
+  bulkEditItem.addEventListener('click', () => {
+    if (!selected.length) {
+      setSelectedTaskIds([taskId]);
+    } else if (!isSelected) {
+      setSelectedTaskIds([...selected, taskId]);
+    }
+    openBulkEditModal();
+    taskContextMenu.classList.add('hidden');
+    openMenu = null;
+  });
+  taskContextMenu.appendChild(bulkEditItem);
+
+  const bulkDeleteItem = document.createElement('button');
+  bulkDeleteItem.type = 'button';
+  bulkDeleteItem.className = 'workspace-menu-item';
+  bulkDeleteItem.textContent = 'Bulk delete';
+  bulkDeleteItem.disabled = selected.length === 0 && !isSelected;
+  bulkDeleteItem.addEventListener('click', async () => {
+    if (!selected.length) {
+      setSelectedTaskIds([taskId]);
+    } else if (!isSelected) {
+      setSelectedTaskIds([...selected, taskId]);
+    }
+    taskContextMenu.classList.add('hidden');
+    openMenu = null;
+    await handleBulkDelete();
+  });
+  taskContextMenu.appendChild(bulkDeleteItem);
+
+  const clearItem = document.createElement('button');
+  clearItem.type = 'button';
+  clearItem.className = 'workspace-menu-item';
+  clearItem.textContent = 'Clear selection';
+  clearItem.disabled = selected.length === 0;
+  clearItem.addEventListener('click', () => {
+    clearSelectedTasks();
+    taskContextMenu.classList.add('hidden');
+    openMenu = null;
+  });
+  taskContextMenu.appendChild(clearItem);
+
+  taskContextMenu.classList.remove('hidden');
+  openMenu = taskContextMenu;
+  const menuRect = taskContextMenu.getBoundingClientRect();
+  const nextLeft = Math.min(x, window.innerWidth - menuRect.width - 8);
+  const nextTop = Math.min(y, window.innerHeight - menuRect.height - 8);
+  taskContextMenu.style.left = `${Math.max(8, nextLeft)}px`;
+  taskContextMenu.style.top = `${Math.max(8, nextTop)}px`;
 }
 
 function openTaskTypesModal() {
@@ -5997,6 +6493,31 @@ editorFollowupSnooze?.addEventListener('click', () => {
 editorFollowupClear?.addEventListener('click', () => {
   if (editorFollowup) editorFollowup.value = '';
   scheduleTaskEditorAutosave('followup-clear', 300);
+});
+
+taskBulkEditBtn?.addEventListener('click', openBulkEditModal);
+taskBulkDeleteBtn?.addEventListener('click', handleBulkDelete);
+taskBulkClearBtn?.addEventListener('click', clearSelectedTasks);
+taskBulkUndoButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!taskBulkUndoMenu) return;
+  if (openMenu && openMenu !== taskBulkUndoMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (taskBulkUndoMenu.classList.contains('hidden')) {
+    taskBulkUndoMenu.classList.remove('hidden');
+    openMenu = taskBulkUndoMenu;
+  } else {
+    taskBulkUndoMenu.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+bulkEditCancel?.addEventListener('click', closeBulkEditModal);
+bulkEditModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeBulkEditModal);
+bulkEditForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await applyBulkEdit();
 });
 editorAddDependencyBtn?.addEventListener('click', async () => {
   if (!activeTaskId || !editorDependencySelect) return;

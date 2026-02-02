@@ -1783,6 +1783,67 @@ button:hover { opacity: 0.9; }
   flex-wrap: wrap;
 }
 
+.task-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0.35rem 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: #0f141c;
+}
+
+.task-bulk-count {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.task-bulk-undo {
+  position: relative;
+}
+
+.task-context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 180px;
+  padding: 0.35rem;
+}
+
+.task-item.is-selected {
+  background: rgba(79, 174, 255, 0.12);
+}
+
+.task-item.is-selected .task-row {
+  background: rgba(79, 174, 255, 0.08);
+}
+
+.kanban-card.is-selected {
+  border-color: rgba(79, 174, 255, 0.5);
+  box-shadow: 0 0 0 1px rgba(79, 174, 255, 0.35);
+}
+
+.bulk-edit-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.bulk-edit-field {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6rem;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.bulk-edit-field span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .inline {
   display: inline-flex;
   align-items: center;

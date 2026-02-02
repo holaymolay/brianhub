@@ -137,6 +137,16 @@
               <button id="task-columns-button" class="subtle-button" type="button" title="Add section">＋</button>
             </div>
             </div>
+            <div id="task-bulk-bar" class="task-bulk-bar hidden">
+              <span id="task-bulk-count" class="task-bulk-count">0 selected</span>
+              <button id="task-bulk-edit" class="subtle-button" type="button">Bulk edit</button>
+              <button id="task-bulk-delete" class="danger-button" type="button">Delete</button>
+              <div class="task-bulk-undo">
+                <button id="task-bulk-undo-button" class="subtle-button" type="button">Undo ▾</button>
+                <div id="task-bulk-undo-menu" class="workspace-menu hidden"></div>
+              </div>
+              <button id="task-bulk-clear" class="subtle-button" type="button">Clear</button>
+            </div>
             <div id="task-tree"></div>
           </section>
           <section id="shopping-page" class="shopping-panel hidden">
@@ -818,6 +828,55 @@
         </div>
       </div>
     </div>
+
+    <div id="bulk-edit-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Bulk edit tasks</h2>
+        <div id="bulk-edit-count" class="sidebar-note"></div>
+        <form id="bulk-edit-form" class="bulk-edit-form">
+          <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-status" type="checkbox" /> Status</span>
+            <select id="bulk-edit-status"></select>
+          </label>
+          <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-priority" type="checkbox" /> Priority</span>
+            <select id="bulk-edit-priority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </label>
+          <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-project" type="checkbox" /> Project</span>
+            <select id="bulk-edit-project"></select>
+          </label>
+          <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-type" type="checkbox" /> Type</span>
+            <select id="bulk-edit-type"></select>
+          </label>
+          <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-start" type="checkbox" /> Start date</span>
+            <input id="bulk-edit-start" type="datetime-local" />
+          </label>
+          <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-due" type="checkbox" /> Due date</span>
+            <input id="bulk-edit-due" type="datetime-local" />
+          </label>
+          <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-reminder" type="checkbox" /> Reminder (days before)</span>
+            <input id="bulk-edit-reminder" type="number" min="0" placeholder="0" />
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Apply changes</button>
+            <button id="bulk-edit-cancel" class="subtle-button" type="button">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="task-context-menu" class="workspace-menu task-context-menu hidden"></div>
 
     <script type="module" src="/apps/web/app.js"></script>
   </body>
