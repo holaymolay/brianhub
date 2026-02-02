@@ -1630,6 +1630,8 @@ button:hover { opacity: 0.9; }
 
 .editor-notes .toastui-editor-defaultUI {
   border: none;
+  background: #0f141c;
+  color: var(--text);
 }
 
 .editor-notes .toastui-editor-toolbar {
@@ -1638,6 +1640,7 @@ button:hover { opacity: 0.9; }
 }
 
 .editor-notes .toastui-editor-main,
+.editor-notes .toastui-editor-main-container,
 .editor-notes .toastui-editor-ww-container,
 .editor-notes .toastui-editor-md-container {
   background: #0f141c;
@@ -1660,6 +1663,19 @@ button:hover { opacity: 0.9; }
 
 .editor-notes .toastui-editor-main {
   overflow-x: hidden;
+}
+
+.editor-notes .toastui-editor-mode-switch {
+  background: #0f141c;
+  border-top: 1px solid var(--border);
+}
+
+.editor-notes .toastui-editor-mode-switch .tab-item {
+  color: var(--muted);
+}
+
+.editor-notes .toastui-editor-mode-switch .tab-item.active {
+  color: var(--text);
 }
 
 .task-editor-deps-list {
