@@ -1621,6 +1621,14 @@ button:hover { opacity: 0.9; }
   flex-direction: column;
 }
 
+.notes-editor.is-display .notes-toolbar {
+  display: none;
+}
+
+.notes-editor.is-display .editor-notes {
+  cursor: text;
+}
+
 .notes-toolbar {
   display: flex;
   justify-content: space-between;

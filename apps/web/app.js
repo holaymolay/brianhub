@@ -318,6 +318,10 @@ let notesEditorPlugins = [];
 let notesMode = notesEditorWrapper?.classList.contains('is-markdown') ? 'markdown' : 'rich';
 let notesEditorInitPromise = null;
 let pendingNotesContent = '';
+let notesDisplayMode = true;
+let notesPointerDown = false;
+let notesPointerMoved = false;
+let notesPointerStart = { x: 0, y: 0 };
 let taskEditorAutosaveTimer = null;
 let taskEditorAutosaveInFlight = false;
 let taskEditorAutosaveQueued = false;
@@ -2212,6 +2216,9 @@ function setNotesContent(value = '') {
   if (notesEditorView && notesMarkdownParser) {
     updateNotesEditorDoc(pendingNotesContent);
   }
+  if (notesMode === 'rich') {
+    setNotesDisplayMode(true);
+  }
 }
 
 function createNotesDocFromMarkdown(markdown) {
@@ -2275,8 +2282,22 @@ function updateNotesToolbarState() {
   notesFormatButtons.forEach(button => {
     const command = button.dataset.command;
     const available = isNotesCommandAvailable(command);
-    button.disabled = !available || notesMode === 'markdown' || !notesEditorView;
+    button.disabled = !available || notesMode === 'markdown' || !notesEditorView || notesDisplayMode;
   });
+}
+
+function setNotesDisplayMode(nextMode) {
+  const next = notesMode === 'markdown' ? false : Boolean(nextMode);
+  notesDisplayMode = next;
+  if (notesEditorWrapper) {
+    notesEditorWrapper.classList.toggle('is-display', notesDisplayMode);
+  }
+  if (notesEditorView) {
+    notesEditorView.setProps({
+      editable: () => !notesDisplayMode && notesMode === 'rich'
+    });
+  }
+  updateNotesToolbarState();
 }
 
 function setNotesMode(mode) {
@@ -2295,8 +2316,11 @@ function setNotesMode(mode) {
   }
   if (notesMode !== 'markdown' && notesEditorView && notesMarkdownParser) {
     updateNotesEditorDoc(editorDesc?.value ?? '');
-    notesEditorView.focus();
+    if (!notesDisplayMode) {
+      notesEditorView.focus();
+    }
   }
+  setNotesDisplayMode(notesMode !== 'markdown' ? notesDisplayMode : false);
   updateNotesToolbarState();
 }
 
@@ -2531,6 +2555,40 @@ function bindNotesToolbar(commands) {
   notesToolbarBound = true;
   const { toggleMark, setBlockType, wrapIn, wrapInList, lift } = commands;
 
+  editorNotesContainer?.addEventListener('mousedown', (event) => {
+    if (notesMode !== 'rich' || !notesDisplayMode) return;
+    if (event.button !== 0) return;
+    notesPointerDown = true;
+    notesPointerMoved = false;
+    notesPointerStart = { x: event.clientX, y: event.clientY };
+  });
+
+  editorNotesContainer?.addEventListener('mousemove', (event) => {
+    if (!notesPointerDown) return;
+    const deltaX = Math.abs(event.clientX - notesPointerStart.x);
+    const deltaY = Math.abs(event.clientY - notesPointerStart.y);
+    if (deltaX > 4 || deltaY > 4) {
+      notesPointerMoved = true;
+    }
+  });
+
+  document.addEventListener('mouseup', (event) => {
+    if (!notesPointerDown) return;
+    notesPointerDown = false;
+    if (notesMode !== 'rich' || !notesDisplayMode) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('a')) return;
+    const selection = window.getSelection();
+    const hasSelection = selection && !selection.isCollapsed && selection.toString().trim().length > 0;
+    if (notesPointerMoved || hasSelection) return;
+    if (target instanceof Element && target.closest('#editor-notes')) {
+      setNotesDisplayMode(false);
+      setTimeout(() => {
+        notesEditorView?.focus();
+      }, 0);
+    }
+  });
+
   notesModeButtons.forEach(button => {
     button.addEventListener('click', () => {
       const mode = button.dataset.mode || 'rich';
@@ -2744,6 +2802,7 @@ async function initNotesEditor() {
 
       bindNotesToolbar({ toggleMark, setBlockType, wrapIn, wrapInList, lift });
       setNotesMode(notesMode || 'rich');
+      setNotesDisplayMode(notesMode !== 'markdown');
       setNotesContent(markdown);
     } catch (err) {
       console.warn('Notes editor failed to load', err);
