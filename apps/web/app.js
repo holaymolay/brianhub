@@ -136,8 +136,20 @@ const templateRepeatInterval = document.getElementById('template-repeat-interval
 const templateRepeatUnit = document.getElementById('template-repeat-unit');
 const templateCancel = document.getElementById('template-cancel');
 const templateProject = document.getElementById('template-project');
-const settingsButton = document.getElementById('settings-button');
-const settingsMenu = document.getElementById('settings-menu');
+const accountButton = document.getElementById('account-button');
+const accountMenu = document.getElementById('account-menu');
+const accountAvatar = document.getElementById('account-avatar');
+const accountListAvatar = document.getElementById('account-list-avatar');
+const accountListName = document.getElementById('account-list-name');
+const accountProfileAvatar = document.getElementById('account-profile-avatar');
+const accountProfileName = document.getElementById('account-profile-name');
+const accountProfileEmail = document.getElementById('account-profile-email');
+const accountNewWorkspace = document.getElementById('account-new-workspace');
+const accountAdd = document.getElementById('account-add');
+const accountLogout = document.getElementById('account-logout');
+const accountAdmin = document.getElementById('account-admin');
+const accountInvite = document.getElementById('account-invite');
+const accountUpgrade = document.getElementById('account-upgrade');
 const settingsOpen = document.getElementById('settings-open');
 const profileOpen = document.getElementById('profile-open');
 const settingsModal = document.getElementById('settings-modal');
@@ -264,22 +276,22 @@ workspaceMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
 });
 
-settingsButton?.addEventListener('click', (event) => {
+accountButton?.addEventListener('click', (event) => {
   event.stopPropagation();
-  if (!settingsMenu) return;
-  if (openMenu && openMenu !== settingsMenu) {
+  if (!accountMenu) return;
+  if (openMenu && openMenu !== accountMenu) {
     openMenu.classList.add('hidden');
   }
-  if (settingsMenu.classList.contains('hidden')) {
-    settingsMenu.classList.remove('hidden');
-    openMenu = settingsMenu;
+  if (accountMenu.classList.contains('hidden')) {
+    accountMenu.classList.remove('hidden');
+    openMenu = accountMenu;
   } else {
-    settingsMenu.classList.add('hidden');
+    accountMenu.classList.add('hidden');
     openMenu = null;
   }
 });
 
-settingsMenu?.addEventListener('click', (event) => {
+accountMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
 });
 
@@ -1911,6 +1923,7 @@ function getTaskSortComparator() {
 
 function render() {
   renderWorkspaceList();
+  renderAccountMenu();
   renderProjectList();
   renderTemplateList();
   renderTaskTypeList();
@@ -2060,6 +2073,30 @@ function renderNoticeSort() {
     'title-asc': 'Title (A–Z)'
   };
   noticeSortButton.textContent = `${labelMap[key] ?? 'Sort'} ▾`;
+}
+
+function getAccountDisplayName() {
+  const name = state.workspace?.name?.trim();
+  return name || 'Organization';
+}
+
+function getAccountInitials(name) {
+  const parts = String(name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'BH';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function renderAccountMenu() {
+  const name = getAccountDisplayName();
+  const initials = getAccountInitials(name);
+  const email = 'you@example.com';
+  [accountAvatar, accountListAvatar, accountProfileAvatar].forEach((el) => {
+    if (el) el.textContent = initials;
+  });
+  if (accountListName) accountListName.textContent = name;
+  if (accountProfileName) accountProfileName.textContent = name;
+  if (accountProfileEmail) accountProfileEmail.textContent = email;
 }
 
 function renderTaskViewToggle() {
@@ -4685,19 +4722,49 @@ shoppingCompleteBtn?.addEventListener('click', async () => {
 });
 
 settingsOpen?.addEventListener('click', () => {
-  settingsMenu?.classList.add('hidden');
+  accountMenu?.classList.add('hidden');
   openMenu = null;
   openSettings();
 });
 settingsClose?.addEventListener('click', closeSettings);
 settingsModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeSettings);
 profileOpen?.addEventListener('click', () => {
-  settingsMenu?.classList.add('hidden');
+  accountMenu?.classList.add('hidden');
   openMenu = null;
   openProfile();
 });
 profileClose?.addEventListener('click', closeProfile);
 profileModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeProfile);
+accountNewWorkspace?.addEventListener('click', () => {
+  accountMenu?.classList.add('hidden');
+  openMenu = null;
+  newWorkspaceBtn?.click();
+});
+accountAdd?.addEventListener('click', () => {
+  accountMenu?.classList.add('hidden');
+  openMenu = null;
+  alert('Add another account is coming soon.');
+});
+accountLogout?.addEventListener('click', () => {
+  accountMenu?.classList.add('hidden');
+  openMenu = null;
+  alert('Log out is coming soon.');
+});
+accountAdmin?.addEventListener('click', () => {
+  accountMenu?.classList.add('hidden');
+  openMenu = null;
+  alert('Admin console is coming soon.');
+});
+accountInvite?.addEventListener('click', () => {
+  accountMenu?.classList.add('hidden');
+  openMenu = null;
+  alert('Invites are coming soon.');
+});
+accountUpgrade?.addEventListener('click', () => {
+  accountMenu?.classList.add('hidden');
+  openMenu = null;
+  alert('Upgrade options are coming soon.');
+});
 taskTypesOpen?.addEventListener('click', openTaskTypesModal);
 taskTypesClose?.addEventListener('click', closeTaskTypesModal);
 taskTypesModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeTaskTypesModal);

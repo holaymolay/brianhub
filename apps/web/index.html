@@ -13,12 +13,46 @@
         <button id="sync-btn">Sync Now</button>
         <span id="sync-status">Local-first (offline ready)</span>
         <div class="workspace-menu-wrapper">
-        <button id="notice-bell" class="icon-button menu-icon" type="button" title="Notices">🔔</button>
+          <button id="notice-bell" class="icon-button menu-icon" type="button" title="Notices">🔔</button>
           <div id="notice-bell-menu" class="workspace-menu hidden"></div>
-        <button id="settings-button" class="icon-button menu-icon" type="button" title="Menu">⚙</button>
-          <div id="settings-menu" class="workspace-menu hidden">
-            <button id="profile-open" class="workspace-menu-item" type="button">Profile</button>
-            <button id="settings-open" class="workspace-menu-item" type="button">Settings</button>
+        </div>
+        <div class="account-menu-wrapper">
+          <button id="account-button" class="account-button" type="button" title="Account menu">
+            <span id="account-avatar" class="account-avatar">BJ</span>
+            <span class="account-caret">▾</span>
+          </button>
+          <div id="account-menu" class="account-menu hidden">
+            <div class="account-menu-grid">
+              <div class="account-menu-left">
+                <div class="account-menu-title">Account</div>
+                <button class="account-list-item is-active" type="button">
+                  <span class="account-avatar small" id="account-list-avatar">BJ</span>
+                  <span class="account-list-name" id="account-list-name">Organization</span>
+                  <span class="account-list-dot"></span>
+                  <span class="account-list-check">✓</span>
+                </button>
+                <button id="account-add" class="account-list-item subtle" type="button">＋ Add another account</button>
+                <button id="account-logout" class="account-list-item subtle" type="button">→ Log out</button>
+              </div>
+              <div class="account-menu-right">
+                <div class="account-profile">
+                  <span class="account-avatar large" id="account-profile-avatar">BJ</span>
+                  <div class="account-profile-name" id="account-profile-name">Organization</div>
+                  <div class="account-profile-email" id="account-profile-email">you@example.com</div>
+                </div>
+                <div class="account-action-list">
+                  <button id="account-admin" class="account-action" type="button">Admin console</button>
+                  <button id="account-new-workspace" class="account-action" type="button">New workspace</button>
+                  <button id="account-invite" class="account-action" type="button">Invite to BrianHub</button>
+                  <button id="account-upgrade" class="account-action account-upgrade" type="button">Upgrade</button>
+                </div>
+                <div class="account-divider"></div>
+                <div class="account-action-list">
+                  <button id="profile-open" class="account-action" type="button">Profile</button>
+                  <button id="settings-open" class="account-action" type="button">Settings</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
