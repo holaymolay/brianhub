@@ -20,6 +20,11 @@ Run the dev server (API + web UI):
 npm run dev
 ```
 
+Run tests:
+```
+npm test
+```
+
 Web UI runs at:
 ```
 http://localhost:5173
