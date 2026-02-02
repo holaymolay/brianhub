@@ -2798,7 +2798,23 @@ async function initNotesEditor() {
         doc,
         plugins
       });
-      notesEditorView = new EditorView(editorNotesContainer, { state });
+      notesEditorView = new EditorView(editorNotesContainer, {
+        state,
+        handleDOMEvents: {
+          click(view, event) {
+            const target = event.target;
+            if (!(target instanceof Element)) return false;
+            const link = target.closest('a');
+            if (!link) return false;
+            event.preventDefault();
+            const href = link.getAttribute('href');
+            if (href) {
+              window.open(href, '_blank', 'noopener,noreferrer');
+            }
+            return true;
+          }
+        }
+      });
 
       bindNotesToolbar({ toggleMark, setBlockType, wrapIn, wrapInList, lift });
       setNotesMode(notesMode || 'rich');
