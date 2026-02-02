@@ -322,6 +322,8 @@ let taskEditorAutosaveTimer = null;
 let taskEditorAutosaveInFlight = false;
 let taskEditorAutosaveQueued = false;
 let isPopulatingTaskEditor = false;
+let editorMouseDown = false;
+let suppressEditorCloseOnce = false;
 let undoToastTimer = null;
 let undoToastEl = null;
 
@@ -343,12 +345,34 @@ document.addEventListener('keydown', (event) => {
 
 document.addEventListener('click', (event) => {
   if (!taskEditor || !taskEditor.classList.contains('is-open')) return;
+  if (suppressEditorCloseOnce) {
+    suppressEditorCloseOnce = false;
+    return;
+  }
   const target = event.target;
   if (!(target instanceof Element)) return;
   if (target.closest('#task-editor')) return;
   if (target.closest('.modal')) return;
   if (target.closest('.task-item') || target.closest('.kanban-card')) return;
   closeTaskEditor();
+});
+
+taskEditor?.addEventListener('mousedown', (event) => {
+  if (event.button !== 0) return;
+  editorMouseDown = true;
+});
+
+document.addEventListener('mouseup', (event) => {
+  if (!editorMouseDown) return;
+  editorMouseDown = false;
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    suppressEditorCloseOnce = true;
+    return;
+  }
+  if (!target.closest('#task-editor')) {
+    suppressEditorCloseOnce = true;
+  }
 });
 
 workspaceMenuButton?.addEventListener('click', (event) => {
