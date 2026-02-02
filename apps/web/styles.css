@@ -1640,13 +1640,22 @@ button:hover { opacity: 0.9; }
 }
 
 .editor-notes .toastui-editor-toolbar-group,
-.editor-notes .toastui-editor-toolbar-item,
-.editor-notes .toastui-editor-toolbar-divider,
-.editor-notes .toastui-editor-toolbar-icons,
-.editor-notes .toastui-editor-toolbar-icons svg {
-  background: #0f141c;
+.editor-notes .toastui-editor-toolbar-item {
+  background-color: #0f141c;
   color: var(--text);
+}
+
+.editor-notes .toastui-editor-toolbar-divider {
+  background-color: #0f141c;
   border-color: var(--border);
+}
+
+.editor-notes .toastui-editor-toolbar-icons {
+  background-color: transparent;
+  color: var(--text);
+}
+
+.editor-notes .toastui-editor-toolbar-icons svg {
   fill: currentColor;
 }
 
