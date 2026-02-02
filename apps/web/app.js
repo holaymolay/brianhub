@@ -59,6 +59,7 @@ const storeRuleKeywordsInput = document.getElementById('store-rule-keywords');
 const storeRuleAddBtn = document.getElementById('store-rule-add');
 const projectListEl = document.getElementById('project-list');
 const newProjectBtn = document.getElementById('new-project-btn');
+const tasksOpenBtn = document.getElementById('tasks-open');
 const shoppingListListEl = document.getElementById('shopping-list-list');
 const newShoppingListBtn = document.getElementById('new-shopping-list-btn');
 const noticeListEl = document.getElementById('notice-list');
@@ -493,6 +494,10 @@ noticesOpenBtn?.addEventListener('click', () => {
 noticesAddBtn?.addEventListener('click', () => {
   setActiveView('notices');
   openNoticeModal();
+});
+tasksOpenBtn?.addEventListener('click', () => {
+  setActiveView('tasks');
+  render();
 });
 noticesBackBtn?.addEventListener('click', () => {
   setActiveView('tasks');
