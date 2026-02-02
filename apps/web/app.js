@@ -2240,12 +2240,9 @@ function setEditorNotesMode(mode) {
 function updateEditorNotesModeUI() {
   const isPreview = getEditorNotesMode() === 'preview';
   editorNotesPreviewPane?.classList.toggle('hidden', !isPreview);
-  editorDesc?.classList.toggle('hidden', isPreview);
   editorNotesPreviewBtn?.classList.toggle('active', isPreview);
   editorNotesEditBtn?.classList.toggle('active', !isPreview);
-  if (!isPreview) {
-    editorDesc?.focus();
-  } else {
+  if (isPreview) {
     renderEditorNotesPreview();
   }
 }

@@ -1650,6 +1650,16 @@ button:hover { opacity: 0.9; }
   line-height: 1.5;
 }
 
+.markdown-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.markdown-split textarea {
+  min-height: 120px;
+}
+
 .markdown-preview p {
   margin: 0 0 0.6rem;
 }
