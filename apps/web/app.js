@@ -4720,7 +4720,7 @@ function renderKanbanCard(task) {
     event.preventDefault();
     if (!selected.includes(task.id)) {
       setSelectedTaskIds([...selected, task.id]);
-    } else if (event.metaKey || event.ctrlKey) {
+    } else {
       setSelectedTaskIds(selected.filter(id => id !== task.id));
     }
   });
@@ -4984,7 +4984,7 @@ function renderTask(task) {
     event.preventDefault();
     if (!selected.includes(task.id)) {
       setSelectedTaskIds([...selected, task.id]);
-    } else if (event.metaKey || event.ctrlKey) {
+    } else {
       setSelectedTaskIds(selected.filter(id => id !== task.id));
     }
   });
