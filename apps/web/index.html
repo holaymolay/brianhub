@@ -637,7 +637,8 @@
         <h2>Edit Task</h2>
         <button id="editor-close" class="task-editor-close" type="button" title="Close">→</button>
       </div>
-      <form id="task-editor-form" class="task-editor-form">
+      <div id="task-editor-body" class="task-editor-body">
+        <form id="task-editor-form" class="task-editor-form">
         <label>
           Task
           <input
@@ -757,12 +758,16 @@
           </div>
           <div id="editor-dependency-list" class="task-editor-deps-list"></div>
         </div>
-        <div class="task-editor-actions span-2">
-          <button type="submit">Save</button>
-          <button id="editor-cancel" type="button">Cancel</button>
-          <button id="editor-delete" class="danger-button" type="button">Delete</button>
-        </div>
-      </form>
+          <div class="task-editor-actions span-2">
+            <button type="submit">Save</button>
+            <button id="editor-cancel" type="button">Cancel</button>
+            <button id="editor-delete" class="danger-button" type="button">Delete</button>
+          </div>
+        </form>
+      </div>
+      <div class="task-editor-scrollbar" id="task-editor-scrollbar">
+        <div class="task-editor-scroll-thumb" id="task-editor-scroll-thumb"></div>
+      </div>
     </aside>
 
     <div id="shopping-list-modal" class="modal hidden">

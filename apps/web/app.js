@@ -232,6 +232,9 @@ const checkinRescheduleCancel = document.getElementById('checkin-reschedule-canc
 const checkinRescheduleBack = document.getElementById('checkin-reschedule-back');
 const checkinDefaultMinutesInput = document.getElementById('checkin-default-minutes');
 const taskEditor = document.getElementById('task-editor');
+const taskEditorBody = document.getElementById('task-editor-body');
+const taskEditorScrollbar = document.getElementById('task-editor-scrollbar');
+const taskEditorScrollThumb = document.getElementById('task-editor-scroll-thumb');
 const taskEditorForm = document.getElementById('task-editor-form');
 const editorTitle = document.getElementById('editor-title');
 const editorType = document.getElementById('editor-type');
@@ -328,6 +331,9 @@ let taskEditorAutosaveQueued = false;
 let isPopulatingTaskEditor = false;
 let editorMouseDown = false;
 let suppressEditorCloseOnce = false;
+let taskEditorScrollbarDragging = false;
+let taskEditorScrollbarDragStart = 0;
+let taskEditorScrollbarScrollStart = 0;
 let undoToastTimer = null;
 let undoToastEl = null;
 
@@ -378,6 +384,52 @@ document.addEventListener('mouseup', (event) => {
     suppressEditorCloseOnce = true;
   }
 });
+
+taskEditorBody?.addEventListener('scroll', () => {
+  updateTaskEditorScrollbar();
+});
+
+taskEditorScrollThumb?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+  taskEditorScrollbarDragging = true;
+  taskEditorScrollbarDragStart = event.clientY;
+  taskEditorScrollbarScrollStart = taskEditorBody?.scrollTop ?? 0;
+});
+
+taskEditorScrollbar?.addEventListener('click', (event) => {
+  if (!taskEditorBody || !taskEditorScrollThumb) return;
+  if (event.target === taskEditorScrollThumb) return;
+  const rect = taskEditorScrollbar.getBoundingClientRect();
+  const clickY = event.clientY - rect.top;
+  const thumbHeight = taskEditorScrollThumb.offsetHeight;
+  const trackHeight = taskEditorBody.clientHeight;
+  const maxScroll = taskEditorBody.scrollHeight - trackHeight;
+  const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+  const nextThumbTop = Math.min(maxThumbTop, Math.max(0, clickY - thumbHeight / 2));
+  const ratio = maxThumbTop ? nextThumbTop / maxThumbTop : 0;
+  taskEditorBody.scrollTop = ratio * maxScroll;
+});
+
+document.addEventListener('mousemove', (event) => {
+  if (!taskEditorScrollbarDragging || !taskEditorBody || !taskEditorScrollThumb) return;
+  const trackHeight = taskEditorBody.clientHeight;
+  const thumbHeight = taskEditorScrollThumb.offsetHeight;
+  const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+  const maxScroll = taskEditorBody.scrollHeight - trackHeight;
+  const delta = event.clientY - taskEditorScrollbarDragStart;
+  const ratio = maxThumbTop ? delta / maxThumbTop : 0;
+  taskEditorBody.scrollTop = taskEditorScrollbarScrollStart + ratio * maxScroll;
+});
+
+document.addEventListener('mouseup', () => {
+  taskEditorScrollbarDragging = false;
+});
+
+const taskEditorResizeObserver = taskEditorBody ? new ResizeObserver(() => {
+  updateTaskEditorScrollbar();
+}) : null;
+
+taskEditorResizeObserver?.observe(taskEditorBody);
 
 workspaceMenuButton?.addEventListener('click', (event) => {
   event.stopPropagation();
@@ -2448,6 +2500,25 @@ function scheduleTaskEditorAutosave(reason = 'change', delay = 600) {
   }, delay);
 }
 
+function updateTaskEditorScrollbar() {
+  if (!taskEditorBody || !taskEditorScrollbar || !taskEditorScrollThumb) return;
+  const scrollHeight = taskEditorBody.scrollHeight;
+  const clientHeight = taskEditorBody.clientHeight;
+  if (scrollHeight <= clientHeight + 1) {
+    taskEditorScrollbar.classList.add('hidden');
+    return;
+  }
+  taskEditorScrollbar.classList.remove('hidden');
+  const trackHeight = taskEditorBody.clientHeight;
+  const maxScroll = scrollHeight - clientHeight;
+  const thumbHeight = Math.max(80, (clientHeight / scrollHeight) * trackHeight);
+  const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+  const ratio = maxScroll ? taskEditorBody.scrollTop / maxScroll : 0;
+  const thumbTop = maxThumbTop * ratio;
+  taskEditorScrollThumb.style.height = `${thumbHeight}px`;
+  taskEditorScrollThumb.style.transform = `translateY(${thumbTop}px)`;
+}
+
 function getSelectedTaskIds() {
   return Array.isArray(state.ui?.selectedTaskIds) ? state.ui.selectedTaskIds : [];
 }
@@ -3381,6 +3452,7 @@ function render() {
   if (checkinNoModal && !checkinNoModal.classList.contains('hidden') && checkinNoExtend) {
     checkinNoExtend.textContent = `Extend session (${getCheckinExtendMinutes()} min)`;
   }
+  updateTaskEditorScrollbar();
   syncCheckinModal();
   maybeShowCheckinModal();
   saveState(state);
@@ -6093,6 +6165,7 @@ function openTaskEditor(taskId) {
   activeTaskId = taskId;
   populateTaskEditor(task);
   taskEditor.classList.add('is-open');
+  updateTaskEditorScrollbar();
 }
 
 function closeTaskEditor() {
@@ -6104,6 +6177,7 @@ function closeTaskEditor() {
     void performTaskEditorAutosave({ force: true, taskId: activeTaskId });
   }
   taskEditor.classList.remove('is-open');
+  taskEditorScrollbar?.classList.add('hidden');
   if (taskEditorSwapTimer) {
     clearTimeout(taskEditorSwapTimer);
     taskEditorSwapTimer = null;
