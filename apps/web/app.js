@@ -2505,7 +2505,7 @@ let notesToolbarBound = false;
 function bindNotesToolbar(commands) {
   if (notesToolbarBound || !notesEditorWrapper) return;
   notesToolbarBound = true;
-  const { toggleMark, setBlockType, wrapIn, wrapInList } = commands;
+  const { toggleMark, setBlockType, wrapIn, wrapInList, lift } = commands;
 
   notesModeButtons.forEach(button => {
     button.addEventListener('click', () => {
@@ -2566,7 +2566,27 @@ function bindNotesToolbar(commands) {
         }
         case 'quote': {
           const node = notesSchema.nodes.blockquote;
-          executed = wrapIn(node)(state, dispatch);
+          if (node) {
+            const hasBlockquote = (selection) => {
+              const { $from, $to } = selection;
+              for (let depth = $from.depth; depth > 0; depth -= 1) {
+                if ($from.node(depth).type === node) {
+                  for (let otherDepth = $to.depth; otherDepth > 0; otherDepth -= 1) {
+                    if ($to.node(otherDepth).type === node) {
+                      return true;
+                    }
+                  }
+                  return false;
+                }
+              }
+              return false;
+            };
+            if (hasBlockquote(state.selection)) {
+              executed = lift(state, dispatch);
+            } else {
+              executed = wrapIn(node)(state, dispatch);
+            }
+          }
           break;
         }
         case 'code': {
@@ -2631,8 +2651,8 @@ async function initNotesEditor() {
       const { schema, defaultMarkdownParser, defaultMarkdownSerializer } = markdownPkg;
       const { keymap } = keymapPkg;
       const { history, undo, redo } = historyPkg;
-      const { baseKeymap, toggleMark, setBlockType, wrapIn } = commandsPkg;
-      const { wrapInList, liftListItem, sinkListItem } = listPkg;
+      const { baseKeymap, toggleMark, setBlockType, wrapIn, chainCommands, lift } = commandsPkg;
+      const { wrapInList, liftListItem, sinkListItem, splitListItem } = listPkg;
 
       notesEditorStateCtor = EditorState;
       notesSchema = schema;
@@ -2650,8 +2670,10 @@ async function initNotesEditor() {
       };
 
       if (notesSchema.nodes.list_item) {
-        keyBindings.Tab = sinkListItem(notesSchema.nodes.list_item);
-        keyBindings['Shift-Tab'] = liftListItem(notesSchema.nodes.list_item);
+        const listItem = notesSchema.nodes.list_item;
+        keyBindings.Tab = sinkListItem(listItem);
+        keyBindings['Shift-Tab'] = liftListItem(listItem);
+        keyBindings.Enter = chainCommands(splitListItem(listItem), baseKeymap.Enter);
       }
 
       const plugins = [
@@ -2696,7 +2718,7 @@ async function initNotesEditor() {
       });
       notesEditorView = new EditorView(editorNotesContainer, { state });
 
-      bindNotesToolbar({ toggleMark, setBlockType, wrapIn, wrapInList });
+      bindNotesToolbar({ toggleMark, setBlockType, wrapIn, wrapInList, lift });
       setNotesMode(notesMode || 'rich');
       setNotesContent(markdown);
     } catch (err) {
