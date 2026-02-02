@@ -1692,6 +1692,14 @@ button:hover { opacity: 0.9; }
   color: var(--text);
 }
 
+.editor-notes .toastui-editor-dropdown-toolbar {
+  display: none;
+}
+
+.editor-notes .toastui-editor-dropdown-toolbar.show {
+  display: block;
+}
+
 .editor-notes .toastui-editor-dropdown-toolbar .toastui-editor-dropdown-item {
   color: var(--text);
 }
