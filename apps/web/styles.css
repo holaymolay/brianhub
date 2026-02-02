@@ -1614,6 +1614,8 @@ button:hover { opacity: 0.9; }
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   overflow: hidden;
+  width: 92%;
+  margin: 0 auto;
 }
 
 .notes-editor-ready .editor-desc-fallback {
@@ -1622,6 +1624,8 @@ button:hover { opacity: 0.9; }
 
 .editor-desc-fallback {
   min-height: 160px;
+  width: 92%;
+  margin: 0 auto;
 }
 
 .editor-notes .toastui-editor-defaultUI {

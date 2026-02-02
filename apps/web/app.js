@@ -2141,7 +2141,7 @@ function initNotesEditor() {
   if (!globalThis.toastui?.Editor) return;
   notesEditor = new globalThis.toastui.Editor({
     el: editorNotesContainer,
-    height: '220px',
+    height: '320px',
     initialEditType: 'wysiwyg',
     previewStyle: 'tab',
     usageStatistics: false,
