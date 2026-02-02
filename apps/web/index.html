@@ -8,7 +8,25 @@
   </head>
   <body>
     <header class="app-header">
-      <h1>BrianHub</h1>
+      <div class="header-left">
+        <h1>BrianHub</h1>
+        <div class="header-workspace">
+          <div class="workspace-dropdown">
+            <button id="workspace-dropdown-button" class="workspace-dropdown-button" type="button">
+              Workspaces
+            </button>
+            <div id="workspace-list" class="workspace-list workspace-dropdown-list hidden"></div>
+          </div>
+          <div class="workspace-menu-wrapper">
+            <button id="workspace-menu-button" class="icon-button menu-icon workspace-menu-button" type="button" title="Workspace settings">⋯</button>
+            <div id="workspace-menu" class="workspace-menu hidden">
+              <button id="new-workspace-btn" class="workspace-menu-item" type="button">New</button>
+              <button id="manage-workspaces-btn" class="workspace-menu-item" type="button">Manage</button>
+              <button id="archived-workspaces-btn" class="workspace-menu-item" type="button">Archive</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="sync-controls">
         <button id="sync-btn">Sync Now</button>
         <span id="sync-status">Local-first (offline ready)</span>
@@ -61,25 +79,6 @@
     <main class="app-main">
       <div class="app-layout">
         <aside class="sidebar">
-          <div class="sidebar-header-row">
-            <div class="workspace-header-row">
-              <div class="workspace-dropdown">
-                <button id="workspace-dropdown-button" class="workspace-dropdown-button" type="button">
-                  Workspaces
-                </button>
-                <div id="workspace-list" class="workspace-list workspace-dropdown-list hidden"></div>
-              </div>
-              <div class="workspace-menu-wrapper">
-                <button id="workspace-menu-button" class="icon-button menu-icon workspace-menu-button" type="button" title="Workspace settings">⋯</button>
-                <div id="workspace-menu" class="workspace-menu hidden">
-                  <button id="new-workspace-btn" class="workspace-menu-item" type="button">New</button>
-                  <button id="manage-workspaces-btn" class="workspace-menu-item" type="button">Manage</button>
-                  <button id="archived-workspaces-btn" class="workspace-menu-item" type="button">Archive</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="sidebar-divider"></div>
           <div class="sidebar-header-row">
             <button id="tasks-open" class="sidebar-section-button" type="button">My Tasks</button>
           </div>
