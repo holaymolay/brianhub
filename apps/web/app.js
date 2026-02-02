@@ -2529,9 +2529,19 @@ function bindNotesToolbar(commands) {
       switch (command) {
         case 'heading': {
           const node = notesSchema.nodes.heading;
+          const paragraph = notesSchema.nodes.paragraph;
           if (!node) break;
           const nextLevel = Number.isFinite(level) && level > 0 ? level : 1;
-          executed = setBlockType(node, { level: nextLevel })(state, dispatch);
+          const { $from, $to } = state.selection;
+          const isHeading = $from.parent.type === node
+            && $to.parent.type === node
+            && $from.parent.attrs.level === nextLevel
+            && $to.parent.attrs.level === nextLevel;
+          if (isHeading && paragraph) {
+            executed = setBlockType(paragraph)(state, dispatch);
+          } else {
+            executed = setBlockType(node, { level: nextLevel })(state, dispatch);
+          }
           break;
         }
         case 'bold': {
