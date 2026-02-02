@@ -4477,6 +4477,12 @@ function renderTask(task) {
         await deleteTaskRecord(task.id);
         render();
       }
+      if (action === 'delete') {
+        const confirmed = confirm(`Delete "${task.title}" and all subtasks?`);
+        if (!confirmed) return;
+        await deleteTaskSubtree(task.id);
+        render();
+      }
       menu.classList.add('hidden');
       openMenu = null;
     });
