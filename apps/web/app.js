@@ -2481,7 +2481,7 @@ async function initNotesEditor() {
         import('https://esm.sh/prosemirror-schema-list@1.3.0')
       ]);
 
-      const { EditorState, Plugin } = statePkg;
+      const { EditorState, Plugin, PluginKey } = statePkg;
       const { EditorView } = viewPkg;
       const { schema, defaultMarkdownParser, defaultMarkdownSerializer } = markdownPkg;
       const { keymap } = keymapPkg;
@@ -2511,6 +2511,7 @@ async function initNotesEditor() {
 
       const plugins = [
         new Plugin({
+          key: new PluginKey('notes-default-paragraph'),
           appendTransaction(transactions, oldState, newState) {
             if (!transactions.some(tr => tr.docChanged)) return null;
             if (oldState.doc.textContent.trim()) return null;
@@ -2524,6 +2525,7 @@ async function initNotesEditor() {
           }
         }),
         new Plugin({
+          key: new PluginKey('notes-autosave'),
           view() {
             return {
               update(view, prevState) {
