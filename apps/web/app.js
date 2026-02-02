@@ -2244,6 +2244,10 @@ function bindNotesToolbar(commands) {
   notesModeButtons.forEach(button => {
     button.addEventListener('click', () => {
       const mode = button.dataset.mode || 'rich';
+      if (mode === 'markdown') {
+        setNotesMode(notesMode === 'markdown' ? 'rich' : 'markdown');
+        return;
+      }
       setNotesMode(mode);
     });
   });
