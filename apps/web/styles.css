@@ -1706,8 +1706,21 @@ button:hover { opacity: 0.9; }
 }
 
 .modal-back {
-  padding: 0.35rem 0.6rem;
-  font-weight: 500;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.35rem;
+  line-height: 1;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-back:hover {
+  opacity: 0.75;
 }
 
 #task-modal .modal-card {
