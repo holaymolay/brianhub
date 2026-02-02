@@ -1,28 +1,48 @@
-import { loadState, saveState } from './localStore.js';
+import { loadState, saveState, createId } from './localStore.js';
+import { loadLocalData, saveLocalData, recordLocalChange } from './localData.js';
 import * as api from './api.js';
 import { compareTasksByPriority } from '../../packages/core/priority.js';
+import { reparent as reparentTasks } from '../../packages/core/tree.js';
 import { applyCheckIn, applyWaitingFollowup, TaskStatus } from '../../packages/core/taskState.js';
 
+const localData = loadLocalData();
 const state = {
   ...loadState(),
-  workspaces: [],
+  workspaces: localData.workspaces ?? [],
   workspace: null,
-  projects: [],
-  templates: [],
-  statuses: [],
-  taskTypes: [],
-  storeRules: [],
-  tasks: {},
-  taskDependencies: [],
-  notices: [],
-  noticeTypes: [],
-  shoppingLists: [],
-  shoppingItems: {}
+  projects: localData.projects ?? [],
+  templates: localData.templates ?? [],
+  statuses: localData.statuses ?? [],
+  taskTypes: localData.taskTypes ?? [],
+  storeRules: localData.storeRules ?? [],
+  tasks: localData.tasks ?? {},
+  taskDependencies: localData.taskDependencies ?? [],
+  notices: localData.notices ?? [],
+  noticeTypes: localData.noticeTypes ?? [],
+  shoppingLists: localData.shoppingLists ?? [],
+  shoppingItems: localData.shoppingItems ?? {},
+  local: {
+    localSeq: localData.localSeq ?? 0,
+    pendingChanges: localData.pendingChanges ?? []
+  }
 };
 const DEFAULT_NOTICE_TYPES = [
   { key: 'general', label: 'General' },
   { key: 'bill', label: 'Bill notice' },
   { key: 'auto-payment', label: 'Auto-payment notice' }
+];
+const DEFAULT_STATUS_DEFS = [
+  { key: TaskStatus.INBOX, label: 'Inbox', kind: TaskStatus.INBOX, sort_order: 10, kanban_visible: 0 },
+  { key: TaskStatus.PLANNED, label: 'Planned', kind: TaskStatus.PLANNED, sort_order: 20, kanban_visible: 0 },
+  { key: TaskStatus.IN_PROGRESS, label: 'In Progress', kind: TaskStatus.IN_PROGRESS, sort_order: 30, kanban_visible: 0 },
+  { key: TaskStatus.WAITING, label: 'Waiting', kind: TaskStatus.WAITING, sort_order: 40, kanban_visible: 0 },
+  { key: TaskStatus.BLOCKED, label: 'Blocked', kind: TaskStatus.BLOCKED, sort_order: 50, kanban_visible: 0 },
+  { key: TaskStatus.DONE, label: 'Done', kind: TaskStatus.DONE, sort_order: 60, kanban_visible: 0 },
+  { key: TaskStatus.CANCELED, label: 'Canceled', kind: TaskStatus.CANCELED, sort_order: 70, kanban_visible: 0 }
+];
+const DEFAULT_TASK_TYPE_DEFS = [
+  { name: 'General', is_default: 1 },
+  { name: 'Bill Due', is_default: 1 }
 ];
 const taskTreeEl = document.getElementById('task-tree');
 const taskFilterButton = document.getElementById('task-filter-button');
@@ -702,6 +722,7 @@ async function reloadWorkspacesAndData() {
 
 async function primeSyncCursor() {
   if (!state.workspace) return;
+  if (hasPendingLocalChanges()) return;
   try {
     const cursor = state.ui?.syncCursor ?? 0;
     const result = await api.pullChanges(state.workspace.id, cursor);
@@ -716,6 +737,7 @@ async function primeSyncCursor() {
 
 async function autoRefreshOnChanges() {
   if (!state.workspace || syncInFlight) return;
+  if (hasPendingLocalChanges()) return;
   syncInFlight = true;
   try {
     const cursor = state.ui?.syncCursor ?? 0;
@@ -957,11 +979,97 @@ function getDefaultTaskTypeName() {
   return types.find(type => type.is_default)?.name ?? types[0]?.name ?? '';
 }
 
+function hasPendingLocalChanges() {
+  return (state.local?.pendingChanges ?? []).length > 0;
+}
+
+function persistLocalData() {
+  saveLocalData({
+    localSeq: state.local?.localSeq ?? 0,
+    pendingChanges: state.local?.pendingChanges ?? [],
+    workspaces: state.workspaces ?? [],
+    projects: state.projects ?? [],
+    statuses: state.statuses ?? [],
+    taskTypes: state.taskTypes ?? [],
+    tasks: state.tasks ?? {},
+    taskDependencies: state.taskDependencies ?? [],
+    templates: state.templates ?? [],
+    notices: state.notices ?? [],
+    noticeTypes: state.noticeTypes ?? [],
+    storeRules: state.storeRules ?? [],
+    shoppingLists: state.shoppingLists ?? [],
+    shoppingItems: state.shoppingItems ?? {}
+  });
+}
+
+function queueLocalChange(change) {
+  const updated = recordLocalChange({
+    localSeq: state.local?.localSeq ?? 0,
+    pendingChanges: state.local?.pendingChanges ?? []
+  }, change);
+  state.local.localSeq = updated.localSeq;
+  state.local.pendingChanges = updated.pendingChanges;
+}
+
+function ensureLocalWorkspaceDefaults(workspace) {
+  if (!workspace) return;
+  const hasStatuses = (state.statuses ?? []).some(status => status.workspace_id === workspace.id);
+  if (!hasStatuses) {
+    const now = new Date().toISOString();
+    const defaults = DEFAULT_STATUS_DEFS.map(def => ({
+      id: createId(),
+      workspace_id: workspace.id,
+      key: def.key,
+      label: def.label,
+      kind: def.kind,
+      sort_order: def.sort_order,
+      kanban_visible: def.kanban_visible,
+      created_at: now,
+      updated_at: now
+    }));
+    state.statuses = [...(state.statuses ?? []), ...defaults];
+  }
+  const hasTaskTypes = (state.taskTypes ?? []).some(type => type.workspace_id === workspace.id);
+  if (!hasTaskTypes) {
+    const now = new Date().toISOString();
+    const defaults = DEFAULT_TASK_TYPE_DEFS.map(def => ({
+      id: createId(),
+      workspace_id: workspace.id,
+      name: def.name,
+      is_default: def.is_default ? 1 : 0,
+      archived: 0,
+      created_at: now,
+      updated_at: now
+    }));
+    state.taskTypes = [...(state.taskTypes ?? []), ...defaults];
+  }
+}
+
 async function loadWorkspaces() {
-  let workspaces = await api.listWorkspaces();
+  let workspaces = state.workspaces ?? [];
+  const allowRemote = !hasPendingLocalChanges();
+  if (allowRemote) {
+    try {
+      workspaces = await api.listWorkspaces();
+      if (!workspaces.length) {
+        const created = await api.createWorkspace({ name: 'Personal', type: 'personal' });
+        workspaces = [created];
+      }
+    } catch {
+      // offline: keep local workspaces
+    }
+  }
   if (!workspaces.length) {
-    const created = await api.createWorkspace({ name: 'Personal', type: 'personal' });
-    workspaces = [created];
+    const now = new Date().toISOString();
+    const localWorkspace = {
+      id: createId(),
+      name: 'Personal',
+      type: 'personal',
+      archived: 0,
+      created_at: now,
+      updated_at: now
+    };
+    workspaces = [localWorkspace];
   }
   const normalized = workspaces.map(normalizeWorkspace);
   state.workspaces = normalized;
@@ -970,23 +1078,31 @@ async function loadWorkspaces() {
     ?? normalized.find(ws => !ws.archived)
     ?? normalized[0];
   state.ui.activeWorkspaceId = state.workspace?.id ?? null;
+  ensureLocalWorkspaceDefaults(state.workspace);
 }
 
 async function loadWorkspaceData() {
   if (!state.workspace) return;
-  state.projects = (await api.listProjects(state.workspace.id)).map(normalizeProject);
-  state.templates = (await api.listTemplates(state.workspace.id)).map(normalizeTemplate);
-  state.statuses = (await api.listStatuses(state.workspace.id)).map(normalizeStatus);
-  state.taskTypes = (await api.listTaskTypes(state.workspace.id)).map(normalizeTaskType);
-  state.storeRules = (await api.listStoreRules(state.workspace.id)).map(normalizeStoreRule);
-  state.noticeTypes = (await api.listNoticeTypes(state.workspace.id)).map(normalizeNoticeType);
-  state.notices = (await api.listNotices(state.workspace.id)).map(normalizeNotice);
-  const tasks = await api.listTasks(state.workspace.id);
-  state.tasks = Object.fromEntries(tasks.map(task => [task.id, normalizeTask(task)]));
-  state.taskDependencies = await api.listTaskDependencies(state.workspace.id);
-  state.shoppingLists = (await api.listShoppingLists(state.workspace.id)).map(normalizeShoppingList);
-  const shoppingItems = await api.listShoppingItems(state.workspace.id);
-  state.shoppingItems = Object.fromEntries(shoppingItems.map(item => [item.id, normalizeShoppingItem(item)]));
+  if (!hasPendingLocalChanges()) {
+    try {
+      state.projects = (await api.listProjects(state.workspace.id)).map(normalizeProject);
+      state.templates = (await api.listTemplates(state.workspace.id)).map(normalizeTemplate);
+      state.statuses = (await api.listStatuses(state.workspace.id)).map(normalizeStatus);
+      state.taskTypes = (await api.listTaskTypes(state.workspace.id)).map(normalizeTaskType);
+      state.storeRules = (await api.listStoreRules(state.workspace.id)).map(normalizeStoreRule);
+      state.noticeTypes = (await api.listNoticeTypes(state.workspace.id)).map(normalizeNoticeType);
+      state.notices = (await api.listNotices(state.workspace.id)).map(normalizeNotice);
+      const tasks = await api.listTasks(state.workspace.id);
+      state.tasks = Object.fromEntries(tasks.map(task => [task.id, normalizeTask(task)]));
+      state.taskDependencies = await api.listTaskDependencies(state.workspace.id);
+      state.shoppingLists = (await api.listShoppingLists(state.workspace.id)).map(normalizeShoppingList);
+      const shoppingItems = await api.listShoppingItems(state.workspace.id);
+      state.shoppingItems = Object.fromEntries(shoppingItems.map(item => [item.id, normalizeShoppingItem(item)]));
+    } catch {
+      // offline: keep local data
+    }
+  }
+  ensureLocalWorkspaceDefaults(state.workspace);
   const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
   const preferredListId = state.ui?.activeShoppingListId;
   const availableLists = state.shoppingLists.filter(list => showArchived || !list.archived);
@@ -1207,35 +1323,167 @@ async function createTaskRecord(payload) {
   const sortOrder = payload.sort_order === undefined || payload.sort_order === null
     ? getNextTaskSortOrder(parentId, statusKey)
     : payload.sort_order;
-  const created = await api.createTask({
+  const taskPayload = {
     ...payload,
     sort_order: sortOrder,
     workspace_id: state.workspace.id
+  };
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const created = await api.createTask(taskPayload);
+      if (created) upsertTask(created);
+      return created;
+    } catch {
+      // fall back to local create
+    }
+  }
+  const now = new Date().toISOString();
+  const status = taskPayload.status ?? getDefaultStatusKey();
+  let localTask = normalizeTask({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    parent_id: taskPayload.parent_id ?? null,
+    project_id: taskPayload.project_id ?? null,
+    title: taskPayload.title,
+    description_md: taskPayload.description_md ?? '',
+    status,
+    priority: taskPayload.priority ?? 'medium',
+    urgency: taskPayload.urgency ? 1 : 0,
+    type_label: taskPayload.type_label ?? null,
+    recurrence_interval: taskPayload.recurrence_interval ?? null,
+    recurrence_unit: taskPayload.recurrence_unit ?? null,
+    reminder_offset_days: taskPayload.reminder_offset_days ?? null,
+    auto_debit: taskPayload.auto_debit ? 1 : 0,
+    reminder_sent_at: taskPayload.reminder_sent_at ?? null,
+    recurrence_parent_id: taskPayload.recurrence_parent_id ?? null,
+    recurrence_generated_at: taskPayload.recurrence_generated_at ?? null,
+    template_id: taskPayload.template_id ?? null,
+    template_state: taskPayload.template_state ?? null,
+    template_event_date: taskPayload.template_event_date ?? null,
+    template_lead_days: taskPayload.template_lead_days ?? null,
+    template_defer_until: taskPayload.template_defer_until ?? null,
+    template_prompt_pending: taskPayload.template_prompt_pending ? 1 : 0,
+    start_at: taskPayload.start_at ?? null,
+    due_at: taskPayload.due_at ?? null,
+    completed_at: null,
+    waiting_followup_at: taskPayload.waiting_followup_at ?? null,
+    next_checkin_at: taskPayload.next_checkin_at ?? null,
+    sort_order: sortOrder,
+    task_type: taskPayload.task_type ?? 'task',
+    created_at: now,
+    updated_at: now
   });
-  upsertTask(created);
-  return created;
+  if (status === TaskStatus.WAITING && !localTask.next_checkin_at) {
+    const waitingTask = applyWaitingFollowup({ ...localTask, status: TaskStatus.WAITING }, new Date());
+    localTask = { ...localTask, next_checkin_at: waitingTask.next_checkin_at };
+  }
+  if (status === TaskStatus.DONE && !localTask.completed_at) {
+    localTask = { ...localTask, completed_at: now };
+  }
+  upsertTask(localTask);
+  queueLocalChange({
+    entity_type: 'task',
+    entity_id: localTask.id,
+    action: 'create',
+    payload: { ...taskPayload, id: localTask.id }
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return localTask;
 }
 
 async function updateTaskRecord(id, patch) {
-  const updated = await api.updateTask(id, patch);
-  if (updated) upsertTask(updated);
-  return updated;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const updated = await api.updateTask(id, patch);
+      if (updated) upsertTask(updated);
+      return updated;
+    } catch {
+      // fall back to local update
+    }
+  }
+  const existing = state.tasks[id];
+  if (!existing) return null;
+  let next = { ...existing, ...patch, updated_at: new Date().toISOString() };
+  if (patch.status) {
+    const statusKind = getStatusKind(patch.status);
+    if (statusKind === TaskStatus.WAITING) {
+      const waitingTask = applyWaitingFollowup({ ...next, status: TaskStatus.WAITING }, new Date());
+      next.next_checkin_at = waitingTask.next_checkin_at;
+    }
+    if (statusKind === TaskStatus.DONE && !next.completed_at) {
+      next.completed_at = new Date().toISOString();
+    }
+    if (statusKind !== TaskStatus.DONE && !('completed_at' in patch)) {
+      next.completed_at = null;
+    }
+  }
+  upsertTask(next);
+  queueLocalChange({
+    entity_type: 'task',
+    entity_id: id,
+    action: 'update',
+    payload: patch
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return next;
 }
 
 async function reparentTaskRecord(id, newParentId) {
-  const updated = await api.reparentTask(id, newParentId);
-  if (updated) upsertTask(updated);
-  return updated;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const updated = await api.reparentTask(id, newParentId);
+      if (updated) upsertTask(updated);
+      return updated;
+    } catch {
+      // fall back to local reparent
+    }
+  }
+  const tasks = Object.values(state.tasks ?? {});
+  try {
+    const nextTasks = reparentTasks(tasks, id, newParentId ?? null);
+    state.tasks = Object.fromEntries(nextTasks.map(task => [task.id, normalizeTask(task)]));
+    queueLocalChange({
+      entity_type: 'task',
+      entity_id: id,
+      action: 'reparent',
+      payload: { new_parent_id: newParentId ?? null }
+    });
+    syncStatus.textContent = 'Offline changes pending';
+    return state.tasks[id];
+  } catch {
+    return null;
+  }
 }
 
 async function deleteTaskRecord(id) {
-  const result = await api.deleteTask(id);
-  if (result?.ids?.length) {
-    result.ids.forEach(taskId => delete state.tasks[taskId]);
-  } else if (result?.deleted) {
-    delete state.tasks[id];
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const result = await api.deleteTask(id);
+      if (result?.ids?.length) {
+        result.ids.forEach(taskId => delete state.tasks[taskId]);
+      } else if (result?.deleted) {
+        delete state.tasks[id];
+      }
+      return result;
+    } catch {
+      // fall back to local delete
+    }
   }
-  return result;
+  const descendants = getDescendants(id).map(task => task.id);
+  const allIds = [id, ...descendants];
+  allIds.forEach(taskId => delete state.tasks[taskId]);
+  queueLocalChange({
+    entity_type: 'task',
+    entity_id: id,
+    action: 'delete',
+    payload: { id }
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return { deleted: 1, ids: allIds };
 }
 
 async function createStatusRecord(label) {
@@ -1979,6 +2227,7 @@ function render() {
   }
   renderNotificationStatus();
   saveState(state);
+  persistLocalData();
 }
 
 function renderView() {
@@ -4994,6 +5243,10 @@ templateModalForm?.addEventListener('submit', async (event) => {
 });
 
 syncBtn.addEventListener('click', async () => {
+  if (hasPendingLocalChanges()) {
+    syncStatus.textContent = 'Local changes pending (offline)';
+    return;
+  }
   syncStatus.textContent = 'Refreshing...';
   try {
     await refreshWorkspace();
@@ -5009,9 +5262,35 @@ newWorkspaceBtn.addEventListener('click', async () => {
   openMenu = null;
   const name = prompt('Workspace name');
   if (!name) return;
-  const created = await api.createWorkspace({ name: name.trim(), type: 'personal' });
-  const workspace = created ? normalizeWorkspace(created) : null;
-  if (!workspace) return;
+  const trimmed = name.trim();
+  let workspace = null;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const created = await api.createWorkspace({ name: trimmed, type: 'personal' });
+      workspace = created ? normalizeWorkspace(created) : null;
+    } catch {
+      // offline fallback
+    }
+  }
+  if (!workspace) {
+    const now = new Date().toISOString();
+    workspace = normalizeWorkspace({
+      id: createId(),
+      name: trimmed,
+      type: 'personal',
+      archived: 0,
+      created_at: now,
+      updated_at: now
+    });
+    queueLocalChange({
+      entity_type: 'workspace',
+      entity_id: workspace.id,
+      action: 'create',
+      payload: { id: workspace.id, name: trimmed, type: 'personal' }
+    });
+    syncStatus.textContent = 'Offline changes pending';
+  }
   state.workspaces = state.workspaces ?? [];
   state.workspaces.push(workspace);
   await selectWorkspace(workspace);
