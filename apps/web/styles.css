@@ -1710,13 +1710,16 @@ button:hover { opacity: 0.9; }
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 1.35rem;
-  line-height: 1;
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 2.25rem;
+  height: 2.25rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.modal-back svg {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .modal-back:hover {
