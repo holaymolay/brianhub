@@ -1947,6 +1947,14 @@ function render() {
     renderTaskEditorDependencies(state.tasks[activeTaskId]);
     populateDependencySelect(state.tasks[activeTaskId]);
   }
+  const activeEl = document.activeElement;
+  if (activeEl instanceof HTMLInputElement && activeEl.classList.contains('task-add-input')) {
+    state.ui = state.ui ?? {};
+    state.ui.taskAddFocused = true;
+    state.ui.taskAddDraft = activeEl.value;
+  } else if (state.ui?.taskAddFocused) {
+    state.ui.taskAddFocused = false;
+  }
   taskTreeEl.innerHTML = '';
   const tasks = getFilteredTasks();
   const tree = buildTree(tasks);
@@ -3016,7 +3024,21 @@ function renderTaskList(roots) {
   addRow.className = 'task-add-subtask task-add-task';
   const addInput = document.createElement('input');
   addInput.type = 'text';
+  addInput.className = 'task-add-input';
   addInput.placeholder = 'Add task...';
+  addInput.value = state.ui?.taskAddDraft ?? '';
+  addInput.addEventListener('focus', () => {
+    state.ui = state.ui ?? {};
+    state.ui.taskAddFocused = true;
+  });
+  addInput.addEventListener('blur', () => {
+    if (!state.ui) return;
+    state.ui.taskAddFocused = false;
+  });
+  addInput.addEventListener('input', () => {
+    state.ui = state.ui ?? {};
+    state.ui.taskAddDraft = addInput.value;
+  });
   addInput.addEventListener('keydown', async (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -3025,11 +3047,14 @@ function renderTaskList(roots) {
       await createTaskRecord({ title });
       addInput.value = '';
       state.ui = state.ui ?? {};
+      state.ui.taskAddDraft = '';
+      state.ui = state.ui ?? {};
       state.ui.focusTaskAdd = true;
       render();
     }
     if (event.key === 'Escape') {
       addInput.value = '';
+      if (state.ui) state.ui.taskAddDraft = '';
       addInput.blur();
     }
   });
@@ -3042,8 +3067,10 @@ function renderTaskList(roots) {
   attachTaskDropzone(bottomDropzone, { parentId: null });
   taskTreeEl.appendChild(bottomDropzone);
 
-  if (state.ui?.focusTaskAdd) {
+  if (state.ui?.focusTaskAdd || state.ui?.taskAddFocused) {
+    state.ui = state.ui ?? {};
     state.ui.focusTaskAdd = false;
+    state.ui.taskAddFocused = true;
     setTimeout(() => addInput.focus(), 0);
   }
 }
