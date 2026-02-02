@@ -216,9 +216,6 @@ const checkinNoReschedule = document.getElementById('checkin-no-reschedule');
 const checkinNoDismiss = document.getElementById('checkin-no-dismiss');
 const checkinRescheduleModal = document.getElementById('checkin-reschedule-modal');
 const checkinRescheduleTitle = document.getElementById('checkin-reschedule-title');
-const checkinExtendMinutesInput = document.getElementById('checkin-extend-minutes');
-const checkinExtendApply = document.getElementById('checkin-extend-apply');
-const checkinFirstApply = document.getElementById('checkin-first-apply');
 const checkinCustomDue = document.getElementById('checkin-custom-due');
 const checkinRescheduleApply = document.getElementById('checkin-reschedule-apply');
 const checkinRescheduleCancel = document.getElementById('checkin-reschedule-cancel');
@@ -687,25 +684,6 @@ checkinNoDismiss?.addEventListener('click', () => {
 checkinNoModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => {
   dismissCheckinNo();
 });
-checkinExtendApply?.addEventListener('click', async () => {
-  if (!checkinRescheduleContext) return;
-  const minutes = Number(checkinExtendMinutesInput?.value ?? getCheckinExtendMinutes());
-  const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : getCheckinExtendMinutes();
-  const dueAt = addMinutes(new Date(), safeMinutes).toISOString();
-  await applyCheckinReschedule({ due_at: dueAt });
-});
-checkinFirstApply?.addEventListener('click', async () => {
-  if (!checkinRescheduleContext) return;
-  const task = state.tasks[checkinRescheduleContext.taskId];
-  if (!task) return;
-  const response = checkinRescheduleContext.response;
-  const targetStatus = response === 'no'
-    ? (getStatusKeyByKind(TaskStatus.PLANNED) ?? getDefaultStatusKey())
-    : (getStatusKeyByKind(TaskStatus.IN_PROGRESS) ?? getDefaultStatusKey());
-  const sortOrder = getFirstTaskSortOrder(task.parent_id ?? null, task.parent_id ? null : targetStatus);
-  const dueAt = addMinutes(new Date(), 1).toISOString();
-  await applyCheckinReschedule({ due_at: dueAt, sort_order: sortOrder });
-});
 checkinRescheduleApply?.addEventListener('click', async () => {
   if (!checkinRescheduleContext) return;
   const customValue = checkinCustomDue?.value ?? '';
@@ -726,9 +704,6 @@ checkinDefaultMinutesInput?.addEventListener('change', () => {
     return;
   }
   setCheckinExtendMinutes(value);
-  if (checkinExtendMinutesInput && checkinRescheduleModal && !checkinRescheduleModal.classList.contains('hidden')) {
-    checkinExtendMinutesInput.value = String(value);
-  }
   if (checkinNoModal && !checkinNoModal.classList.contains('hidden') && checkinNoExtend) {
     checkinNoExtend.textContent = `Extend session (${value} min)`;
   }
@@ -1172,15 +1147,12 @@ function openCheckinRescheduleModal(task, response) {
   if (!checkinRescheduleModal) return;
   checkinRescheduleContext = { taskId: task.id, response };
   if (checkinRescheduleTitle) checkinRescheduleTitle.textContent = task.title;
-  if (checkinExtendMinutesInput) {
-    checkinExtendMinutesInput.value = String(getCheckinExtendMinutes());
-  }
   if (checkinCustomDue) {
     const tomorrow = getTomorrowSameTime();
     checkinCustomDue.value = toDatetimeLocal(tomorrow.toISOString());
   }
   checkinRescheduleModal.classList.remove('hidden');
-  checkinExtendMinutesInput?.focus();
+  checkinCustomDue?.focus();
 }
 
 function closeCheckinRescheduleModal() {
