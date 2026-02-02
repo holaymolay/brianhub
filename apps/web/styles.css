@@ -1614,8 +1614,8 @@ button:hover { opacity: 0.9; }
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   overflow: hidden;
-  width: 92%;
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   background: #0f141c;
   display: flex;
   flex-direction: column;
