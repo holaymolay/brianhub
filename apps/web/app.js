@@ -2148,14 +2148,25 @@ function setNotesContent(value = '') {
   }
 }
 
-function updateNotesEditorDoc(markdown) {
-  if (!notesEditorView || !notesMarkdownParser || !notesEditorStateCtor || !notesSchema) return;
-  let doc;
-  try {
-    doc = notesMarkdownParser.parse(markdown || '');
-  } catch {
-    doc = notesSchema.topNodeType.createAndFill();
+function createNotesDocFromMarkdown(markdown) {
+  if (!notesMarkdownParser || !notesSchema) return null;
+  const source = markdown ?? '';
+  if (!source.trim()) {
+    const paragraph = notesSchema.nodes.paragraph?.create();
+    return notesSchema.topNodeType.createAndFill(null, paragraph ? [paragraph] : null);
   }
+  try {
+    return notesMarkdownParser.parse(source);
+  } catch {
+    const paragraph = notesSchema.nodes.paragraph?.create();
+    return notesSchema.topNodeType.createAndFill(null, paragraph ? [paragraph] : null);
+  }
+}
+
+function updateNotesEditorDoc(markdown) {
+  if (!notesEditorView || !notesEditorStateCtor || !notesSchema) return;
+  const doc = createNotesDocFromMarkdown(markdown);
+  if (!doc) return;
   const nextState = notesEditorStateCtor.create({
     schema: notesSchema,
     doc,
@@ -2372,7 +2383,7 @@ async function initNotesEditor() {
       notesEditorPlugins = plugins;
 
       const markdown = editorDesc?.value ?? pendingNotesContent ?? '';
-      const doc = notesMarkdownParser.parse(markdown || '');
+      const doc = createNotesDocFromMarkdown(markdown) ?? notesSchema.topNodeType.createAndFill();
       const state = EditorState.create({
         schema: notesSchema,
         doc,
