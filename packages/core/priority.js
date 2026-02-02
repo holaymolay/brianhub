@@ -17,9 +17,9 @@ export function getPriorityRank(priority) {
 }
 
 export function compareTasksByPriority(a, b) {
+  const sortDiff = (a.sort_order ?? 0) - (b.sort_order ?? 0);
+  if (sortDiff !== 0) return sortDiff;
   const rankDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
   if (rankDiff !== 0) return rankDiff;
-  const urgencyDiff = (b.urgency ? 1 : 0) - (a.urgency ? 1 : 0);
-  if (urgencyDiff !== 0) return urgencyDiff;
-  return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+  return 0;
 }

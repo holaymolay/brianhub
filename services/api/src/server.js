@@ -13,11 +13,43 @@ import {
   listTemplates,
   updateTemplate,
   deleteTemplate,
+  createShoppingList,
+  listShoppingLists,
+  updateShoppingList,
+  deleteShoppingList,
+  createShoppingItem,
+  createShoppingItems,
+  listShoppingItems,
+  updateShoppingItem,
+  deleteShoppingItem,
+  listStatuses,
+  createStatus,
+  updateStatus,
+  deleteStatus,
+  listTaskTypes,
+  createTaskType,
+  updateTaskType,
+  deleteTaskType,
+  listNoticeTypes,
+  createNoticeType,
+  updateNoticeType,
+  deleteNoticeType,
+  listNotices,
+  createNotice,
+  updateNotice,
+  deleteNotice,
+  listStoreRules,
+  createStoreRule,
+  updateStoreRule,
+  deleteStoreRule,
   createTask,
   getTask,
   updateTask,
   deleteTask,
   listTasks,
+  listTaskDependencies,
+  addTaskDependency,
+  removeTaskDependency,
   getTaskTree,
   reparentTask,
   applyTaskCheckIn,
@@ -29,6 +61,17 @@ import {
 const server = Fastify({ logger: true });
 const db = await openDb();
 migrate(db);
+
+server.addHook('onRequest', (request, reply, done) => {
+  reply.header('Access-Control-Allow-Origin', '*');
+  reply.header('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id');
+  reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  if (request.method === 'OPTIONS') {
+    reply.code(204).send();
+    return;
+  }
+  done();
+});
 
 server.get('/health', async () => ({ ok: true }));
 
@@ -102,12 +145,227 @@ server.delete('/templates/:id', async (request, reply) => {
   return result;
 });
 
+server.get('/statuses', async (request) => {
+  const { workspace_id } = request.query ?? {};
+  return listStatuses(db, workspace_id);
+});
+
+server.post('/statuses', async (request, reply) => {
+  const { workspace_id, label } = request.body ?? {};
+  if (!workspace_id || !label) {
+    return reply.code(400).send({ error: 'workspace_id and label required' });
+  }
+  try {
+    return createStatus(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/statuses/:id', async (request, reply) => {
+  const updated = updateStatus(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  if (!updated) return reply.code(404).send({ error: 'not found' });
+  return updated;
+});
+
+server.delete('/statuses/:id', async (request, reply) => {
+  const result = deleteStatus(db, request.params.id, request.headers['x-client-id'] ?? null);
+  if (!result || result.deleted === 0) {
+    if (result?.error === 'protected') {
+      return reply.code(400).send({ error: 'status is protected' });
+    }
+    return reply.code(404).send({ error: 'not found' });
+  }
+  return result;
+});
+
+server.get('/task-types', async (request) => {
+  const { workspace_id } = request.query ?? {};
+  return listTaskTypes(db, workspace_id);
+});
+
+server.post('/task-types', async (request, reply) => {
+  const { workspace_id, name } = request.body ?? {};
+  if (!workspace_id || !name) {
+    return reply.code(400).send({ error: 'workspace_id and name required' });
+  }
+  try {
+    return createTaskType(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/task-types/:id', async (request, reply) => {
+  try {
+    const updated = updateTaskType(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return updated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.delete('/task-types/:id', async (request, reply) => {
+  const result = deleteTaskType(db, request.params.id, request.headers['x-client-id'] ?? null);
+  if (!result || result.deleted === 0) {
+    if (result?.error === 'protected') {
+      return reply.code(400).send({ error: 'type is protected' });
+    }
+    return reply.code(404).send({ error: 'not found' });
+  }
+  return result;
+});
+
+server.get('/notice-types', async (request) => {
+  const { workspace_id } = request.query ?? {};
+  return listNoticeTypes(db, workspace_id);
+});
+
+server.post('/notice-types', async (request, reply) => {
+  const { workspace_id, label } = request.body ?? {};
+  if (!workspace_id || !label) {
+    return reply.code(400).send({ error: 'workspace_id and label required' });
+  }
+  try {
+    return createNoticeType(db, { workspace_id, label }, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/notice-types/:id', async (request, reply) => {
+  try {
+    const updated = updateNoticeType(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return updated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.delete('/notice-types/:id', async (request) => {
+  return deleteNoticeType(db, request.params.id, request.headers['x-client-id'] ?? null);
+});
+
+server.get('/notices', async (request) => {
+  const { workspace_id } = request.query ?? {};
+  return listNotices(db, workspace_id);
+});
+
+server.post('/notices', async (request, reply) => {
+  const { workspace_id, title, notify_at } = request.body ?? {};
+  if (!workspace_id || !title || !notify_at) {
+    return reply.code(400).send({ error: 'workspace_id, title, and notify_at required' });
+  }
+  return createNotice(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
+});
+
+server.patch('/notices/:id', async (request, reply) => {
+  const updated = updateNotice(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  if (!updated) return reply.code(404).send({ error: 'not found' });
+  return updated;
+});
+
+server.delete('/notices/:id', async (request, reply) => {
+  const result = deleteNotice(db, request.params.id, request.headers['x-client-id'] ?? null);
+  if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
+  return result;
+});
+
+server.get('/store-rules', async (request) => {
+  const { workspace_id } = request.query ?? {};
+  return listStoreRules(db, workspace_id);
+});
+
+server.post('/store-rules', async (request, reply) => {
+  const { workspace_id, store_name } = request.body ?? {};
+  if (!workspace_id || !store_name) {
+    return reply.code(400).send({ error: 'workspace_id and store_name required' });
+  }
+  return createStoreRule(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
+});
+
+server.patch('/store-rules/:id', async (request, reply) => {
+  const updated = updateStoreRule(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  if (!updated) return reply.code(404).send({ error: 'not found' });
+  return updated;
+});
+
+server.delete('/store-rules/:id', async (request, reply) => {
+  const result = deleteStoreRule(db, request.params.id, request.headers['x-client-id'] ?? null);
+  if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
+  return result;
+});
+
+server.get('/shopping-lists', async (request) => {
+  const { workspace_id } = request.query ?? {};
+  return listShoppingLists(db, workspace_id);
+});
+
+server.post('/shopping-lists', async (request, reply) => {
+  const { workspace_id, name } = request.body ?? {};
+  if (!workspace_id || !name) {
+    return reply.code(400).send({ error: 'workspace_id and name required' });
+  }
+  return createShoppingList(db, { workspace_id, name, archived: request.body?.archived }, request.headers['x-client-id'] ?? null);
+});
+
+server.patch('/shopping-lists/:id', async (request, reply) => {
+  const updated = updateShoppingList(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  if (!updated) return reply.code(404).send({ error: 'not found' });
+  return updated;
+});
+
+server.delete('/shopping-lists/:id', async (request, reply) => {
+  const result = deleteShoppingList(db, request.params.id, request.headers['x-client-id'] ?? null);
+  if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
+  return result;
+});
+
+server.get('/shopping-items', async (request) => {
+  const { workspace_id, list_id } = request.query ?? {};
+  return listShoppingItems(db, workspace_id, list_id ?? null);
+});
+
+server.post('/shopping-items', async (request, reply) => {
+  const { list_id, name, items } = request.body ?? {};
+  if (!list_id) {
+    return reply.code(400).send({ error: 'list_id required' });
+  }
+  if (Array.isArray(items) && items.length) {
+    return { items: createShoppingItems(db, list_id, items, request.headers['x-client-id'] ?? null) };
+  }
+  if (!name) {
+    return reply.code(400).send({ error: 'name required' });
+  }
+  const created = createShoppingItem(db, { list_id, name }, request.headers['x-client-id'] ?? null);
+  if (!created) return reply.code(404).send({ error: 'list not found' });
+  return created;
+});
+
+server.patch('/shopping-items/:id', async (request, reply) => {
+  const updated = updateShoppingItem(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  if (!updated) return reply.code(404).send({ error: 'not found' });
+  return updated;
+});
+
+server.delete('/shopping-items/:id', async (request, reply) => {
+  const result = deleteShoppingItem(db, request.params.id, request.headers['x-client-id'] ?? null);
+  if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
+  return result;
+});
+
 server.post('/tasks', async (request, reply) => {
   const data = request.body ?? {};
   if (!data.workspace_id || !data.title) {
     return reply.code(400).send({ error: 'workspace_id and title required' });
   }
-  return createTask(db, data, request.headers['x-client-id'] ?? null);
+  try {
+    return createTask(db, data, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
 });
 
 server.get('/tasks/:id', async (request, reply) => {
@@ -117,9 +375,13 @@ server.get('/tasks/:id', async (request, reply) => {
 });
 
 server.patch('/tasks/:id', async (request, reply) => {
-  const updated = updateTask(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
-  if (!updated) return reply.code(404).send({ error: 'not found' });
-  return updated;
+  try {
+    const updated = updateTask(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return updated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
 });
 
 server.delete('/tasks/:id', async (request) => {
@@ -129,6 +391,36 @@ server.delete('/tasks/:id', async (request) => {
 server.get('/tasks', async (request) => {
   const { workspace_id } = request.query;
   return listTasks(db, workspace_id);
+});
+
+server.get('/task-dependencies', async (request) => {
+  const { workspace_id } = request.query;
+  return listTaskDependencies(db, workspace_id);
+});
+
+server.post('/task-dependencies', async (request, reply) => {
+  const { task_id, depends_on_id } = request.body ?? {};
+  if (!task_id || !depends_on_id) {
+    return reply.code(400).send({ error: 'task_id and depends_on_id required' });
+  }
+  try {
+    return addTaskDependency(db, task_id, depends_on_id, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.delete('/task-dependencies/:taskId/:dependsOnId', async (request, reply) => {
+  try {
+    return removeTaskDependency(
+      db,
+      request.params.taskId,
+      request.params.dependsOnId,
+      request.headers['x-client-id'] ?? null
+    );
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
 });
 
 server.get('/tasks/tree', async (request) => {

@@ -12,7 +12,12 @@ function defaultState() {
       notificationsEnabled: false,
       collapsedTasks: {},
       activeProjectId: null,
-      activeWorkspaceId: null
+      activeWorkspaceId: null,
+      activeShoppingListId: null,
+      activeView: 'tasks',
+      showArchivedShoppingLists: false,
+      taskView: 'list',
+      syncCursor: 0
     }
   };
 }
@@ -38,6 +43,11 @@ function normalizeState(state) {
   }
   if (!('activeProjectId' in next.ui)) next.ui.activeProjectId = null;
   if (!('activeWorkspaceId' in next.ui)) next.ui.activeWorkspaceId = null;
+  if (!('activeShoppingListId' in next.ui)) next.ui.activeShoppingListId = null;
+  if (!('activeView' in next.ui)) next.ui.activeView = 'tasks';
+  if (!('showArchivedShoppingLists' in next.ui)) next.ui.showArchivedShoppingLists = false;
+  if (!('taskView' in next.ui)) next.ui.taskView = 'list';
+  if (!('syncCursor' in next.ui)) next.ui.syncCursor = 0;
   return next;
 }
 
