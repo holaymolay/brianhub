@@ -198,6 +198,12 @@ const noticeAt = document.getElementById('notice-at');
 const noticeSaveBtn = document.getElementById('notice-save');
 const noticeDismissBtn = document.getElementById('notice-dismiss');
 const noticeCancel = document.getElementById('notice-cancel');
+const checkinModal = document.getElementById('checkin-modal');
+const checkinTaskTitle = document.getElementById('checkin-task-title');
+const checkinYes = document.getElementById('checkin-yes');
+const checkinNo = document.getElementById('checkin-no');
+const checkinInProgress = document.getElementById('checkin-inprogress');
+const checkinDismiss = document.getElementById('checkin-dismiss');
 const taskEditor = document.getElementById('task-editor');
 const taskEditorForm = document.getElementById('task-editor-form');
 const editorTitle = document.getElementById('editor-title');
@@ -245,6 +251,8 @@ let editorRecurrence = { interval: null, unit: 'month' };
 let syncInFlight = false;
 let taskEditorSwapTimer = null;
 let activeNoticeId = null;
+let activeCheckinTaskId = null;
+const checkinSnoozes = new Map();
 let undoToastTimer = null;
 let undoToastEl = null;
 
@@ -575,6 +583,22 @@ noticeForm?.addEventListener('submit', async (event) => {
   }
   closeNoticeModal();
   render();
+});
+
+checkinYes?.addEventListener('click', async () => {
+  await resolveCheckin('yes');
+});
+checkinNo?.addEventListener('click', async () => {
+  await resolveCheckin('no');
+});
+checkinInProgress?.addEventListener('click', async () => {
+  await resolveCheckin('in-progress');
+});
+checkinDismiss?.addEventListener('click', () => {
+  dismissCheckin();
+});
+checkinModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => {
+  dismissCheckin();
 });
 
 taskColumnsClose?.addEventListener('click', closeTaskColumnsModal);
@@ -919,6 +943,88 @@ function openNoticeModalWithNotice(notice) {
   noticeDismissBtn?.classList.toggle('hidden', !notice);
   noticeModal.classList.remove('hidden');
   noticeTitle.focus();
+}
+
+function getDueCheckinTasks() {
+  if (!state.workspace) return [];
+  const now = Date.now();
+  const tasks = Object.values(state.tasks ?? {}).filter(task =>
+    task.workspace_id === state.workspace.id && task.next_checkin_at
+  );
+  return tasks
+    .filter(task => {
+      if (isDoneStatusKey(task.status) || isCanceledStatusKey(task.status)) return false;
+      const dueTime = new Date(task.next_checkin_at).getTime();
+      if (Number.isNaN(dueTime) || dueTime > now) return false;
+      const snoozeUntil = checkinSnoozes.get(task.id);
+      if (snoozeUntil && snoozeUntil > now) return false;
+      if (snoozeUntil && snoozeUntil <= now) checkinSnoozes.delete(task.id);
+      return true;
+    })
+    .sort((a, b) => new Date(a.next_checkin_at).getTime() - new Date(b.next_checkin_at).getTime());
+}
+
+function openCheckinModal(task) {
+  if (!checkinModal) return;
+  activeCheckinTaskId = task.id;
+  if (checkinTaskTitle) checkinTaskTitle.textContent = task.title;
+  checkinModal.classList.remove('hidden');
+  checkinYes?.focus();
+}
+
+function closeCheckinModal() {
+  checkinModal?.classList.add('hidden');
+  activeCheckinTaskId = null;
+}
+
+function dismissCheckin(minutes = 60) {
+  if (activeCheckinTaskId) {
+    checkinSnoozes.set(activeCheckinTaskId, Date.now() + minutes * 60 * 1000);
+  }
+  closeCheckinModal();
+}
+
+function syncCheckinModal() {
+  if (!checkinModal || checkinModal.classList.contains('hidden')) return;
+  if (!activeCheckinTaskId) {
+    closeCheckinModal();
+    return;
+  }
+  const task = state.tasks[activeCheckinTaskId];
+  if (!task || isDoneStatusKey(task.status) || isCanceledStatusKey(task.status)) {
+    closeCheckinModal();
+    return;
+  }
+  if (!task.next_checkin_at) {
+    closeCheckinModal();
+    return;
+  }
+  const dueTime = new Date(task.next_checkin_at).getTime();
+  if (Number.isNaN(dueTime) || dueTime > Date.now()) {
+    closeCheckinModal();
+    return;
+  }
+  if (checkinTaskTitle) checkinTaskTitle.textContent = task.title;
+}
+
+function maybeShowCheckinModal() {
+  if (!checkinModal) return;
+  if (!state.workspace) return;
+  if (!checkinModal.classList.contains('hidden')) return;
+  if (document.querySelector('.modal:not(.hidden)')) return;
+  if (taskEditor?.classList.contains('is-open')) return;
+  const due = getDueCheckinTasks();
+  if (!due.length) return;
+  openCheckinModal(due[0]);
+}
+
+async function resolveCheckin(response) {
+  if (!activeCheckinTaskId) return;
+  const task = state.tasks[activeCheckinTaskId];
+  closeCheckinModal();
+  if (!task) return;
+  await handleCheckIn(task, response);
+  maybeShowCheckinModal();
 }
 
 function renderNoticeTypeSelect(selectedKey = '') {
@@ -2226,6 +2332,8 @@ function render() {
     renderNoticeTypeSelect(noticeType?.value ?? '');
   }
   renderNotificationStatus();
+  syncCheckinModal();
+  maybeShowCheckinModal();
   saveState(state);
   persistLocalData();
 }
@@ -5332,12 +5440,14 @@ enableNotificationsBtn?.addEventListener('change', async () => {
 });
 
 setInterval(checkNotices, 60 * 1000);
+setInterval(maybeShowCheckinModal, 60 * 1000);
 
 async function init() {
   await loadWorkspaces();
   await refreshWorkspace();
   await primeSyncCursor();
   checkNotices();
+  maybeShowCheckinModal();
 }
 
 init();
