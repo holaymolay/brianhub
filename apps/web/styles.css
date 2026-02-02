@@ -1501,7 +1501,7 @@ button:hover { opacity: 0.9; }
 }
 
 .task-editor::-webkit-scrollbar {
-  width: 14px;
+  width: 20px;
 }
 
 .task-editor::-webkit-scrollbar-track {
