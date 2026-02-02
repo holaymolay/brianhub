@@ -5112,8 +5112,7 @@ function populateTaskEditor(task) {
   editorStart.value = toDatetimeLocal(task.start_at);
   editorDue.value = toDatetimeLocal(task.due_at);
   editorDesc.value = task.description_md ?? '';
-  renderEditorNotesPreview();
-  updateEditorNotesModeUI();
+  setEditorNotesMode('preview');
   renderTaskEditorSubtasks(task);
   renderTaskEditorDependencies(task);
   populateDependencySelect(task);
