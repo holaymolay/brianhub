@@ -1467,7 +1467,7 @@ button:hover { opacity: 0.9; }
   position: fixed;
   top: 0;
   right: 0;
-  width: min(675px, 92vw);
+  width: min(820px, 96vw);
   height: 100vh;
   background: var(--panel);
   border-left: 1px solid var(--border);
@@ -1633,9 +1633,17 @@ button:hover { opacity: 0.9; }
   border-bottom: 1px solid var(--border);
 }
 
+.editor-notes .toastui-editor-main,
+.editor-notes .toastui-editor-ww-container,
+.editor-notes .toastui-editor-md-container {
+  background: #0f141c;
+  color: var(--text);
+}
+
 .editor-notes .toastui-editor-contents {
   background: #0f141c;
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .editor-notes .toastui-editor-defaultUI .toastui-editor-toolbar-icons {
@@ -1644,6 +1652,10 @@ button:hover { opacity: 0.9; }
 
 .editor-notes .toastui-editor-defaultUI .toastui-editor-toolbar-icons:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.editor-notes .toastui-editor-main {
+  overflow-x: hidden;
 }
 
 .task-editor-deps-list {
