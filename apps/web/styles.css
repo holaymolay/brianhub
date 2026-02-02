@@ -1763,10 +1763,16 @@ button:hover { opacity: 0.9; }
   height: 1.5rem;
 }
 
-.task-editor-form label {
+.task-editor-form label,
+.task-editor-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.task-editor-label {
   color: var(--muted);
   font-size: 0.85rem;
 }
