@@ -208,17 +208,20 @@ const checkinProgressModal = document.getElementById('checkin-progress-modal');
 const checkinProgressTitle = document.getElementById('checkin-progress-title');
 const checkinProgressYes = document.getElementById('checkin-progress-yes');
 const checkinProgressNo = document.getElementById('checkin-progress-no');
+const checkinProgressBack = document.getElementById('checkin-progress-back');
 const checkinNoModal = document.getElementById('checkin-no-modal');
 const checkinNoTitle = document.getElementById('checkin-no-title');
 const checkinNoExtend = document.getElementById('checkin-no-extend');
 const checkinNoFirst = document.getElementById('checkin-no-first');
 const checkinNoReschedule = document.getElementById('checkin-no-reschedule');
 const checkinNoDismiss = document.getElementById('checkin-no-dismiss');
+const checkinNoBack = document.getElementById('checkin-no-back');
 const checkinRescheduleModal = document.getElementById('checkin-reschedule-modal');
 const checkinRescheduleTitle = document.getElementById('checkin-reschedule-title');
 const checkinCustomDue = document.getElementById('checkin-custom-due');
 const checkinRescheduleApply = document.getElementById('checkin-reschedule-apply');
 const checkinRescheduleCancel = document.getElementById('checkin-reschedule-cancel');
+const checkinRescheduleBack = document.getElementById('checkin-reschedule-back');
 const checkinDefaultMinutesInput = document.getElementById('checkin-default-minutes');
 const taskEditor = document.getElementById('task-editor');
 const taskEditorForm = document.getElementById('task-editor-form');
@@ -611,7 +614,7 @@ checkinNo?.addEventListener('click', async () => {
   const task = state.tasks[activeCheckinTaskId];
   if (task && isTaskOverdue(task)) {
     closeCheckinModal();
-    openCheckinNoModal(task, 'no');
+    openCheckinNoModal(task, 'no', 'checkin');
     return;
   }
   await resolveCheckin('no');
@@ -645,11 +648,19 @@ checkinProgressNo?.addEventListener('click', () => {
   if (!taskId) return;
   const task = state.tasks[taskId];
   if (!task) return;
-  openCheckinNoModal(task, 'in-progress');
+  openCheckinNoModal(task, 'in-progress', 'progress');
 });
 checkinProgressModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => {
   if (checkinProgressTaskId) snoozeCheckin(checkinProgressTaskId, 30);
   closeCheckinProgressModal();
+});
+checkinProgressBack?.addEventListener('click', () => {
+  const taskId = checkinProgressTaskId;
+  closeCheckinProgressModal();
+  if (!taskId) return;
+  const task = state.tasks[taskId];
+  if (!task) return;
+  openCheckinModal(task);
 });
 checkinNoExtend?.addEventListener('click', async () => {
   if (!checkinRescheduleContext) return;
@@ -676,13 +687,26 @@ checkinNoReschedule?.addEventListener('click', () => {
   closeCheckinNoModal();
   const task = state.tasks[checkinRescheduleContext.taskId];
   if (!task) return;
-  openCheckinRescheduleModal(task, checkinRescheduleContext.response);
+  openCheckinRescheduleModal(task, checkinRescheduleContext.response, checkinRescheduleContext.origin);
 });
 checkinNoDismiss?.addEventListener('click', () => {
   dismissCheckinNo();
 });
 checkinNoModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => {
   dismissCheckinNo();
+});
+checkinNoBack?.addEventListener('click', () => {
+  const context = checkinRescheduleContext;
+  closeCheckinNoModal();
+  checkinRescheduleContext = null;
+  if (!context) return;
+  const task = state.tasks[context.taskId];
+  if (!task) return;
+  if (context.origin === 'progress') {
+    openCheckinProgressModal(task);
+    return;
+  }
+  openCheckinModal(task);
 });
 checkinRescheduleApply?.addEventListener('click', async () => {
   if (!checkinRescheduleContext) return;
@@ -696,6 +720,14 @@ checkinRescheduleCancel?.addEventListener('click', () => {
 });
 checkinRescheduleModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => {
   dismissCheckinReschedule();
+});
+checkinRescheduleBack?.addEventListener('click', () => {
+  const context = checkinRescheduleContext;
+  closeCheckinRescheduleModal();
+  if (!context) return;
+  const task = state.tasks[context.taskId];
+  if (!task) return;
+  openCheckinNoModal(task, context.response, context.origin);
 });
 checkinDefaultMinutesInput?.addEventListener('change', () => {
   const value = Number(checkinDefaultMinutesInput.value);
@@ -1127,9 +1159,9 @@ function closeCheckinProgressModal() {
   checkinProgressTaskId = null;
 }
 
-function openCheckinNoModal(task, response) {
+function openCheckinNoModal(task, response, origin = 'checkin') {
   if (!checkinNoModal) return;
-  checkinRescheduleContext = { taskId: task.id, response };
+  checkinRescheduleContext = { taskId: task.id, response, origin };
   if (checkinNoTitle) checkinNoTitle.textContent = task.title;
   const minutes = getCheckinExtendMinutes();
   if (checkinNoExtend) {
@@ -1143,9 +1175,10 @@ function closeCheckinNoModal() {
   checkinNoModal?.classList.add('hidden');
 }
 
-function openCheckinRescheduleModal(task, response) {
+function openCheckinRescheduleModal(task, response, origin = null) {
   if (!checkinRescheduleModal) return;
-  checkinRescheduleContext = { taskId: task.id, response };
+  const resolvedOrigin = origin ?? checkinRescheduleContext?.origin ?? 'checkin';
+  checkinRescheduleContext = { taskId: task.id, response, origin: resolvedOrigin };
   if (checkinRescheduleTitle) checkinRescheduleTitle.textContent = task.title;
   if (checkinCustomDue) {
     const tomorrow = getTomorrowSameTime();

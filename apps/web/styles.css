@@ -1695,6 +1695,21 @@ button:hover { opacity: 0.9; }
   gap: 0.75rem;
 }
 
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+}
+
+.modal-back {
+  padding: 0.35rem 0.6rem;
+  font-weight: 500;
+}
+
 #task-modal .modal-card {
   width: min(720px, 94vw);
 }

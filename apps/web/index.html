@@ -343,7 +343,10 @@
     <div id="checkin-progress-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
-        <h2>Finish this today?</h2>
+        <div class="modal-header">
+          <button type="button" id="checkin-progress-back" class="subtle-button modal-back">← Back</button>
+          <h2>Finish this today?</h2>
+        </div>
         <div id="checkin-progress-title" class="sidebar-note"></div>
         <div class="checkin-actions">
           <button type="button" id="checkin-progress-yes">Yes, keep due date</button>
@@ -355,7 +358,10 @@
     <div id="checkin-no-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
-        <h2>Reschedule options</h2>
+        <div class="modal-header">
+          <button type="button" id="checkin-no-back" class="subtle-button modal-back">← Back</button>
+          <h2>Reschedule options</h2>
+        </div>
         <div id="checkin-no-title" class="sidebar-note"></div>
         <div class="checkin-actions">
           <button type="button" id="checkin-no-extend">Extend session</button>
@@ -371,7 +377,10 @@
     <div id="checkin-reschedule-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
-        <h2>Reschedule overdue task</h2>
+        <div class="modal-header">
+          <button type="button" id="checkin-reschedule-back" class="subtle-button modal-back">← Back</button>
+          <h2>Reschedule overdue task</h2>
+        </div>
         <div id="checkin-reschedule-title" class="sidebar-note"></div>
         <label>
           Reschedule to (default tomorrow)
