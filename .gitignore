@@ -7,3 +7,4 @@ npm-debug.log*
 .env.*
 .ceres/
 services/api/db/*.sqlite
+data/*.sqlite

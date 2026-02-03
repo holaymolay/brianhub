@@ -1,0 +1,21 @@
+name: data-layer
+purpose: DB abstraction + migrations + tenant-scoped repositories
+state:
+  db_clients:
+    - db-client
+    - sqlite-client
+    - postgres-client
+  migrations:
+    - runner
+    - sql-files
+  repos:
+    - task-repo
+behaviors:
+  - connect
+  - query
+  - transaction
+  - migrate
+  - tenant-scoping
+dependencies:
+  sqlite: sql.js
+  postgres: pg (future)
