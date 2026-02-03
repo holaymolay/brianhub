@@ -1,0 +1,21 @@
+name: data-layer-adoption
+purpose: Wire services/api to the DbClient abstraction and make service calls async-safe.
+state:
+  db:
+    - services/api/src/db.js
+    - services/api/src/migrate.js
+  api:
+    - services/api/src/taskService.js
+    - services/api/src/server.js
+  migrations:
+    - services/api/db/migrations/017_orgs.sql
+  tests:
+    - tests/task-service-data-layer.test.js
+    - tests/notices.test.js
+behaviors:
+  - task service runs on DbClient (query/queryOne/exec/transaction)
+  - org/workspace scaffolding available for future multi-tenant use
+  - api routes await async service results
+dependencies:
+  - concepts/data-layer
+  - services/api

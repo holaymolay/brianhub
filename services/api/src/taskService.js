@@ -3,6 +3,8 @@ import { applyCheckIn, applyWaitingFollowup, TaskStatus } from '../../../package
 import { compareTasksByPriority } from '../../../packages/core/priority.js';
 import { buildAdjacency } from '../../../packages/core/tree.js';
 
+const DEFAULT_ORG_ID = process.env.BRIANHUB_ORG_ID ?? 'org-default';
+
 const DEFAULT_WAITING_DAYS = 3;
 const DEFAULT_STATUSES = [
   { key: TaskStatus.INBOX, label: 'Inbox', kind: TaskStatus.INBOX, sort_order: 10, kanban_visible: 0 },
@@ -50,34 +52,62 @@ function normalizeTemplateRow(row) {
   return { ...rest, steps };
 }
 
-export function recordChange(db, workspaceId, entityType, entityId, action, payload, clientId = null) {
-  db.prepare(
-    'INSERT INTO change_log (workspace_id, entity_type, entity_id, action, payload, client_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(workspaceId, entityType, entityId, action, JSON.stringify(payload ?? {}), clientId, nowIso());
+async function ensureOrg(db, orgId, name = 'Default') {
+  const existing = await getRow(db, 'SELECT id FROM orgs WHERE id = ?', [orgId]);
+  if (existing) return;
+  const timestamp = nowIso();
+  await run(
+    db,
+    'INSERT INTO orgs (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+    [orgId, name, timestamp, timestamp]
+  );
 }
 
-export function getWorkspace(db, id) {
-  return db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id);
+async function run(db, sql, params = []) {
+  await db.exec(sql, params);
 }
 
-export function createWorkspace(db, { name, type }) {
+async function getRow(db, sql, params = []) {
+  return db.queryOne(sql, params);
+}
+
+async function getRows(db, sql, params = []) {
+  return db.query(sql, params);
+}
+
+export async function recordChange(db, workspaceId, entityType, entityId, action, payload, clientId = null) {
+  await run(
+    db,
+    'INSERT INTO change_log (workspace_id, entity_type, entity_id, action, payload, client_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [workspaceId, entityType, entityId, action, JSON.stringify(payload ?? {}), clientId, nowIso()]
+  );
+}
+
+export async function getWorkspace(db, id, orgId = DEFAULT_ORG_ID) {
+  return getRow(db, 'SELECT * FROM workspaces WHERE id = ? AND org_id = ?', [id, orgId]);
+}
+
+export async function createWorkspace(db, { name, type, org_id: orgId = DEFAULT_ORG_ID, org_name }) {
   const id = randomUUID();
   const timestamp = nowIso();
-  db.prepare(
-    'INSERT INTO workspaces (id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, name, type, 0, timestamp, timestamp);
-  seedWorkspaceStatuses(db, id);
-  seedWorkspaceTaskTypes(db, id);
-  seedWorkspaceNoticeTypes(db, id);
-  return getWorkspace(db, id);
+  await ensureOrg(db, orgId, org_name ?? (orgId === DEFAULT_ORG_ID ? 'Default' : orgId));
+  await run(
+    db,
+    'INSERT INTO workspaces (id, org_id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, orgId, name, type, 0, timestamp, timestamp]
+  );
+  await seedWorkspaceStatuses(db, id);
+  await seedWorkspaceTaskTypes(db, id);
+  await seedWorkspaceNoticeTypes(db, id);
+  return getWorkspace(db, id, orgId);
 }
 
-export function listWorkspaces(db) {
-  return db.prepare('SELECT * FROM workspaces').all();
+export async function listWorkspaces(db, orgId = DEFAULT_ORG_ID) {
+  return getRows(db, 'SELECT * FROM workspaces WHERE org_id = ?', [orgId]);
 }
 
-export function updateWorkspace(db, id, patch, clientId = null) {
-  const existing = getWorkspace(db, id);
+export async function updateWorkspace(db, id, patch, clientId = null) {
+  const existing = await getWorkspace(db, id);
   if (!existing) return null;
   const next = {
     ...existing,
@@ -86,30 +116,33 @@ export function updateWorkspace(db, id, patch, clientId = null) {
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived ?? 0,
     updated_at: nowIso()
   };
-  db.prepare('UPDATE workspaces SET name = ?, type = ?, archived = ?, updated_at = ? WHERE id = ?')
-    .run(next.name, next.type, next.archived, next.updated_at, id);
-  recordChange(db, id, 'workspace', id, 'update', patch, clientId);
+  await run(
+    db,
+    'UPDATE workspaces SET name = ?, type = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.name, next.type, next.archived, next.updated_at, id]
+  );
+  await recordChange(db, id, 'workspace', id, 'update', patch, clientId);
   return getWorkspace(db, id);
 }
 
-export function deleteWorkspace(db, id, clientId = null) {
-  const existing = getWorkspace(db, id);
+export async function deleteWorkspace(db, id, clientId = null) {
+  const existing = await getWorkspace(db, id);
   if (!existing) return { deleted: 0 };
-  db.prepare('DELETE FROM workspaces WHERE id = ?').run(id);
-  recordChange(db, id, 'workspace', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM workspaces WHERE id = ?', [id]);
+  await recordChange(db, id, 'workspace', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function getProject(db, id) {
-  return db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+export async function getProject(db, id) {
+  return getRow(db, 'SELECT * FROM projects WHERE id = ?', [id]);
 }
 
-export function listProjects(db, workspaceId) {
+export async function listProjects(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM projects WHERE workspace_id = ?').all(workspaceId);
+  return getRows(db, 'SELECT * FROM projects WHERE workspace_id = ?', [workspaceId]);
 }
 
-export function createProject(db, data, clientId = null) {
+export async function createProject(db, data, clientId = null) {
   const id = randomUUID();
   const timestamp = nowIso();
   const project = {
@@ -121,15 +154,25 @@ export function createProject(db, data, clientId = null) {
     created_at: timestamp,
     updated_at: timestamp
   };
-  db.prepare(
-    'INSERT INTO projects (id, workspace_id, name, kind, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(project.id, project.workspace_id, project.name, project.kind, project.archived, project.created_at, project.updated_at);
-  recordChange(db, project.workspace_id, 'project', id, 'create', project, clientId);
+  await run(
+    db,
+    'INSERT INTO projects (id, workspace_id, name, kind, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [
+      project.id,
+      project.workspace_id,
+      project.name,
+      project.kind,
+      project.archived,
+      project.created_at,
+      project.updated_at
+    ]
+  );
+  await recordChange(db, project.workspace_id, 'project', id, 'create', project, clientId);
   return getProject(db, id);
 }
 
-export function updateProject(db, id, patch, clientId = null) {
-  const existing = getProject(db, id);
+export async function updateProject(db, id, patch, clientId = null) {
+  const existing = await getProject(db, id);
   if (!existing) return null;
   const next = {
     ...existing,
@@ -138,36 +181,38 @@ export function updateProject(db, id, patch, clientId = null) {
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived ?? 0,
     updated_at: nowIso()
   };
-  db.prepare('UPDATE projects SET name = ?, kind = ?, archived = ?, updated_at = ? WHERE id = ?')
-    .run(next.name, next.kind, next.archived, next.updated_at, id);
-  recordChange(db, existing.workspace_id, 'project', id, 'update', patch, clientId);
+  await run(
+    db,
+    'UPDATE projects SET name = ?, kind = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.name, next.kind, next.archived, next.updated_at, id]
+  );
+  await recordChange(db, existing.workspace_id, 'project', id, 'update', patch, clientId);
   return getProject(db, id);
 }
 
-export function deleteProject(db, id, clientId = null) {
-  const existing = getProject(db, id);
+export async function deleteProject(db, id, clientId = null) {
+  const existing = await getProject(db, id);
   if (!existing) return { deleted: 0 };
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE tasks SET project_id = NULL WHERE project_id = ?').run(id);
-    db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  await db.transaction(async (tx) => {
+    await run(tx, 'UPDATE tasks SET project_id = NULL WHERE project_id = ?', [id]);
+    await run(tx, 'DELETE FROM projects WHERE id = ?', [id]);
   });
-  tx();
-  recordChange(db, existing.workspace_id, 'project', id, 'delete', {}, clientId);
+  await recordChange(db, existing.workspace_id, 'project', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function getTemplate(db, id) {
-  const row = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
+export async function getTemplate(db, id) {
+  const row = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [id]);
   return normalizeTemplateRow(row);
 }
 
-export function listTemplates(db, workspaceId) {
+export async function listTemplates(db, workspaceId) {
   if (!workspaceId) return [];
-  const rows = db.prepare('SELECT * FROM templates WHERE workspace_id = ?').all(workspaceId);
+  const rows = await getRows(db, 'SELECT * FROM templates WHERE workspace_id = ?', [workspaceId]);
   return rows.map(normalizeTemplateRow);
 }
 
-export function createTemplate(db, data, clientId = null) {
+export async function createTemplate(db, data, clientId = null) {
   const id = randomUUID();
   const timestamp = nowIso();
   const template = {
@@ -184,31 +229,33 @@ export function createTemplate(db, data, clientId = null) {
     created_at: timestamp,
     updated_at: timestamp
   };
-  db.prepare(
+  await run(
+    db,
     `INSERT INTO templates (
       id, workspace_id, project_id, name, steps_json, lead_days, next_event_date,
       recurrence_interval, recurrence_unit, archived, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    template.id,
-    template.workspace_id,
-    template.project_id,
-    template.name,
-    template.steps_json,
-    template.lead_days,
-    template.next_event_date,
-    template.recurrence_interval,
-    template.recurrence_unit,
-    template.archived,
-    template.created_at,
-    template.updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      template.id,
+      template.workspace_id,
+      template.project_id,
+      template.name,
+      template.steps_json,
+      template.lead_days,
+      template.next_event_date,
+      template.recurrence_interval,
+      template.recurrence_unit,
+      template.archived,
+      template.created_at,
+      template.updated_at
+    ]
   );
-  recordChange(db, template.workspace_id, 'template', id, 'create', template, clientId);
+  await recordChange(db, template.workspace_id, 'template', id, 'create', template, clientId);
   return getTemplate(db, id);
 }
 
-export function updateTemplate(db, id, patch, clientId = null) {
-  const existing = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
+export async function updateTemplate(db, id, patch, clientId = null) {
+  const existing = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [id]);
   if (!existing) return null;
   const next = {
     ...existing,
@@ -222,49 +269,50 @@ export function updateTemplate(db, id, patch, clientId = null) {
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived ?? 0,
     updated_at: nowIso()
   };
-  db.prepare(
+  await run(
+    db,
     `UPDATE templates SET
       name = ?, project_id = ?, steps_json = ?, lead_days = ?, next_event_date = ?,
       recurrence_interval = ?, recurrence_unit = ?, archived = ?, updated_at = ?
-     WHERE id = ?`
-  ).run(
-    next.name,
-    next.project_id,
-    next.steps_json,
-    next.lead_days,
-    next.next_event_date,
-    next.recurrence_interval,
-    next.recurrence_unit,
-    next.archived,
-    next.updated_at,
-    id
+     WHERE id = ?`,
+    [
+      next.name,
+      next.project_id,
+      next.steps_json,
+      next.lead_days,
+      next.next_event_date,
+      next.recurrence_interval,
+      next.recurrence_unit,
+      next.archived,
+      next.updated_at,
+      id
+    ]
   );
-  recordChange(db, existing.workspace_id, 'template', id, 'update', patch, clientId);
+  await recordChange(db, existing.workspace_id, 'template', id, 'update', patch, clientId);
   return getTemplate(db, id);
 }
 
-export function deleteTemplate(db, id, clientId = null) {
-  const existing = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
+export async function deleteTemplate(db, id, clientId = null) {
+  const existing = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [id]);
   if (!existing) return { deleted: 0 };
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE tasks SET template_id = NULL WHERE template_id = ?').run(id);
-    db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+  await db.transaction(async (tx) => {
+    await run(tx, 'UPDATE tasks SET template_id = NULL WHERE template_id = ?', [id]);
+    await run(tx, 'DELETE FROM templates WHERE id = ?', [id]);
   });
-  tx();
-  recordChange(db, existing.workspace_id, 'template', id, 'delete', {}, clientId);
+  await recordChange(db, existing.workspace_id, 'template', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function getShoppingList(db, id) {
-  return db.prepare('SELECT * FROM shopping_lists WHERE id = ?').get(id);
+export async function getShoppingList(db, id) {
+  return getRow(db, 'SELECT * FROM shopping_lists WHERE id = ?', [id]);
 }
 
-export function listShoppingLists(db, workspaceId) {
+export async function listShoppingLists(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM shopping_lists WHERE workspace_id = ?').all(workspaceId);
+  return getRows(db, 'SELECT * FROM shopping_lists WHERE workspace_id = ?', [workspaceId]);
 }
 
-export function createShoppingList(db, data, clientId = null) {
+export async function createShoppingList(db, data, clientId = null) {
   const id = randomUUID();
   const timestamp = nowIso();
   const list = {
@@ -275,15 +323,17 @@ export function createShoppingList(db, data, clientId = null) {
     created_at: timestamp,
     updated_at: timestamp
   };
-  db.prepare(
-    'INSERT INTO shopping_lists (id, workspace_id, name, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(list.id, list.workspace_id, list.name, list.archived, list.created_at, list.updated_at);
-  recordChange(db, list.workspace_id, 'shopping_list', id, 'create', list, clientId);
+  await run(
+    db,
+    'INSERT INTO shopping_lists (id, workspace_id, name, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [list.id, list.workspace_id, list.name, list.archived, list.created_at, list.updated_at]
+  );
+  await recordChange(db, list.workspace_id, 'shopping_list', id, 'create', list, clientId);
   return getShoppingList(db, id);
 }
 
-export function updateShoppingList(db, id, patch, clientId = null) {
-  const existing = getShoppingList(db, id);
+export async function updateShoppingList(db, id, patch, clientId = null) {
+  const existing = await getShoppingList(db, id);
   if (!existing) return null;
   const next = {
     ...existing,
@@ -291,48 +341,58 @@ export function updateShoppingList(db, id, patch, clientId = null) {
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived ?? 0,
     updated_at: nowIso()
   };
-  db.prepare('UPDATE shopping_lists SET name = ?, archived = ?, updated_at = ? WHERE id = ?')
-    .run(next.name, next.archived, next.updated_at, id);
-  recordChange(db, existing.workspace_id, 'shopping_list', id, 'update', patch, clientId);
+  await run(
+    db,
+    'UPDATE shopping_lists SET name = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.name, next.archived, next.updated_at, id]
+  );
+  await recordChange(db, existing.workspace_id, 'shopping_list', id, 'update', patch, clientId);
   return getShoppingList(db, id);
 }
 
-export function deleteShoppingList(db, id, clientId = null) {
-  const existing = getShoppingList(db, id);
+export async function deleteShoppingList(db, id, clientId = null) {
+  const existing = await getShoppingList(db, id);
   if (!existing) return { deleted: 0 };
-  db.prepare('DELETE FROM shopping_lists WHERE id = ?').run(id);
-  recordChange(db, existing.workspace_id, 'shopping_list', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM shopping_lists WHERE id = ?', [id]);
+  await recordChange(db, existing.workspace_id, 'shopping_list', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function getShoppingItem(db, id) {
-  return db.prepare('SELECT * FROM shopping_list_items WHERE id = ?').get(id);
+export async function getShoppingItem(db, id) {
+  return getRow(db, 'SELECT * FROM shopping_list_items WHERE id = ?', [id]);
 }
 
-export function listShoppingItems(db, workspaceId, listId = null) {
+export async function listShoppingItems(db, workspaceId, listId = null) {
   if (listId) {
-    return db.prepare(
-      'SELECT * FROM shopping_list_items WHERE list_id = ? ORDER BY sort_order ASC, created_at ASC'
-    ).all(listId);
+    return getRows(
+      db,
+      'SELECT * FROM shopping_list_items WHERE list_id = ? ORDER BY sort_order ASC, created_at ASC',
+      [listId]
+    );
   }
   if (!workspaceId) return [];
-  return db.prepare(
+  return getRows(
+    db,
     `SELECT items.* FROM shopping_list_items items
      JOIN shopping_lists lists ON lists.id = items.list_id
      WHERE lists.workspace_id = ?
-     ORDER BY items.sort_order ASC, items.created_at ASC`
-  ).all(workspaceId);
+     ORDER BY items.sort_order ASC, items.created_at ASC`,
+    [workspaceId]
+  );
 }
 
-export function createShoppingItems(db, listId, items, clientId = null) {
-  const list = getShoppingList(db, listId);
+export async function createShoppingItems(db, listId, items, clientId = null) {
+  const list = await getShoppingList(db, listId);
   if (!list) return [];
   const timestamp = nowIso();
-  const maxRow = db.prepare('SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?')
-    .get(listId);
+  const maxRow = await getRow(
+    db,
+    'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
+    [listId]
+  );
   let sortOrder = Number(maxRow?.max_sort ?? 0);
   const created = [];
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     for (const item of items) {
       const id = randomUUID();
       sortOrder += 1;
@@ -345,31 +405,35 @@ export function createShoppingItems(db, listId, items, clientId = null) {
         created_at: timestamp,
         updated_at: timestamp
       };
-      db.prepare(
-        'INSERT INTO shopping_list_items (id, list_id, name, is_checked, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(
-        record.id,
-        record.list_id,
-        record.name,
-        record.is_checked,
-        record.sort_order,
-        record.created_at,
-        record.updated_at
+      await run(
+        tx,
+        'INSERT INTO shopping_list_items (id, list_id, name, is_checked, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [
+          record.id,
+          record.list_id,
+          record.name,
+          record.is_checked,
+          record.sort_order,
+          record.created_at,
+          record.updated_at
+        ]
       );
-      recordChange(db, list.workspace_id, 'shopping_item', record.id, 'create', record, clientId);
+      await recordChange(tx, list.workspace_id, 'shopping_item', record.id, 'create', record, clientId);
       created.push(record);
     }
   });
-  tx();
-  return created.map(item => getShoppingItem(db, item.id));
+  return Promise.all(created.map(item => getShoppingItem(db, item.id)));
 }
 
-export function createShoppingItem(db, data, clientId = null) {
-  const list = getShoppingList(db, data.list_id);
+export async function createShoppingItem(db, data, clientId = null) {
+  const list = await getShoppingList(db, data.list_id);
   if (!list) return null;
   const timestamp = nowIso();
-  const maxRow = db.prepare('SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?')
-    .get(data.list_id);
+  const maxRow = await getRow(
+    db,
+    'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
+    [data.list_id]
+  );
   const nextSort = Number(maxRow?.max_sort ?? 0) + 1;
   const item = {
     id: randomUUID(),
@@ -380,25 +444,27 @@ export function createShoppingItem(db, data, clientId = null) {
     created_at: timestamp,
     updated_at: timestamp
   };
-  db.prepare(
-    'INSERT INTO shopping_list_items (id, list_id, name, is_checked, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(
-    item.id,
-    item.list_id,
-    item.name,
-    item.is_checked,
-    item.sort_order,
-    item.created_at,
-    item.updated_at
+  await run(
+    db,
+    'INSERT INTO shopping_list_items (id, list_id, name, is_checked, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [
+      item.id,
+      item.list_id,
+      item.name,
+      item.is_checked,
+      item.sort_order,
+      item.created_at,
+      item.updated_at
+    ]
   );
-  recordChange(db, list.workspace_id, 'shopping_item', item.id, 'create', item, clientId);
+  await recordChange(db, list.workspace_id, 'shopping_item', item.id, 'create', item, clientId);
   return getShoppingItem(db, item.id);
 }
 
-export function updateShoppingItem(db, id, patch, clientId = null) {
-  const existing = getShoppingItem(db, id);
+export async function updateShoppingItem(db, id, patch, clientId = null) {
+  const existing = await getShoppingItem(db, id);
   if (!existing) return null;
-  const list = getShoppingList(db, existing.list_id);
+  const list = await getShoppingList(db, existing.list_id);
   const next = {
     ...existing,
     name: patch.name ?? existing.name,
@@ -406,36 +472,38 @@ export function updateShoppingItem(db, id, patch, clientId = null) {
     sort_order: Number.isFinite(patch.sort_order) ? patch.sort_order : existing.sort_order,
     updated_at: nowIso()
   };
-  db.prepare('UPDATE shopping_list_items SET name = ?, is_checked = ?, sort_order = ?, updated_at = ? WHERE id = ?')
-    .run(next.name, next.is_checked, next.sort_order, next.updated_at, id);
+  await run(
+    db,
+    'UPDATE shopping_list_items SET name = ?, is_checked = ?, sort_order = ?, updated_at = ? WHERE id = ?',
+    [next.name, next.is_checked, next.sort_order, next.updated_at, id]
+  );
   if (list) {
-    recordChange(db, list.workspace_id, 'shopping_item', id, 'update', patch, clientId);
+    await recordChange(db, list.workspace_id, 'shopping_item', id, 'update', patch, clientId);
   }
   return getShoppingItem(db, id);
 }
 
-export function deleteShoppingItem(db, id, clientId = null) {
-  const existing = getShoppingItem(db, id);
+export async function deleteShoppingItem(db, id, clientId = null) {
+  const existing = await getShoppingItem(db, id);
   if (!existing) return { deleted: 0 };
-  const list = getShoppingList(db, existing.list_id);
-  db.prepare('DELETE FROM shopping_list_items WHERE id = ?').run(id);
+  const list = await getShoppingList(db, existing.list_id);
+  await run(db, 'DELETE FROM shopping_list_items WHERE id = ?', [id]);
   if (list) {
-    recordChange(db, list.workspace_id, 'shopping_item', id, 'delete', {}, clientId);
+    await recordChange(db, list.workspace_id, 'shopping_item', id, 'delete', {}, clientId);
   }
   return { deleted: 1 };
 }
 
-export function listNotices(db, workspaceId) {
+export async function listNotices(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM notices WHERE workspace_id = ? ORDER BY notify_at ASC')
-    .all(workspaceId);
+  return getRows(db, 'SELECT * FROM notices WHERE workspace_id = ? ORDER BY notify_at ASC', [workspaceId]);
 }
 
-function getNotice(db, id) {
-  return db.prepare('SELECT * FROM notices WHERE id = ?').get(id);
+async function getNotice(db, id) {
+  return getRow(db, 'SELECT * FROM notices WHERE id = ?', [id]);
 }
 
-export function createNotice(db, data, clientId = null) {
+export async function createNotice(db, data, clientId = null) {
   const id = randomUUID();
   const timestamp = nowIso();
   const title = (data.title ?? '').trim();
@@ -454,25 +522,27 @@ export function createNotice(db, data, clientId = null) {
     created_at: timestamp,
     updated_at: timestamp
   };
-  db.prepare(
-    'INSERT INTO notices (id, workspace_id, title, notify_at, notice_type, notice_sent_at, dismissed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(
-    notice.id,
-    notice.workspace_id,
-    notice.title,
-    notice.notify_at,
-    notice.notice_type,
-    notice.notice_sent_at,
-    notice.dismissed_at,
-    notice.created_at,
-    notice.updated_at
+  await run(
+    db,
+    'INSERT INTO notices (id, workspace_id, title, notify_at, notice_type, notice_sent_at, dismissed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [
+      notice.id,
+      notice.workspace_id,
+      notice.title,
+      notice.notify_at,
+      notice.notice_type,
+      notice.notice_sent_at,
+      notice.dismissed_at,
+      notice.created_at,
+      notice.updated_at
+    ]
   );
-  recordChange(db, notice.workspace_id, 'notice', id, 'create', notice, clientId);
+  await recordChange(db, notice.workspace_id, 'notice', id, 'create', notice, clientId);
   return getNotice(db, id);
 }
 
-export function updateNotice(db, id, patch, clientId = null) {
-  const existing = getNotice(db, id);
+export async function updateNotice(db, id, patch, clientId = null) {
+  const existing = await getNotice(db, id);
   if (!existing) return null;
   const next = {
     ...existing,
@@ -483,77 +553,78 @@ export function updateNotice(db, id, patch, clientId = null) {
     dismissed_at: patch.dismissed_at ?? existing.dismissed_at,
     updated_at: nowIso()
   };
-  db.prepare(
-    'UPDATE notices SET title = ?, notify_at = ?, notice_type = ?, notice_sent_at = ?, dismissed_at = ?, updated_at = ? WHERE id = ?'
-  ).run(
-    next.title,
-    next.notify_at,
-    next.notice_type,
-    next.notice_sent_at,
-    next.dismissed_at,
-    next.updated_at,
-    id
+  await run(
+    db,
+    'UPDATE notices SET title = ?, notify_at = ?, notice_type = ?, notice_sent_at = ?, dismissed_at = ?, updated_at = ? WHERE id = ?',
+    [
+      next.title,
+      next.notify_at,
+      next.notice_type,
+      next.notice_sent_at,
+      next.dismissed_at,
+      next.updated_at,
+      id
+    ]
   );
-  recordChange(db, existing.workspace_id, 'notice', id, 'update', patch, clientId);
+  await recordChange(db, existing.workspace_id, 'notice', id, 'update', patch, clientId);
   return getNotice(db, id);
 }
 
-export function deleteNotice(db, id, clientId = null) {
-  const existing = getNotice(db, id);
+export async function deleteNotice(db, id, clientId = null) {
+  const existing = await getNotice(db, id);
   if (!existing) return { deleted: 0 };
-  db.prepare('DELETE FROM notices WHERE id = ?').run(id);
-  recordChange(db, existing.workspace_id, 'notice', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM notices WHERE id = ?', [id]);
+  await recordChange(db, existing.workspace_id, 'notice', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function listNoticeTypes(db, workspaceId) {
+export async function listNoticeTypes(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM notice_types WHERE workspace_id = ? ORDER BY label ASC')
-    .all(workspaceId);
+  return getRows(db, 'SELECT * FROM notice_types WHERE workspace_id = ? ORDER BY label ASC', [workspaceId]);
 }
 
-function getNoticeType(db, id) {
-  return db.prepare('SELECT * FROM notice_types WHERE id = ?').get(id);
+async function getNoticeType(db, id) {
+  return getRow(db, 'SELECT * FROM notice_types WHERE id = ?', [id]);
 }
 
-function getNoticeTypeByKey(db, workspaceId, key) {
-  return db.prepare('SELECT * FROM notice_types WHERE workspace_id = ? AND key = ?')
-    .get(workspaceId, key);
+async function getNoticeTypeByKey(db, workspaceId, key) {
+  return getRow(db, 'SELECT * FROM notice_types WHERE workspace_id = ? AND key = ?', [workspaceId, key]);
 }
 
-function getNoticeTypeByLabel(db, workspaceId, label) {
-  return db.prepare('SELECT * FROM notice_types WHERE workspace_id = ? AND label = ?')
-    .get(workspaceId, label);
+async function getNoticeTypeByLabel(db, workspaceId, label) {
+  return getRow(db, 'SELECT * FROM notice_types WHERE workspace_id = ? AND label = ?', [workspaceId, label]);
 }
 
-function generateNoticeTypeKey(db, workspaceId, label) {
+async function generateNoticeTypeKey(db, workspaceId, label) {
   const base = slugify(label || 'type');
   let key = base || 'type';
   let suffix = 1;
-  while (getNoticeTypeByKey(db, workspaceId, key)) {
+  while (await getNoticeTypeByKey(db, workspaceId, key)) {
     suffix += 1;
     key = `${base}-${suffix}`;
   }
   return key;
 }
 
-export function createNoticeType(db, data, clientId = null) {
+export async function createNoticeType(db, data, clientId = null) {
   const label = String(data.label ?? '').trim();
   if (!label) throw new Error('Label required');
-  const existing = getNoticeTypeByLabel(db, data.workspace_id, label);
+  const existing = await getNoticeTypeByLabel(db, data.workspace_id, label);
   if (existing) return existing;
   const id = randomUUID();
   const timestamp = nowIso();
-  const key = generateNoticeTypeKey(db, data.workspace_id, label);
-  db.prepare(
-    'INSERT INTO notice_types (id, workspace_id, key, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, data.workspace_id, key, label, timestamp, timestamp);
-  recordChange(db, data.workspace_id, 'notice_type', id, 'create', { key, label }, clientId);
+  const key = await generateNoticeTypeKey(db, data.workspace_id, label);
+  await run(
+    db,
+    'INSERT INTO notice_types (id, workspace_id, key, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, data.workspace_id, key, label, timestamp, timestamp]
+  );
+  await recordChange(db, data.workspace_id, 'notice_type', id, 'create', { key, label }, clientId);
   return getNoticeType(db, id);
 }
 
-export function updateNoticeType(db, id, patch, clientId = null) {
-  const existing = getNoticeType(db, id);
+export async function updateNoticeType(db, id, patch, clientId = null) {
+  const existing = await getNoticeType(db, id);
   if (!existing) return null;
   const nextLabel = patch.label !== undefined ? String(patch.label).trim() : existing.label;
   const next = {
@@ -561,30 +632,33 @@ export function updateNoticeType(db, id, patch, clientId = null) {
     label: nextLabel || existing.label,
     updated_at: nowIso()
   };
-  db.prepare('UPDATE notice_types SET label = ?, updated_at = ? WHERE id = ?')
-    .run(next.label, next.updated_at, id);
-  recordChange(db, existing.workspace_id, 'notice_type', id, 'update', patch, clientId);
+  await run(
+    db,
+    'UPDATE notice_types SET label = ?, updated_at = ? WHERE id = ?',
+    [next.label, next.updated_at, id]
+  );
+  await recordChange(db, existing.workspace_id, 'notice_type', id, 'update', patch, clientId);
   return getNoticeType(db, id);
 }
 
-export function deleteNoticeType(db, id, clientId = null) {
-  const existing = getNoticeType(db, id);
+export async function deleteNoticeType(db, id, clientId = null) {
+  const existing = await getNoticeType(db, id);
   if (!existing) return { deleted: 0 };
-  db.prepare('DELETE FROM notice_types WHERE id = ?').run(id);
-  recordChange(db, existing.workspace_id, 'notice_type', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM notice_types WHERE id = ?', [id]);
+  await recordChange(db, existing.workspace_id, 'notice_type', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function listStoreRules(db, workspaceId) {
+export async function listStoreRules(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM store_rules WHERE workspace_id = ? ORDER BY store_name ASC').all(workspaceId);
+  return getRows(db, 'SELECT * FROM store_rules WHERE workspace_id = ? ORDER BY store_name ASC', [workspaceId]);
 }
 
-function getStoreRule(db, id) {
-  return db.prepare('SELECT * FROM store_rules WHERE id = ?').get(id);
+async function getStoreRule(db, id) {
+  return getRow(db, 'SELECT * FROM store_rules WHERE id = ?', [id]);
 }
 
-export function createStoreRule(db, data, clientId = null) {
+export async function createStoreRule(db, data, clientId = null) {
   const id = randomUUID();
   const timestamp = nowIso();
   const keywords = Array.isArray(data.keywords) ? data.keywords : [];
@@ -597,23 +671,25 @@ export function createStoreRule(db, data, clientId = null) {
     created_at: timestamp,
     updated_at: timestamp
   };
-  db.prepare(
-    'INSERT INTO store_rules (id, workspace_id, store_name, keywords_json, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(
-    rule.id,
-    rule.workspace_id,
-    rule.store_name,
-    rule.keywords_json,
-    rule.archived,
-    rule.created_at,
-    rule.updated_at
+  await run(
+    db,
+    'INSERT INTO store_rules (id, workspace_id, store_name, keywords_json, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [
+      rule.id,
+      rule.workspace_id,
+      rule.store_name,
+      rule.keywords_json,
+      rule.archived,
+      rule.created_at,
+      rule.updated_at
+    ]
   );
-  recordChange(db, rule.workspace_id, 'store_rule', id, 'create', rule, clientId);
+  await recordChange(db, rule.workspace_id, 'store_rule', id, 'create', rule, clientId);
   return getStoreRule(db, id);
 }
 
-export function updateStoreRule(db, id, patch, clientId = null) {
-  const existing = getStoreRule(db, id);
+export async function updateStoreRule(db, id, patch, clientId = null) {
+  const existing = await getStoreRule(db, id);
   if (!existing) return null;
   const nextKeywords = Array.isArray(patch.keywords)
     ? JSON.stringify(patch.keywords)
@@ -625,55 +701,52 @@ export function updateStoreRule(db, id, patch, clientId = null) {
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived ?? 0,
     updated_at: nowIso()
   };
-  db.prepare(
-    'UPDATE store_rules SET store_name = ?, keywords_json = ?, archived = ?, updated_at = ? WHERE id = ?'
-  ).run(
-    next.store_name,
-    next.keywords_json,
-    next.archived,
-    next.updated_at,
-    id
+  await run(
+    db,
+    'UPDATE store_rules SET store_name = ?, keywords_json = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.store_name, next.keywords_json, next.archived, next.updated_at, id]
   );
-  recordChange(db, existing.workspace_id, 'store_rule', id, 'update', patch, clientId);
+  await recordChange(db, existing.workspace_id, 'store_rule', id, 'update', patch, clientId);
   return getStoreRule(db, id);
 }
 
-export function deleteStoreRule(db, id, clientId = null) {
-  const existing = getStoreRule(db, id);
+export async function deleteStoreRule(db, id, clientId = null) {
+  const existing = await getStoreRule(db, id);
   if (!existing) return { deleted: 0 };
-  db.prepare('DELETE FROM store_rules WHERE id = ?').run(id);
-  recordChange(db, existing.workspace_id, 'store_rule', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM store_rules WHERE id = ?', [id]);
+  await recordChange(db, existing.workspace_id, 'store_rule', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function listTaskTypes(db, workspaceId) {
+export async function listTaskTypes(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM task_types WHERE workspace_id = ? ORDER BY is_default DESC, name ASC')
-    .all(workspaceId);
+  return getRows(db, 'SELECT * FROM task_types WHERE workspace_id = ? ORDER BY is_default DESC, name ASC', [workspaceId]);
 }
 
-function getTaskType(db, id) {
-  return db.prepare('SELECT * FROM task_types WHERE id = ?').get(id);
+async function getTaskType(db, id) {
+  return getRow(db, 'SELECT * FROM task_types WHERE id = ?', [id]);
 }
 
-function getTaskTypeByName(db, workspaceId, name) {
+async function getTaskTypeByName(db, workspaceId, name) {
   if (!workspaceId || !name) return null;
-  return db.prepare('SELECT * FROM task_types WHERE workspace_id = ? AND name = ?')
-    .get(workspaceId, name);
+  return getRow(db, 'SELECT * FROM task_types WHERE workspace_id = ? AND name = ?', [workspaceId, name]);
 }
 
-function getDefaultTaskType(db, workspaceId) {
+async function getDefaultTaskType(db, workspaceId) {
   if (!workspaceId) return null;
-  return db.prepare('SELECT * FROM task_types WHERE workspace_id = ? AND is_default = 1 ORDER BY name ASC LIMIT 1')
-    .get(workspaceId);
+  return getRow(
+    db,
+    'SELECT * FROM task_types WHERE workspace_id = ? AND is_default = 1 ORDER BY name ASC LIMIT 1',
+    [workspaceId]
+  );
 }
 
-export function createTaskType(db, data, clientId = null) {
+export async function createTaskType(db, data, clientId = null) {
   const id = randomUUID();
   const timestamp = nowIso();
   const name = (data.name ?? '').trim();
   if (!name) throw new Error('Invalid task type name');
-  if (getTaskTypeByName(db, data.workspace_id, name)) {
+  if (await getTaskTypeByName(db, data.workspace_id, name)) {
     throw new Error('Task type already exists');
   }
   const type = {
@@ -685,19 +758,21 @@ export function createTaskType(db, data, clientId = null) {
     created_at: timestamp,
     updated_at: timestamp
   };
-  db.prepare(
-    'INSERT INTO task_types (id, workspace_id, name, is_default, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(type.id, type.workspace_id, type.name, type.is_default, type.archived, type.created_at, type.updated_at);
-  recordChange(db, type.workspace_id, 'task_type', id, 'create', type, clientId);
+  await run(
+    db,
+    'INSERT INTO task_types (id, workspace_id, name, is_default, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [type.id, type.workspace_id, type.name, type.is_default, type.archived, type.created_at, type.updated_at]
+  );
+  await recordChange(db, type.workspace_id, 'task_type', id, 'create', type, clientId);
   return getTaskType(db, id);
 }
 
-export function updateTaskType(db, id, patch, clientId = null) {
-  const existing = getTaskType(db, id);
+export async function updateTaskType(db, id, patch, clientId = null) {
+  const existing = await getTaskType(db, id);
   if (!existing) return null;
   const nextName = patch.name !== undefined ? String(patch.name).trim() : existing.name;
   if (!nextName) throw new Error('Invalid task type name');
-  if (nextName !== existing.name && getTaskTypeByName(db, existing.workspace_id, nextName)) {
+  if (nextName !== existing.name && await getTaskTypeByName(db, existing.workspace_id, nextName)) {
     throw new Error('Task type already exists');
   }
   const next = {
@@ -706,75 +781,93 @@ export function updateTaskType(db, id, patch, clientId = null) {
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived,
     updated_at: nowIso()
   };
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE task_types SET name = ?, archived = ?, updated_at = ? WHERE id = ?')
-      .run(next.name, next.archived, next.updated_at, id);
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      'UPDATE task_types SET name = ?, archived = ?, updated_at = ? WHERE id = ?',
+      [next.name, next.archived, next.updated_at, id]
+    );
     if (next.name !== existing.name) {
-      db.prepare('UPDATE tasks SET type_label = ?, updated_at = ? WHERE workspace_id = ? AND type_label = ?')
-        .run(next.name, next.updated_at, existing.workspace_id, existing.name);
+      await run(
+        tx,
+        'UPDATE tasks SET type_label = ?, updated_at = ? WHERE workspace_id = ? AND type_label = ?',
+        [next.name, next.updated_at, existing.workspace_id, existing.name]
+      );
     }
   });
-  tx();
-  recordChange(db, existing.workspace_id, 'task_type', id, 'update', patch, clientId);
+  await recordChange(db, existing.workspace_id, 'task_type', id, 'update', patch, clientId);
   return getTaskType(db, id);
 }
 
-export function deleteTaskType(db, id, clientId = null) {
-  const existing = getTaskType(db, id);
+export async function deleteTaskType(db, id, clientId = null) {
+  const existing = await getTaskType(db, id);
   if (!existing) return { deleted: 0 };
   if (existing.is_default) {
     return { deleted: 0, error: 'protected' };
   }
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE tasks SET type_label = NULL, updated_at = ? WHERE workspace_id = ? AND type_label = ?')
-      .run(nowIso(), existing.workspace_id, existing.name);
-    db.prepare('DELETE FROM task_types WHERE id = ?').run(id);
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      'UPDATE tasks SET type_label = NULL, updated_at = ? WHERE workspace_id = ? AND type_label = ?',
+      [nowIso(), existing.workspace_id, existing.name]
+    );
+    await run(tx, 'DELETE FROM task_types WHERE id = ?', [id]);
   });
-  tx();
-  recordChange(db, existing.workspace_id, 'task_type', id, 'delete', {}, clientId);
+  await recordChange(db, existing.workspace_id, 'task_type', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function listStatuses(db, workspaceId) {
+export async function listStatuses(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM workspace_statuses WHERE workspace_id = ? ORDER BY sort_order ASC, created_at ASC')
-    .all(workspaceId);
+  return getRows(
+    db,
+    'SELECT * FROM workspace_statuses WHERE workspace_id = ? ORDER BY sort_order ASC, created_at ASC',
+    [workspaceId]
+  );
 }
 
-export function getStatusByKey(db, workspaceId, key) {
+export async function getStatusByKey(db, workspaceId, key) {
   if (!workspaceId || !key) return null;
-  return db.prepare('SELECT * FROM workspace_statuses WHERE workspace_id = ? AND key = ?')
-    .get(workspaceId, key);
+  return getRow(db, 'SELECT * FROM workspace_statuses WHERE workspace_id = ? AND key = ?', [workspaceId, key]);
 }
 
-function getFallbackStatus(db, workspaceId) {
+async function getFallbackStatus(db, workspaceId) {
   if (!workspaceId) return null;
-  const inbox = db.prepare('SELECT * FROM workspace_statuses WHERE workspace_id = ? AND kind = ?')
-    .get(workspaceId, TaskStatus.INBOX);
+  const inbox = await getRow(
+    db,
+    'SELECT * FROM workspace_statuses WHERE workspace_id = ? AND kind = ?',
+    [workspaceId, TaskStatus.INBOX]
+  );
   if (inbox) return inbox;
-  return db.prepare('SELECT * FROM workspace_statuses WHERE workspace_id = ? ORDER BY sort_order ASC LIMIT 1')
-    .get(workspaceId);
+  return getRow(
+    db,
+    'SELECT * FROM workspace_statuses WHERE workspace_id = ? ORDER BY sort_order ASC LIMIT 1',
+    [workspaceId]
+  );
 }
 
-function ensureStatusKeyUnique(db, workspaceId, baseKey) {
+async function ensureStatusKeyUnique(db, workspaceId, baseKey) {
   let key = baseKey;
   let suffix = 2;
-  while (db.prepare('SELECT 1 FROM workspace_statuses WHERE workspace_id = ? AND key = ?').get(workspaceId, key)) {
+  while (await getRow(db, 'SELECT 1 FROM workspace_statuses WHERE workspace_id = ? AND key = ?', [workspaceId, key])) {
     key = `${baseKey}-${suffix}`;
     suffix += 1;
   }
   return key;
 }
 
-export function createStatus(db, data, clientId = null) {
+export async function createStatus(db, data, clientId = null) {
   const id = randomUUID();
   const timestamp = nowIso();
   const label = (data.label ?? '').trim();
   const keyBase = data.key ? slugify(data.key) : slugify(label);
   if (!keyBase) throw new Error('Invalid status key');
-  const key = ensureStatusKeyUnique(db, data.workspace_id, keyBase);
-  const maxRow = db.prepare('SELECT MAX(sort_order) AS max_sort FROM workspace_statuses WHERE workspace_id = ?')
-    .get(data.workspace_id);
+  const key = await ensureStatusKeyUnique(db, data.workspace_id, keyBase);
+  const maxRow = await getRow(
+    db,
+    'SELECT MAX(sort_order) AS max_sort FROM workspace_statuses WHERE workspace_id = ?',
+    [data.workspace_id]
+  );
   const nextSort = Number(maxRow?.max_sort ?? 0) + 10;
   const status = {
     id,
@@ -787,27 +880,29 @@ export function createStatus(db, data, clientId = null) {
     created_at: timestamp,
     updated_at: timestamp
   };
-  db.prepare(
+  await run(
+    db,
     `INSERT INTO workspace_statuses
       (id, workspace_id, key, label, kind, sort_order, kanban_visible, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    status.id,
-    status.workspace_id,
-    status.key,
-    status.label,
-    status.kind,
-    status.sort_order,
-    status.kanban_visible,
-    status.created_at,
-    status.updated_at
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      status.id,
+      status.workspace_id,
+      status.key,
+      status.label,
+      status.kind,
+      status.sort_order,
+      status.kanban_visible,
+      status.created_at,
+      status.updated_at
+    ]
   );
-  recordChange(db, status.workspace_id, 'status', id, 'create', status, clientId);
+  await recordChange(db, status.workspace_id, 'status', id, 'create', status, clientId);
   return getStatusByKey(db, status.workspace_id, status.key);
 }
 
-export function updateStatus(db, id, patch, clientId = null) {
-  const existing = db.prepare('SELECT * FROM workspace_statuses WHERE id = ?').get(id);
+export async function updateStatus(db, id, patch, clientId = null) {
+  const existing = await getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [id]);
   if (!existing) return null;
   const nextLabel = patch.label !== undefined ? String(patch.label).trim() : existing.label;
   const next = {
@@ -817,94 +912,104 @@ export function updateStatus(db, id, patch, clientId = null) {
     kanban_visible: patch.kanban_visible !== undefined ? (patch.kanban_visible ? 1 : 0) : existing.kanban_visible,
     updated_at: nowIso()
   };
-  db.prepare(
-    'UPDATE workspace_statuses SET label = ?, sort_order = ?, kanban_visible = ?, updated_at = ? WHERE id = ?'
-  ).run(next.label, next.sort_order, next.kanban_visible, next.updated_at, id);
-  recordChange(db, existing.workspace_id, 'status', id, 'update', patch, clientId);
-  return db.prepare('SELECT * FROM workspace_statuses WHERE id = ?').get(id);
+  await run(
+    db,
+    'UPDATE workspace_statuses SET label = ?, sort_order = ?, kanban_visible = ?, updated_at = ? WHERE id = ?',
+    [next.label, next.sort_order, next.kanban_visible, next.updated_at, id]
+  );
+  await recordChange(db, existing.workspace_id, 'status', id, 'update', patch, clientId);
+  return getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [id]);
 }
 
-export function deleteStatus(db, id, clientId = null) {
-  const existing = db.prepare('SELECT * FROM workspace_statuses WHERE id = ?').get(id);
+export async function deleteStatus(db, id, clientId = null) {
+  const existing = await getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [id]);
   if (!existing) return { deleted: 0 };
   if (existing.kind !== 'custom') {
     return { deleted: 0, error: 'protected' };
   }
-  const fallback = getFallbackStatus(db, existing.workspace_id);
+  const fallback = await getFallbackStatus(db, existing.workspace_id);
   const fallbackKey = fallback?.key ?? TaskStatus.INBOX;
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE workspace_id = ? AND status = ?')
-      .run(fallbackKey, nowIso(), existing.workspace_id, existing.key);
-    db.prepare('DELETE FROM workspace_statuses WHERE id = ?').run(id);
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      'UPDATE tasks SET status = ?, updated_at = ? WHERE workspace_id = ? AND status = ?',
+      [fallbackKey, nowIso(), existing.workspace_id, existing.key]
+    );
+    await run(tx, 'DELETE FROM workspace_statuses WHERE id = ?', [id]);
   });
-  tx();
-  recordChange(db, existing.workspace_id, 'status', id, 'delete', {}, clientId);
+  await recordChange(db, existing.workspace_id, 'status', id, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
-export function seedWorkspaceStatuses(db, workspaceId) {
+export async function seedWorkspaceStatuses(db, workspaceId) {
   const timestamp = nowIso();
-  const insert = db.prepare(
-    `INSERT INTO workspace_statuses
-      (id, workspace_id, key, label, kind, sort_order, kanban_visible, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-  DEFAULT_STATUSES.forEach(status => {
-    const existing = getStatusByKey(db, workspaceId, status.key);
-    if (existing) return;
-    insert.run(
-      randomUUID(),
-      workspaceId,
-      status.key,
-      status.label,
-      status.kind,
-      status.sort_order,
-      status.kanban_visible,
-      timestamp,
-      timestamp
+  for (const status of DEFAULT_STATUSES) {
+    const existing = await getStatusByKey(db, workspaceId, status.key);
+    if (existing) continue;
+    await run(
+      db,
+      `INSERT INTO workspace_statuses
+        (id, workspace_id, key, label, kind, sort_order, kanban_visible, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        randomUUID(),
+        workspaceId,
+        status.key,
+        status.label,
+        status.kind,
+        status.sort_order,
+        status.kanban_visible,
+        timestamp,
+        timestamp
+      ]
     );
-  });
+  }
 }
 
-export function seedWorkspaceTaskTypes(db, workspaceId) {
+export async function seedWorkspaceTaskTypes(db, workspaceId) {
   const timestamp = nowIso();
-  const insert = db.prepare(
-    'INSERT INTO task_types (id, workspace_id, name, is_default, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  );
-  DEFAULT_TASK_TYPES.forEach(type => {
-    const existing = getTaskTypeByName(db, workspaceId, type.name);
-    if (existing) return;
-    insert.run(
-      randomUUID(),
-      workspaceId,
-      type.name,
-      type.is_default ? 1 : 0,
-      0,
-      timestamp,
-      timestamp
+  for (const type of DEFAULT_TASK_TYPES) {
+    const existing = await getTaskTypeByName(db, workspaceId, type.name);
+    if (existing) continue;
+    await run(
+      db,
+      'INSERT INTO task_types (id, workspace_id, name, is_default, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        randomUUID(),
+        workspaceId,
+        type.name,
+        type.is_default ? 1 : 0,
+        0,
+        timestamp,
+        timestamp
+      ]
     );
-  });
+  }
 }
 
-export function seedWorkspaceNoticeTypes(db, workspaceId) {
+export async function seedWorkspaceNoticeTypes(db, workspaceId) {
   const timestamp = nowIso();
-  const insert = db.prepare(
-    'INSERT INTO notice_types (id, workspace_id, key, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  );
-  DEFAULT_NOTICE_TYPES.forEach(type => {
-    const existing = db.prepare('SELECT 1 FROM notice_types WHERE workspace_id = ? AND key = ?')
-      .get(workspaceId, type.key);
-    if (existing) return;
-    insert.run(randomUUID(), workspaceId, type.key, type.label, timestamp, timestamp);
-  });
+  for (const type of DEFAULT_NOTICE_TYPES) {
+    const existing = await getRow(
+      db,
+      'SELECT 1 FROM notice_types WHERE workspace_id = ? AND key = ?',
+      [workspaceId, type.key]
+    );
+    if (existing) continue;
+    await run(
+      db,
+      'INSERT INTO notice_types (id, workspace_id, key, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [randomUUID(), workspaceId, type.key, type.label, timestamp, timestamp]
+    );
+  }
 }
 
-export function createTask(db, data, clientId = null) {
+export async function createTask(db, data, clientId = null) {
   const id = randomUUID();
   const timestamp = nowIso();
-  const fallbackStatus = getFallbackStatus(db, data.workspace_id);
+  const fallbackStatus = await getFallbackStatus(db, data.workspace_id);
   const statusKey = data.status ?? fallbackStatus?.key ?? TaskStatus.INBOX;
-  const statusRow = getStatusByKey(db, data.workspace_id, statusKey);
+  const statusRow = await getStatusByKey(db, data.workspace_id, statusKey);
   if (!statusRow) {
     throw new Error('Invalid status');
   }
@@ -956,7 +1061,7 @@ export function createTask(db, data, clientId = null) {
     task.completed_at = timestamp;
   }
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     const insertColumns = [
       'id',
       'workspace_id',
@@ -1028,33 +1133,38 @@ export function createTask(db, data, clientId = null) {
       task.updated_at
     ];
     const placeholders = insertColumns.map(() => '?').join(', ');
-    db.prepare(`INSERT INTO tasks (${insertColumns.join(', ')}) VALUES (${placeholders})`).run(...insertValues);
+    await run(tx, `INSERT INTO tasks (${insertColumns.join(', ')}) VALUES (${placeholders})`, insertValues);
 
     // closure table inserts
-    db.prepare('INSERT INTO task_edges (ancestor_id, descendant_id, depth) VALUES (?, ?, 0)')
-      .run(id, id);
+    await run(tx, 'INSERT INTO task_edges (ancestor_id, descendant_id, depth) VALUES (?, ?, 0)', [id, id]);
 
     if (task.parent_id) {
-      const ancestors = db.prepare('SELECT ancestor_id, depth FROM task_edges WHERE descendant_id = ?').all(task.parent_id);
-      const insertEdge = db.prepare('INSERT INTO task_edges (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)');
+      const ancestors = await getRows(
+        tx,
+        'SELECT ancestor_id, depth FROM task_edges WHERE descendant_id = ?',
+        [task.parent_id]
+      );
       for (const ancestor of ancestors) {
-        insertEdge.run(ancestor.ancestor_id, id, ancestor.depth + 1);
+        await run(
+          tx,
+          'INSERT INTO task_edges (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
+          [ancestor.ancestor_id, id, ancestor.depth + 1]
+        );
       }
     }
 
-    recordChange(db, task.workspace_id, 'task', id, 'create', task, clientId);
+    await recordChange(tx, task.workspace_id, 'task', id, 'create', task, clientId);
   });
-  tx();
 
-  return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  return getRow(db, 'SELECT * FROM tasks WHERE id = ?', [id]);
 }
 
-export function getTask(db, id) {
-  return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+export async function getTask(db, id) {
+  return getRow(db, 'SELECT * FROM tasks WHERE id = ?', [id]);
 }
 
-export function updateTask(db, id, patch, clientId = null) {
-  const existing = getTask(db, id);
+export async function updateTask(db, id, patch, clientId = null) {
+  const existing = await getTask(db, id);
   if (!existing) return null;
   const next = { ...existing, ...patch, updated_at: nowIso() };
   if ('urgency' in patch) next.urgency = patch.urgency ? 1 : 0;
@@ -1062,7 +1172,7 @@ export function updateTask(db, id, patch, clientId = null) {
   if ('template_prompt_pending' in patch) next.template_prompt_pending = patch.template_prompt_pending ? 1 : 0;
 
   if (patch.status && patch.status !== existing.status) {
-    const statusRow = getStatusByKey(db, existing.workspace_id, patch.status);
+    const statusRow = await getStatusByKey(db, existing.workspace_id, patch.status);
     if (!statusRow) {
       throw new Error('Invalid status');
     }
@@ -1091,56 +1201,67 @@ export function updateTask(db, id, patch, clientId = null) {
     'waiting_followup_at', 'next_checkin_at', 'sort_order', 'task_type', 'project_id', 'group_label'
   ];
   const values = fields.map(field => next[field]);
-  db.prepare(`UPDATE tasks SET ${fields.map(field => `${field} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
-    .run(...values, next.updated_at, id);
-  recordChange(db, next.workspace_id, 'task', id, 'update', patch, clientId);
+  await run(
+    db,
+    `UPDATE tasks SET ${fields.map(field => `${field} = ?`).join(', ')}, updated_at = ? WHERE id = ?`,
+    [...values, next.updated_at, id]
+  );
+  await recordChange(db, next.workspace_id, 'task', id, 'update', patch, clientId);
   return getTask(db, id);
 }
 
-export function deleteTask(db, id, clientId = null) {
-  const existing = getTask(db, id);
+export async function deleteTask(db, id, clientId = null) {
+  const existing = await getTask(db, id);
   if (!existing) return { deleted: 0 };
-  const descendants = db.prepare('SELECT descendant_id FROM task_edges WHERE ancestor_id = ?').all(id);
+  const descendants = await getRows(
+    db,
+    'SELECT descendant_id FROM task_edges WHERE ancestor_id = ?',
+    [id]
+  );
   const ids = descendants.map(row => row.descendant_id);
   if (ids.length === 0) return { deleted: 0 };
 
   const placeholders = ids.map(() => '?').join(',');
-  const tx = db.transaction(() => {
-    db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...ids);
+  await db.transaction(async (tx) => {
+    await run(tx, `DELETE FROM tasks WHERE id IN (${placeholders})`, ids);
   });
-  tx();
 
-  recordChange(db, existing.workspace_id, 'task', id, 'delete', { ids }, clientId);
+  await recordChange(db, existing.workspace_id, 'task', id, 'delete', { ids }, clientId);
   return { deleted: ids.length, ids };
 }
 
-export function listTasks(db, workspaceId) {
+export async function listTasks(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM tasks WHERE workspace_id = ?').all(workspaceId);
+  return getRows(db, 'SELECT * FROM tasks WHERE workspace_id = ?', [workspaceId]);
 }
 
-export function listTaskDependencies(db, workspaceId) {
+export async function listTaskDependencies(db, workspaceId) {
   if (!workspaceId) return [];
-  return db.prepare('SELECT * FROM task_dependencies WHERE workspace_id = ?').all(workspaceId);
+  return getRows(db, 'SELECT * FROM task_dependencies WHERE workspace_id = ?', [workspaceId]);
 }
 
-export function addTaskDependency(db, taskId, dependsOnId, clientId = null) {
+export async function addTaskDependency(db, taskId, dependsOnId, clientId = null) {
   if (!taskId || !dependsOnId) throw new Error('Task ids required');
   if (taskId === dependsOnId) throw new Error('Task cannot depend on itself');
-  const task = getTask(db, taskId);
-  const dependency = getTask(db, dependsOnId);
+  const task = await getTask(db, taskId);
+  const dependency = await getTask(db, dependsOnId);
   if (!task || !dependency) throw new Error('Task not found');
   if (task.workspace_id !== dependency.workspace_id) {
     throw new Error('Tasks must be in the same workspace');
   }
-  const existing = db.prepare('SELECT 1 FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?')
-    .get(taskId, dependsOnId);
+  const existing = await getRow(
+    db,
+    'SELECT 1 FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?',
+    [taskId, dependsOnId]
+  );
   if (existing) return { task_id: taskId, depends_on_id: dependsOnId, workspace_id: task.workspace_id };
   const created_at = nowIso();
-  db.prepare(
-    'INSERT INTO task_dependencies (task_id, depends_on_id, workspace_id, created_at) VALUES (?, ?, ?, ?)'
-  ).run(taskId, dependsOnId, task.workspace_id, created_at);
-  recordChange(
+  await run(
+    db,
+    'INSERT INTO task_dependencies (task_id, depends_on_id, workspace_id, created_at) VALUES (?, ?, ?, ?)',
+    [taskId, dependsOnId, task.workspace_id, created_at]
+  );
+  await recordChange(
     db,
     task.workspace_id,
     'task_dependency',
@@ -1152,36 +1273,43 @@ export function addTaskDependency(db, taskId, dependsOnId, clientId = null) {
   return { task_id: taskId, depends_on_id: dependsOnId, workspace_id: task.workspace_id, created_at };
 }
 
-export function removeTaskDependency(db, taskId, dependsOnId, clientId = null) {
+export async function removeTaskDependency(db, taskId, dependsOnId, clientId = null) {
   if (!taskId || !dependsOnId) throw new Error('Task ids required');
-  const task = getTask(db, taskId);
+  const task = await getTask(db, taskId);
   if (!task) throw new Error('Task not found');
-  const result = db.prepare('DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?')
-    .run(taskId, dependsOnId);
-  if (result.changes) {
-    recordChange(
-      db,
-      task.workspace_id,
-      'task_dependency',
-      `${taskId}:${dependsOnId}`,
-      'delete',
-      { task_id: taskId, depends_on_id: dependsOnId },
-      clientId
-    );
-  }
-  return { deleted: result.changes ?? 0 };
+  const existing = await getRow(
+    db,
+    'SELECT 1 FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?',
+    [taskId, dependsOnId]
+  );
+  if (!existing) return { deleted: 0 };
+  await run(db, 'DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?', [taskId, dependsOnId]);
+  await recordChange(
+    db,
+    task.workspace_id,
+    'task_dependency',
+    `${taskId}:${dependsOnId}`,
+    'delete',
+    { task_id: taskId, depends_on_id: dependsOnId },
+    clientId
+  );
+  return { deleted: 1 };
 }
 
-export function getTaskTree(db, workspaceId, rootId = null) {
+export async function getTaskTree(db, workspaceId, rootId = null) {
   let tasks;
   if (rootId) {
-    const descendants = db.prepare('SELECT descendant_id FROM task_edges WHERE ancestor_id = ?').all(rootId);
+    const descendants = await getRows(
+      db,
+      'SELECT descendant_id FROM task_edges WHERE ancestor_id = ?',
+      [rootId]
+    );
     const ids = descendants.map(row => row.descendant_id);
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
-    tasks = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids);
+    tasks = await getRows(db, `SELECT * FROM tasks WHERE id IN (${placeholders})`, ids);
   } else {
-    tasks = listTasks(db, workspaceId);
+    tasks = await listTasks(db, workspaceId);
   }
 
   const tree = buildAdjacency(tasks);
@@ -1194,110 +1322,145 @@ function sortTreeByPriority(node) {
   node.children.forEach(sortTreeByPriority);
 }
 
-export function reparentTask(db, taskId, newParentId, clientId = null) {
+export async function reparentTask(db, taskId, newParentId, clientId = null) {
   if (taskId === newParentId) throw new Error('Cannot reparent task under itself');
 
   if (newParentId) {
-    const cycle = db.prepare('SELECT 1 FROM task_edges WHERE ancestor_id = ? AND descendant_id = ? LIMIT 1')
-      .get(taskId, newParentId);
+    const cycle = await getRow(
+      db,
+      'SELECT 1 FROM task_edges WHERE ancestor_id = ? AND descendant_id = ? LIMIT 1',
+      [taskId, newParentId]
+    );
     if (cycle) throw new Error('Cannot reparent task under its descendant');
   }
 
-  const descendants = db.prepare('SELECT descendant_id, depth FROM task_edges WHERE ancestor_id = ?').all(taskId);
-  const ancestorRows = db.prepare('SELECT ancestor_id, depth FROM task_edges WHERE descendant_id = ? AND depth > 0').all(taskId);
+  const descendants = await getRows(
+    db,
+    'SELECT descendant_id, depth FROM task_edges WHERE ancestor_id = ?',
+    [taskId]
+  );
+  const ancestorRows = await getRows(
+    db,
+    'SELECT ancestor_id, depth FROM task_edges WHERE descendant_id = ? AND depth > 0',
+    [taskId]
+  );
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     if (ancestorRows.length && descendants.length) {
       const ancestorIds = ancestorRows.map(row => row.ancestor_id);
       const descendantIds = descendants.map(row => row.descendant_id);
       const ancestorPlaceholders = ancestorIds.map(() => '?').join(',');
       const descendantPlaceholders = descendantIds.map(() => '?').join(',');
-      db.prepare(
-        `DELETE FROM task_edges WHERE ancestor_id IN (${ancestorPlaceholders}) AND descendant_id IN (${descendantPlaceholders})`
-      ).run(...ancestorIds, ...descendantIds);
+      await run(
+        tx,
+        `DELETE FROM task_edges WHERE ancestor_id IN (${ancestorPlaceholders}) AND descendant_id IN (${descendantPlaceholders})`,
+        [...ancestorIds, ...descendantIds]
+      );
     }
 
     if (newParentId) {
-      const newAncestors = db.prepare('SELECT ancestor_id, depth FROM task_edges WHERE descendant_id = ?').all(newParentId);
-      const insertEdge = db.prepare('INSERT INTO task_edges (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)');
+      const newAncestors = await getRows(
+        tx,
+        'SELECT ancestor_id, depth FROM task_edges WHERE descendant_id = ?',
+        [newParentId]
+      );
       for (const ancestor of newAncestors) {
         for (const descendant of descendants) {
-          insertEdge.run(ancestor.ancestor_id, descendant.descendant_id, ancestor.depth + 1 + descendant.depth);
+          await run(
+            tx,
+            'INSERT INTO task_edges (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
+            [ancestor.ancestor_id, descendant.descendant_id, ancestor.depth + 1 + descendant.depth]
+          );
         }
       }
     }
 
-    db.prepare('UPDATE tasks SET parent_id = ?, updated_at = ? WHERE id = ?')
-      .run(newParentId ?? null, nowIso(), taskId);
+    await run(
+      tx,
+      'UPDATE tasks SET parent_id = ?, updated_at = ? WHERE id = ?',
+      [newParentId ?? null, nowIso(), taskId]
+    );
   });
-  tx();
 
-  const updated = getTask(db, taskId);
-  recordChange(db, updated.workspace_id, 'task', taskId, 'reparent', { new_parent_id: newParentId }, clientId);
+  const updated = await getTask(db, taskId);
+  await recordChange(db, updated.workspace_id, 'task', taskId, 'reparent', { new_parent_id: newParentId }, clientId);
   return updated;
 }
 
-export function applyTaskCheckIn(db, taskId, response, clientId = null) {
-  const task = getTask(db, taskId);
+export async function applyTaskCheckIn(db, taskId, response, clientId = null) {
+  const task = await getTask(db, taskId);
   if (!task) return null;
   if (response === 'no') {
-    rescheduleSubtree(db, taskId, 24 * 60 * 60 * 1000, clientId);
+    await rescheduleSubtree(db, taskId, 24 * 60 * 60 * 1000, clientId);
   }
   const updated = applyCheckIn(task, response, new Date());
 
-  const tx = db.transaction(() => {
-    db.prepare(
-      'UPDATE tasks SET status = ?, completed_at = ?, next_checkin_at = ?, updated_at = ? WHERE id = ?'
-    ).run(updated.status, updated.completed_at, updated.next_checkin_at, nowIso(), taskId);
-
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      'UPDATE tasks SET status = ?, completed_at = ?, next_checkin_at = ?, updated_at = ? WHERE id = ?',
+      [updated.status, updated.completed_at, updated.next_checkin_at, nowIso(), taskId]
+    );
     const checkinId = randomUUID();
-    db.prepare(
-      'INSERT INTO task_checkins (id, task_id, scheduled_at, response, responded_at, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(
-      checkinId,
-      taskId,
-      task.next_checkin_at ?? nowIso(),
-      response,
-      nowIso(),
-      nowIso()
+    await run(
+      tx,
+      'INSERT INTO task_checkins (id, task_id, scheduled_at, response, responded_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [
+        checkinId,
+        taskId,
+        task.next_checkin_at ?? nowIso(),
+        response,
+        nowIso(),
+        nowIso()
+      ]
     );
   });
-  tx();
 
-  recordChange(db, task.workspace_id, 'task', taskId, 'checkin', { response }, clientId);
+  await recordChange(db, task.workspace_id, 'task', taskId, 'checkin', { response }, clientId);
   return getTask(db, taskId);
 }
 
-export function rescheduleSubtree(db, taskId, deltaMs, clientId = null) {
-  const descendants = db.prepare('SELECT descendant_id FROM task_edges WHERE ancestor_id = ?').all(taskId);
+export async function rescheduleSubtree(db, taskId, deltaMs, clientId = null) {
+  const descendants = await getRows(
+    db,
+    'SELECT descendant_id FROM task_edges WHERE ancestor_id = ?',
+    [taskId]
+  );
   const ids = descendants.map(row => row.descendant_id);
   if (ids.length === 0) return { updated: 0 };
 
-  const tasks = db.prepare(`SELECT id, start_at, due_at, next_checkin_at, workspace_id FROM tasks WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
-  const tx = db.transaction(() => {
-    const update = db.prepare('UPDATE tasks SET start_at = ?, due_at = ?, next_checkin_at = ?, updated_at = ? WHERE id = ?');
+  const placeholders = ids.map(() => '?').join(',');
+  const tasks = await getRows(
+    db,
+    `SELECT id, start_at, due_at, next_checkin_at, workspace_id FROM tasks WHERE id IN (${placeholders})`,
+    ids
+  );
+  await db.transaction(async (tx) => {
     for (const task of tasks) {
       const startAt = task.start_at ? new Date(task.start_at).getTime() + deltaMs : null;
       const dueAt = task.due_at ? new Date(task.due_at).getTime() + deltaMs : null;
       const nextCheck = task.next_checkin_at ? new Date(task.next_checkin_at).getTime() + deltaMs : null;
-      update.run(
-        startAt ? new Date(startAt).toISOString() : null,
-        dueAt ? new Date(dueAt).toISOString() : null,
-        nextCheck ? new Date(nextCheck).toISOString() : null,
-        nowIso(),
-        task.id
+      await run(
+        tx,
+        'UPDATE tasks SET start_at = ?, due_at = ?, next_checkin_at = ?, updated_at = ? WHERE id = ?',
+        [
+          startAt ? new Date(startAt).toISOString() : null,
+          dueAt ? new Date(dueAt).toISOString() : null,
+          nextCheck ? new Date(nextCheck).toISOString() : null,
+          nowIso(),
+          task.id
+        ]
       );
     }
   });
-  tx();
 
   if (tasks[0]) {
-    recordChange(db, tasks[0].workspace_id, 'task', taskId, 'reschedule', { deltaMs }, clientId);
+    await recordChange(db, tasks[0].workspace_id, 'task', taskId, 'reschedule', { deltaMs }, clientId);
   }
   return { updated: tasks.length };
 }
 
-export function searchTasks(db, workspaceId, { text, status, tag }) {
+export async function searchTasks(db, workspaceId, { text, status, tag }) {
   const params = [workspaceId];
   let where = 'workspace_id = ?';
   if (status) {
@@ -1313,5 +1476,5 @@ export function searchTasks(db, workspaceId, { text, status, tag }) {
     where += ' AND id IN (SELECT task_id FROM task_tags tt JOIN tags t ON t.id = tt.tag_id WHERE t.name = ?)';
     params.push(tag);
   }
-  return db.prepare(`SELECT * FROM tasks WHERE ${where}`).all(...params);
+  return getRows(db, `SELECT * FROM tasks WHERE ${where}`, params);
 }
