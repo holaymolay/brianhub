@@ -1,0 +1,14 @@
+name: ceres-integration
+purpose: Enable CERES governance tooling in the repo (wrappers, components, workspace artifacts).
+state:
+  wrappers:
+    - scripts/run-component.sh
+    - scripts/log_event.py
+behaviors:
+  - preflight-compatible execution
+  - governance-orchestrator invocation
+  - workspace-aware logging
+synchronizations: []
+dependencies:
+  - .ceres/core
+  - .ceres/components
