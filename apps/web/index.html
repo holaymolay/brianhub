@@ -129,6 +129,13 @@
                   <button class="workspace-menu-item" type="button" data-sort="due-desc">Due date (latest)</button>
                 </div>
               </div>
+              <div class="task-group">
+                <button id="task-group-button" class="subtle-button" type="button">Group ▾</button>
+                <div id="task-group-menu" class="workspace-menu hidden">
+                  <button class="workspace-menu-item" type="button" data-group="none">None</button>
+                  <button class="workspace-menu-item" type="button" data-group="group">Group</button>
+                </div>
+              </div>
               <select id="task-view-select" class="task-view-select" aria-label="Task view">
                 <option value="list">List view</option>
                 <option value="kanban">Kanban view</option>
@@ -672,6 +679,10 @@
           <select id="editor-project"></select>
         </label>
         <label>
+          Group
+          <input id="editor-group" type="text" list="task-group-options" placeholder="Ungrouped" />
+        </label>
+        <label>
           Subtask of
           <select id="editor-parent"></select>
         </label>
@@ -858,6 +869,10 @@
             <select id="bulk-edit-project"></select>
           </label>
           <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-group" type="checkbox" /> Group</span>
+            <input id="bulk-edit-group" type="text" list="task-group-options" placeholder="Ungrouped" />
+          </label>
+          <label class="bulk-edit-field">
             <span><input id="bulk-edit-apply-type" type="checkbox" /> Type</span>
             <select id="bulk-edit-type"></select>
           </label>
@@ -881,7 +896,25 @@
       </div>
     </div>
 
+    <div id="group-rename-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Rename group</h2>
+        <form id="group-rename-form">
+          <label>
+            Group name
+            <input id="group-rename-input" type="text" autocomplete="off" />
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Rename</button>
+            <button id="group-rename-cancel" class="subtle-button" type="button">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div id="task-context-menu" class="workspace-menu task-context-menu hidden"></div>
+    <datalist id="task-group-options"></datalist>
 
     <script type="module" src="/apps/web/app.js"></script>
   </body>

@@ -917,6 +917,7 @@ export function createTask(db, data, clientId = null) {
     workspace_id: data.workspace_id,
     parent_id: data.parent_id ?? null,
     project_id: data.project_id ?? null,
+    group_label: data.group_label ?? null,
     title: data.title,
     description_md: data.description_md ?? '',
     type_label: data.type_label ?? null,
@@ -961,6 +962,7 @@ export function createTask(db, data, clientId = null) {
       'workspace_id',
       'parent_id',
       'project_id',
+      'group_label',
       'title',
       'description_md',
       'status',
@@ -995,6 +997,7 @@ export function createTask(db, data, clientId = null) {
       task.workspace_id,
       task.parent_id,
       task.project_id,
+      task.group_label,
       task.title,
       task.description_md,
       task.status,
@@ -1085,7 +1088,7 @@ export function updateTask(db, id, patch, clientId = null) {
     'auto_debit', 'reminder_sent_at', 'recurrence_parent_id', 'recurrence_generated_at',
     'template_id', 'template_state', 'template_event_date', 'template_lead_days', 'template_defer_until', 'template_prompt_pending',
     'status', 'priority', 'urgency', 'start_at', 'due_at', 'completed_at',
-    'waiting_followup_at', 'next_checkin_at', 'sort_order', 'task_type', 'project_id'
+    'waiting_followup_at', 'next_checkin_at', 'sort_order', 'task_type', 'project_id', 'group_label'
   ];
   const values = fields.map(field => next[field]);
   db.prepare(`UPDATE tasks SET ${fields.map(field => `${field} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)

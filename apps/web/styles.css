@@ -1,5 +1,5 @@
 :root {
-  --ui-scale: 0.8;
+  --ui-scale: 1;
   --bg: #0f1216;
   --panel: #1a1f27;
   --text: #f5f7fb;
@@ -643,6 +643,10 @@ body {
   position: relative;
 }
 
+.task-group {
+  position: relative;
+}
+
 .task-view-toggle {
   display: inline-flex;
   gap: 0.5rem;
@@ -1244,13 +1248,33 @@ button:hover { opacity: 0.9; }
   padding-bottom: 1rem;
 }
 
-.task-list-header {
+.task-group-section {
+  background: #0f141c;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.task-group-header {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  margin-bottom: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  cursor: context-menu;
 }
+
+.task-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.35rem;
+}
+
 .status-dot {
   width: 0.55rem;
   height: 0.55rem;
@@ -1891,6 +1915,7 @@ button:hover { opacity: 0.9; }
   z-index: 200;
   min-width: 180px;
   padding: 0.35rem;
+  right: auto;
 }
 
 .task-item.is-selected {
@@ -2045,6 +2070,10 @@ button:hover { opacity: 0.9; }
 
 #task-modal-form .modal-actions {
   margin-top: 0.25rem;
+}
+
+#group-rename-form .modal-actions {
+  margin-top: 0.75rem;
 }
 
 #recurrence-form {

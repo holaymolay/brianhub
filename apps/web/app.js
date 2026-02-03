@@ -49,6 +49,8 @@ const taskFilterButton = document.getElementById('task-filter-button');
 const taskFilterMenu = document.getElementById('task-filter-menu');
 const taskSortButton = document.getElementById('task-sort-button');
 const taskSortMenu = document.getElementById('task-sort-menu');
+const taskGroupButton = document.getElementById('task-group-button');
+const taskGroupMenu = document.getElementById('task-group-menu');
 const taskViewSelect = document.getElementById('task-view-select');
 const taskColumnsButton = document.getElementById('task-columns-button');
 const taskBulkBar = document.getElementById('task-bulk-bar');
@@ -265,6 +267,7 @@ const editorCancel = document.getElementById('editor-cancel');
 const editorDelete = document.getElementById('editor-delete');
 const editorClose = document.getElementById('editor-close');
 const editorProject = document.getElementById('editor-project');
+const editorGroup = document.getElementById('editor-group');
 const editorParent = document.getElementById('editor-parent');
 const templatePrompt = document.getElementById('template-prompt');
 const templatePromptTitle = document.getElementById('template-prompt-title');
@@ -281,6 +284,8 @@ const bulkEditApplyPriority = document.getElementById('bulk-edit-apply-priority'
 const bulkEditPriority = document.getElementById('bulk-edit-priority');
 const bulkEditApplyProject = document.getElementById('bulk-edit-apply-project');
 const bulkEditProject = document.getElementById('bulk-edit-project');
+const bulkEditApplyGroup = document.getElementById('bulk-edit-apply-group');
+const bulkEditGroup = document.getElementById('bulk-edit-group');
 const bulkEditApplyType = document.getElementById('bulk-edit-apply-type');
 const bulkEditType = document.getElementById('bulk-edit-type');
 const bulkEditApplyStart = document.getElementById('bulk-edit-apply-start');
@@ -290,7 +295,13 @@ const bulkEditDue = document.getElementById('bulk-edit-due');
 const bulkEditApplyReminder = document.getElementById('bulk-edit-apply-reminder');
 const bulkEditReminder = document.getElementById('bulk-edit-reminder');
 const bulkEditCancel = document.getElementById('bulk-edit-cancel');
+const groupRenameModal = document.getElementById('group-rename-modal');
+const groupRenameForm = document.getElementById('group-rename-form');
+const groupRenameInput = document.getElementById('group-rename-input');
+const groupRenameCancel = document.getElementById('group-rename-cancel');
+const taskGroupOptions = document.getElementById('task-group-options');
 let openMenu = null;
+let renameGroupLabel = null;
 let editingTemplateId = null;
 let activeTaskId = null;
 let templatePromptTaskId = null;
@@ -570,6 +581,32 @@ taskSortMenu?.addEventListener('click', (event) => {
   if (!sortKey) return;
   setTaskSortKey(sortKey);
   taskSortMenu.classList.add('hidden');
+  openMenu = null;
+  render();
+});
+
+taskGroupButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (openMenu && openMenu !== taskGroupMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (taskGroupMenu.classList.contains('hidden')) {
+    taskGroupMenu.classList.remove('hidden');
+    openMenu = taskGroupMenu;
+  } else {
+    taskGroupMenu.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+taskGroupMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const mode = target.dataset.group;
+  if (!mode) return;
+  setTaskGroupMode(mode);
+  taskGroupMenu.classList.add('hidden');
   openMenu = null;
   render();
 });
@@ -989,6 +1026,15 @@ function getTaskSortKey() {
 function setTaskSortKey(key) {
   state.ui = state.ui ?? {};
   state.ui.taskSort = key;
+}
+
+function getTaskGroupMode() {
+  return state.ui?.taskGroupMode ?? 'none';
+}
+
+function setTaskGroupMode(mode) {
+  state.ui = state.ui ?? {};
+  state.ui.taskGroupMode = mode;
 }
 
 function getNoticeFilterKey() {
@@ -1724,7 +1770,8 @@ function normalizeTask(task) {
   return {
     ...task,
     auto_debit: Number(task.auto_debit) ? 1 : 0,
-    template_prompt_pending: Number(task.template_prompt_pending) ? 1 : 0
+    template_prompt_pending: Number(task.template_prompt_pending) ? 1 : 0,
+    group_label: task.group_label ?? null
   };
 }
 
@@ -1864,6 +1911,7 @@ async function createTaskRecord(payload) {
     workspace_id: state.workspace.id,
     parent_id: taskPayload.parent_id ?? null,
     project_id: taskPayload.project_id ?? null,
+    group_label: taskPayload.group_label ?? null,
     title: taskPayload.title,
     description_md: taskPayload.description_md ?? '',
     status,
@@ -2384,6 +2432,8 @@ function buildTaskEditorPatch(task) {
   const nextParentId = editorParent?.value || null;
   const description = getNotesContent();
   const typeLabel = editorType?.value ? editorType.value.trim() : null;
+  const groupLabel = editorGroup?.value ? editorGroup.value.trim() : '';
+  const normalizedGroup = groupLabel || null;
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
   const reminderValue = parseInt(editorReminder?.value ?? '', 10);
   const reminder = Number.isFinite(reminderValue) ? reminderValue : null;
@@ -2398,6 +2448,7 @@ function buildTaskEditorPatch(task) {
   if ((typeLabel ?? null) !== (task.type_label ?? null)) patch.type_label = typeLabel;
   if (priority !== (task.priority ?? 'medium')) patch.priority = priority;
   if ((projectId ?? null) !== (task.project_id ?? null)) patch.project_id = projectId;
+  if ((normalizedGroup ?? null) !== (task.group_label ?? null)) patch.group_label = normalizedGroup;
   if ((recurrence.interval ?? null) !== (task.recurrence_interval ?? null)) {
     patch.recurrence_interval = recurrence.interval ?? null;
   }
@@ -3091,15 +3142,23 @@ function getDirectTaskItems(container) {
   return Array.from(container.querySelectorAll(':scope > .task-item'));
 }
 
-async function persistTaskOrder(container, parentId, statusKey) {
+async function persistTaskOrder(container, parentId, statusKey, groupLabel) {
   const items = getDirectTaskItems(container);
+  const normalizedGroup = groupLabel !== undefined ? (groupLabel || null) : undefined;
   for (let index = 0; index < items.length; index += 1) {
     const id = items[index].dataset.taskId;
     const task = state.tasks[id];
     if (!task) continue;
     const nextSort = (index + 1) * 10;
-    if (task.sort_order === nextSort) continue;
-    await updateTaskRecord(id, { sort_order: nextSort });
+    const patch = {};
+    if (task.sort_order !== nextSort) patch.sort_order = nextSort;
+    if (statusKey && task.status !== statusKey) patch.status = statusKey;
+    if (parentId === null && normalizedGroup !== undefined) {
+      if ((task.group_label ?? null) !== normalizedGroup) patch.group_label = normalizedGroup;
+    }
+    if (Object.keys(patch).length) {
+      await updateTaskRecord(id, patch);
+    }
   }
   render();
 }
@@ -3139,13 +3198,18 @@ async function persistColumnOrder(board) {
   render();
 }
 
-function attachTaskDropzone(container, { parentId = null, statusKey = null } = {}) {
+function attachTaskDropzone(container, { parentId = null, statusKey = null, groupLabel } = {}) {
   const normalizedParent = parentId ? parentId : null;
   container.dataset.parentId = normalizedParent ?? '';
   if (statusKey) {
     container.dataset.statusKey = statusKey;
   } else {
     delete container.dataset.statusKey;
+  }
+  if (groupLabel !== undefined) {
+    container.dataset.groupLabel = groupLabel ?? '';
+  } else {
+    delete container.dataset.groupLabel;
   }
   container.addEventListener('dragover', (event) => {
     if (!draggingTaskId || draggingColumnKey) return;
@@ -3190,7 +3254,7 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null } = {
       }
     }
     if (targetContainer) {
-      await persistTaskOrder(targetContainer, parentId, statusKey);
+      await persistTaskOrder(targetContainer, parentId, statusKey, groupLabel);
     }
   });
 }
@@ -3234,6 +3298,8 @@ function attachTaskDragHandlers(item, task) {
     const container = item.parentElement;
     const parentId = container?.dataset?.parentId ?? null;
     const statusKey = container?.dataset?.statusKey ?? null;
+    const groupLabelValue = container?.dataset?.groupLabel;
+    const groupLabel = groupLabelValue !== undefined ? (groupLabelValue || null) : undefined;
     const allowed = canDropTaskInContainer(parentId ? parentId : null, statusKey ?? null);
     if (!allowed) return;
     event.preventDefault();
@@ -3242,12 +3308,15 @@ function attachTaskDragHandlers(item, task) {
     const originParent = draggingTaskOrigin?.parentId ?? null;
     const normalizedParent = parentId ? parentId : null;
     const movingToRoot = normalizedParent === null && originParent !== null;
+    const movingBetweenRoots = normalizedParent === null && originParent === null && draggingEl.parentElement !== container;
     if (draggingEl.parentElement !== container) {
-      if (!movingToRoot) return;
+      if (!movingToRoot && !movingBetweenRoots) return;
       try {
-        await reparentTaskRecord(draggingTaskId, null);
-        if (statusKey && draggingTaskOrigin?.status !== statusKey) {
-          await updateTaskRecord(draggingTaskId, { status: statusKey });
+        if (movingToRoot) {
+          await reparentTaskRecord(draggingTaskId, null);
+          if (statusKey && draggingTaskOrigin?.status !== statusKey) {
+            await updateTaskRecord(draggingTaskId, { status: statusKey });
+          }
         }
       } catch (err) {
         alert(err?.message ?? 'Unable to move task.');
@@ -3257,7 +3326,7 @@ function attachTaskDragHandlers(item, task) {
     const rect = item.getBoundingClientRect();
     const insertAfter = event.clientY > rect.top + rect.height / 2;
     container.insertBefore(draggingEl, insertAfter ? item.nextSibling : item);
-    await persistTaskOrder(container, parentId ? parentId : null, statusKey ?? null);
+    await persistTaskOrder(container, normalizedParent, statusKey ?? null, groupLabel);
   });
 }
 
@@ -3400,9 +3469,11 @@ function render() {
   renderNoticeBellMenu();
   renderTaskFilter();
   renderTaskSort();
+  renderTaskGroup();
   renderNoticeFilter();
   renderNoticeSort();
   renderTaskViewToggle();
+  populateGroupOptions();
   renderBulkSelectionBar();
   if (activeTaskId && !state.tasks[activeTaskId]) {
     closeTaskEditor();
@@ -3536,6 +3607,16 @@ function renderTaskSort() {
     'due-desc': 'Due date (latest)'
   };
   taskSortButton.textContent = `${labelMap[key] ?? 'Sort'} ▾`;
+}
+
+function renderTaskGroup() {
+  if (!taskGroupButton || !taskGroupMenu) return;
+  const mode = getTaskGroupMode();
+  const labelMap = {
+    none: 'Group',
+    group: 'Group: Group'
+  };
+  taskGroupButton.textContent = `${labelMap[mode] ?? 'Group'} ▾`;
 }
 
 function renderNoticeFilter() {
@@ -3808,6 +3889,29 @@ function populateTaskTypeSelect(selectEl, selectedName = null) {
   } else {
     selectEl.value = '';
   }
+}
+
+function getGroupLabelsForWorkspace() {
+  if (!state.workspace) return [];
+  const labels = new Set();
+  Object.values(state.tasks ?? {})
+    .filter(task => task.workspace_id === state.workspace.id)
+    .forEach(task => {
+      const label = (task.group_label ?? '').trim();
+      if (label) labels.add(label);
+    });
+  return Array.from(labels).sort((a, b) => a.localeCompare(b));
+}
+
+function populateGroupOptions() {
+  if (!taskGroupOptions) return;
+  const labels = getGroupLabelsForWorkspace();
+  taskGroupOptions.innerHTML = '';
+  labels.forEach(label => {
+    const option = document.createElement('option');
+    option.value = label;
+    taskGroupOptions.appendChild(option);
+  });
 }
 
 function renderTemplateList() {
@@ -4484,20 +4588,61 @@ function renderNotificationStatus() {
 }
 
 function renderTaskList(roots) {
-  const header = document.createElement('div');
-  header.className = 'task-list-header';
-  header.textContent = 'Name';
-  taskTreeEl.appendChild(header);
-
-  const topDropzone = document.createElement('div');
-  topDropzone.className = 'task-root-dropzone';
-  attachTaskDropzone(topDropzone, { parentId: null });
-  taskTreeEl.appendChild(topDropzone);
+  const groupMode = getTaskGroupMode();
+  if (groupMode !== 'group') {
+    const topDropzone = document.createElement('div');
+    topDropzone.className = 'task-root-dropzone';
+    attachTaskDropzone(topDropzone, { parentId: null });
+    taskTreeEl.appendChild(topDropzone);
+  }
 
   const list = document.createElement('div');
   list.className = 'task-list';
-  attachTaskDropzone(list, { parentId: null });
-  roots.forEach(node => list.appendChild(renderTask(node)));
+  if (groupMode !== 'group') {
+    attachTaskDropzone(list, { parentId: null });
+  }
+  let ungroupedList = null;
+  if (groupMode === 'group') {
+    const grouped = new Map();
+    const ungrouped = [];
+    roots.forEach(task => {
+      const label = (task.group_label ?? '').trim();
+      if (!label) {
+        ungrouped.push(task);
+        return;
+      }
+      if (!grouped.has(label)) grouped.set(label, []);
+      grouped.get(label).push(task);
+    });
+    const labels = Array.from(grouped.keys()).sort((a, b) => a.localeCompare(b));
+    labels.forEach(label => {
+      const section = document.createElement('div');
+      section.className = 'task-group-section';
+      section.dataset.groupLabel = label;
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'task-group-header';
+      sectionHeader.textContent = label;
+      sectionHeader.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showTaskGroupContextMenu(label, event.clientX, event.clientY);
+      });
+      section.appendChild(sectionHeader);
+      const groupList = document.createElement('div');
+      groupList.className = 'task-group-list';
+      attachTaskDropzone(groupList, { parentId: null, groupLabel: label });
+      grouped.get(label).forEach(node => groupList.appendChild(renderTask(node)));
+      section.appendChild(groupList);
+      list.appendChild(section);
+    });
+    ungroupedList = document.createElement('div');
+    ungroupedList.className = 'task-group-list task-ungrouped-list';
+    attachTaskDropzone(ungroupedList, { parentId: null, groupLabel: null });
+    ungrouped.forEach(node => ungroupedList.appendChild(renderTask(node)));
+    list.appendChild(ungroupedList);
+  } else {
+    roots.forEach(node => list.appendChild(renderTask(node)));
+  }
   const addRow = document.createElement('div');
   addRow.className = 'task-add-subtask task-add-task';
   const addInput = document.createElement('input');
@@ -4537,13 +4682,19 @@ function renderTaskList(roots) {
     }
   });
   addRow.appendChild(addInput);
-  list.appendChild(addRow);
+  if (groupMode === 'group') {
+    (ungroupedList ?? list).appendChild(addRow);
+  } else {
+    list.appendChild(addRow);
+  }
   taskTreeEl.appendChild(list);
 
-  const bottomDropzone = document.createElement('div');
-  bottomDropzone.className = 'task-root-dropzone';
-  attachTaskDropzone(bottomDropzone, { parentId: null });
-  taskTreeEl.appendChild(bottomDropzone);
+  if (groupMode !== 'group') {
+    const bottomDropzone = document.createElement('div');
+    bottomDropzone.className = 'task-root-dropzone';
+    attachTaskDropzone(bottomDropzone, { parentId: null });
+    taskTreeEl.appendChild(bottomDropzone);
+  }
 
   if (state.ui?.focusTaskAdd || state.ui?.taskAddFocused) {
     state.ui = state.ui ?? {};
@@ -5644,6 +5795,7 @@ function openBulkEditModal() {
   if (bulkEditApplyStatus) bulkEditApplyStatus.checked = false;
   if (bulkEditApplyPriority) bulkEditApplyPriority.checked = false;
   if (bulkEditApplyProject) bulkEditApplyProject.checked = false;
+  if (bulkEditApplyGroup) bulkEditApplyGroup.checked = false;
   if (bulkEditApplyType) bulkEditApplyType.checked = false;
   if (bulkEditApplyStart) bulkEditApplyStart.checked = false;
   if (bulkEditApplyDue) bulkEditApplyDue.checked = false;
@@ -5651,6 +5803,7 @@ function openBulkEditModal() {
   populateStatusSelect(bulkEditStatus, getDefaultStatusKey());
   populateProjectSelect(bulkEditProject, '', true);
   populateTaskTypeSelect(bulkEditType, '');
+  if (bulkEditGroup) bulkEditGroup.value = '';
   if (bulkEditPriority) bulkEditPriority.value = 'medium';
   if (bulkEditStart) bulkEditStart.value = '';
   if (bulkEditDue) bulkEditDue.value = '';
@@ -5660,6 +5813,20 @@ function openBulkEditModal() {
 
 function closeBulkEditModal() {
   bulkEditModal?.classList.add('hidden');
+}
+
+function openGroupRenameModal(label) {
+  if (!groupRenameModal || !groupRenameInput) return;
+  renameGroupLabel = label;
+  groupRenameInput.value = label;
+  groupRenameModal.classList.remove('hidden');
+  groupRenameInput.focus();
+  groupRenameInput.select();
+}
+
+function closeGroupRenameModal() {
+  groupRenameModal?.classList.add('hidden');
+  renameGroupLabel = null;
 }
 
 function buildBulkEditTemplate() {
@@ -5679,6 +5846,11 @@ function buildBulkEditTemplate() {
   if (bulkEditApplyProject?.checked) {
     template.project_id = bulkEditProject?.value || null;
     fields.add('project_id');
+  }
+  if (bulkEditApplyGroup?.checked) {
+    const label = bulkEditGroup?.value ? bulkEditGroup.value.trim() : '';
+    template.group_label = label || null;
+    fields.add('group_label');
   }
   if (bulkEditApplyType?.checked) {
     template.type_label = bulkEditType?.value || null;
@@ -5782,6 +5954,48 @@ async function handleBulkDelete() {
   });
   clearSelectedTasks();
   render();
+}
+
+async function renameTaskGroup(label, nextName) {
+  const updatedName = nextName.trim();
+  if (!updatedName || updatedName === label) return;
+  const workspaceId = state.workspace?.id;
+  if (!workspaceId) return;
+  const tasks = Object.values(state.tasks ?? {});
+  for (const task of tasks) {
+    if (task.workspace_id !== workspaceId) continue;
+    const currentLabel = (task.group_label ?? '').trim();
+    if (currentLabel !== label) continue;
+    await updateTaskRecord(task.id, { group_label: updatedName });
+  }
+  render();
+}
+
+function showTaskGroupContextMenu(label, x, y) {
+  if (!taskContextMenu) return;
+  if (openMenu && openMenu !== taskContextMenu) {
+    openMenu.classList.add('hidden');
+  }
+  taskContextMenu.innerHTML = '';
+
+  const renameItem = document.createElement('button');
+  renameItem.type = 'button';
+  renameItem.className = 'workspace-menu-item';
+  renameItem.textContent = 'Rename group';
+  renameItem.addEventListener('click', () => {
+    taskContextMenu.classList.add('hidden');
+    openMenu = null;
+    openGroupRenameModal(label);
+  });
+  taskContextMenu.appendChild(renameItem);
+
+  taskContextMenu.classList.remove('hidden');
+  openMenu = taskContextMenu;
+  const menuRect = taskContextMenu.getBoundingClientRect();
+  const nextLeft = Math.min(x, window.innerWidth - menuRect.width - 8);
+  const nextTop = Math.min(y, window.innerHeight - menuRect.height - 8);
+  taskContextMenu.style.left = `${Math.max(8, nextLeft)}px`;
+  taskContextMenu.style.top = `${Math.max(8, nextTop)}px`;
 }
 
 function showTaskContextMenu(taskId, x, y) {
@@ -6029,6 +6243,7 @@ function populateTaskEditor(task) {
     populateTaskTypeSelect(editorType, task.type_label ?? '');
     editorPriority.value = task.priority ?? 'medium';
     populateProjectSelect(editorProject, task.project_id ?? '', true);
+    if (editorGroup) editorGroup.value = task.group_label ?? '';
     populateParentSelect(editorParent, task.id, task.parent_id ?? null);
     setRecurrenceState('editor', task.recurrence_interval ?? null, task.recurrence_unit ?? 'month');
     editorReminder.value = task.reminder_offset_days ?? '';
@@ -6669,6 +6884,8 @@ editorTitle?.addEventListener('blur', () => scheduleTaskEditorAutosave('title-bl
 editorType?.addEventListener('change', () => scheduleTaskEditorAutosave('type', 300));
 editorPriority?.addEventListener('change', () => scheduleTaskEditorAutosave('priority', 300));
 editorProject?.addEventListener('change', () => scheduleTaskEditorAutosave('project', 300));
+editorGroup?.addEventListener('input', () => scheduleTaskEditorAutosave('group', 500));
+editorGroup?.addEventListener('change', () => scheduleTaskEditorAutosave('group', 300));
 editorParent?.addEventListener('change', () => scheduleTaskEditorAutosave('parent', 300));
 editorReminder?.addEventListener('input', () => scheduleTaskEditorAutosave('reminder', 500));
 editorReminder?.addEventListener('change', () => scheduleTaskEditorAutosave('reminder', 300));
@@ -6724,6 +6941,28 @@ bulkEditForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   await applyBulkEdit();
 });
+
+groupRenameCancel?.addEventListener('click', closeGroupRenameModal);
+groupRenameModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeGroupRenameModal);
+groupRenameForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const currentLabel = renameGroupLabel;
+  if (!currentLabel) {
+    closeGroupRenameModal();
+    return;
+  }
+  const nextName = groupRenameInput?.value.trim() ?? '';
+  if (!nextName) {
+    groupRenameInput?.focus();
+    return;
+  }
+  if (nextName === currentLabel) {
+    closeGroupRenameModal();
+    return;
+  }
+  await renameTaskGroup(currentLabel, nextName);
+  closeGroupRenameModal();
+});
 editorAddDependencyBtn?.addEventListener('click', async () => {
   if (!activeTaskId || !editorDependencySelect) return;
   const dependsOnId = editorDependencySelect.value;
@@ -6761,6 +7000,7 @@ taskEditorForm?.addEventListener('submit', async (event) => {
   const parentChanged = (task.parent_id ?? null) !== (nextParentId ?? null);
   const description = getNotesContent();
   const typeLabel = editorType.value ? editorType.value.trim() : null;
+  const groupLabel = editorGroup?.value ? editorGroup.value.trim() : null;
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
   const patch = {
     type_label: typeLabel,
@@ -6768,6 +7008,7 @@ taskEditorForm?.addEventListener('submit', async (event) => {
     description_md: description,
     priority: editorPriority.value,
     project_id: editorProject.value || null,
+    group_label: groupLabel || null,
     recurrence_interval: recurrence.interval ?? null,
     recurrence_unit: recurrence.interval ? recurrence.unit : null,
     reminder_offset_days: parseInt(editorReminder.value, 10) || null,

@@ -20,7 +20,8 @@ function defaultState() {
       syncCursor: 0,
       checkinExtendMinutes: 60,
       selectedTaskIds: [],
-      bulkUndoStack: []
+      bulkUndoStack: [],
+      taskGroupMode: 'none'
     }
   };
 }
@@ -54,6 +55,7 @@ function normalizeState(state) {
   if (!('checkinExtendMinutes' in next.ui)) next.ui.checkinExtendMinutes = 60;
   if (!Array.isArray(next.ui.selectedTaskIds)) next.ui.selectedTaskIds = [];
   if (!Array.isArray(next.ui.bulkUndoStack)) next.ui.bulkUndoStack = [];
+  if (!('taskGroupMode' in next.ui)) next.ui.taskGroupMode = 'none';
   return next;
 }
 

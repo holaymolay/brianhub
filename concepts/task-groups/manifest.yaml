@@ -1,0 +1,18 @@
+name: task-groups
+purpose: Add optional task group labels for list-view grouping and organization.
+state:
+  schema:
+    - services/api/db/migrations/016_task_groups.sql
+  api:
+    - services/api/src/taskService.js
+  ui:
+    - apps/web/app.js
+    - apps/web/index.html
+    - apps/web/styles.css
+behaviors:
+  - group_label stored per task
+  - list view can group tasks by group_label
+  - group rename flow updates task group_label values
+dependencies:
+  - services/api
+  - apps/web
