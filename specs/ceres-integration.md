@@ -7,6 +7,7 @@ Align repo execution with CERES governance by providing root-level wrappers that
 - Add root wrappers for component execution and event logging.
 - Keep workspace artifacts in `.ceres/workspace`.
 - Ensure preflight can execute using CERES components.
+- Provide repo-local binding docs for agents and security.
 
 ## Non-Goals
 - Modifying core governance rules.
@@ -16,3 +17,4 @@ Align repo execution with CERES governance by providing root-level wrappers that
 - `scripts/run-component.sh` delegates to `.ceres/core/scripts/run-component.sh` and runs from `.ceres/components`.
 - `scripts/log_event.py` delegates to core logger.
 - Preflight can invoke governance orchestrator once components are cloned.
+- `docs/agents.md` and `docs/security.md` exist and reference Core as canonical.

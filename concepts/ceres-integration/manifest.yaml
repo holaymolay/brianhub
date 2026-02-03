@@ -4,6 +4,9 @@ state:
   wrappers:
     - scripts/run-component.sh
     - scripts/log_event.py
+  docs:
+    - docs/agents.md
+    - docs/security.md
 behaviors:
   - preflight-compatible execution
   - governance-orchestrator invocation
