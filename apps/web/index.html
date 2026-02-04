@@ -646,129 +646,125 @@
       </div>
       <div id="task-editor-body" class="task-editor-body">
         <form id="task-editor-form" class="task-editor-form">
-        <label>
-          Task
-          <input
-            id="editor-title"
-            type="text"
-            name="task_title"
-            placeholder="What needs to be done?"
-            autocomplete="off"
-            data-form-type="other"
-            data-lpignore="true"
-            data-1p-ignore="true"
-            data-bwignore="true"
-            required
-          />
-        </label>
+          <label class="span-2">
+            Task
+            <input
+              id="editor-title"
+              type="text"
+              name="task_title"
+              placeholder="What needs to be done?"
+              autocomplete="off"
+              data-form-type="other"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+              required
+            />
+          </label>
           <label>
             Type
             <select id="editor-type"></select>
           </label>
-        <label>
-          Priority
-          <select id="editor-priority">
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="low">Low</option>
-            <option value="critical">Critical</option>
-          </select>
-        </label>
-        <label>
-          Project
-          <select id="editor-project"></select>
-        </label>
-        <label>
-          Group
-          <input id="editor-group" type="text" list="task-group-options" placeholder="Ungrouped" />
-        </label>
-        <label>
-          Subtask of
-          <select id="editor-parent"></select>
-        </label>
-        <div class="recurrence-row">
-          <button id="editor-recurring-button" class="icon-button subtle-button" type="button" title="Set repeat">↻</button>
-          <span id="editor-recurring-summary" class="recurrence-summary">No repeat</span>
-        </div>
-        <label>
-          Reminder (days before)
-          <input id="editor-reminder" type="number" min="0" placeholder="0" />
-        </label>
-        <label>
-          Status
-          <select id="editor-status">
-            <option value="inbox">Inbox</option>
-            <option value="planned">Planned</option>
-            <option value="in-progress">In Progress</option>
-            <option value="waiting">Waiting</option>
-            <option value="blocked">Blocked</option>
-            <option value="done">Done</option>
-            <option value="canceled">Canceled</option>
-          </select>
-        </label>
-        <div id="editor-followup-section" class="task-editor-followup span-2 hidden">
           <label>
-            Follow-up
-            <input id="editor-followup" type="datetime-local" />
+            Project
+            <select id="editor-project"></select>
           </label>
-          <div class="task-editor-followup-actions">
-            <button id="editor-followup-now" type="button" class="subtle-button">Follow up now</button>
-            <button id="editor-followup-snooze" type="button" class="subtle-button">Snooze 3 days</button>
-            <button id="editor-followup-clear" type="button" class="subtle-button">Clear follow-up</button>
-          </div>
-        </div>
-        <label>
-          Start
-          <input id="editor-start" type="datetime-local" />
-        </label>
-        <label>
-          Due
-          <input id="editor-due" type="datetime-local" />
-        </label>
-        <div class="task-editor-field span-2">
-          <div class="task-editor-label">Notes</div>
-          <div class="notes-editor is-rich" id="notes-editor">
-            <div class="notes-toolbar">
-              <div class="notes-toolbar-left">
-                <button type="button" class="notes-btn" data-command="heading" data-level="1">H1</button>
-                <button type="button" class="notes-btn" data-command="heading" data-level="2">H2</button>
-                <button type="button" class="notes-btn" data-command="bold"><strong>B</strong></button>
-                <button type="button" class="notes-btn" data-command="italic"><em>I</em></button>
-                <button type="button" class="notes-btn" data-command="bullet">• List</button>
-                <button type="button" class="notes-btn" data-command="ordered">1. List</button>
-                <button type="button" class="notes-btn" data-command="quote">Quote</button>
-                <button type="button" class="notes-btn" data-command="code">Code</button>
-                <button type="button" class="notes-btn" data-command="codeblock">Code block</button>
-                <button type="button" class="notes-btn" data-command="link">Link</button>
-              </div>
-              <div class="notes-toolbar-right">
-                <button type="button" class="notes-btn notes-mode" data-mode="markdown">MD</button>
-              </div>
-            </div>
-            <div id="editor-notes" class="editor-notes"></div>
-            <textarea id="editor-desc" class="editor-desc-fallback" rows="6" placeholder="Write notes..."></textarea>
-          </div>
-        </div>
-        <div class="task-editor-subtasks span-2">
-          <div class="task-editor-subtasks-header">
-            <span>Subtasks</span>
-            <span id="editor-subtask-count" class="task-editor-subtasks-count"></span>
-          </div>
-          <div id="editor-subtask-list" class="task-editor-subtasks-list"></div>
-        </div>
-        <div class="task-editor-deps span-2">
-          <div class="task-editor-deps-header">
-            <span>Dependencies</span>
-            <span id="editor-dependency-count" class="task-editor-subtasks-count"></span>
-          </div>
-          <div class="task-editor-deps-controls">
-            <select id="editor-dependency-select">
-              <option value="">Select task...</option>
+          <label>
+            Priority
+            <select id="editor-priority">
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="low">Low</option>
+              <option value="critical">Critical</option>
             </select>
-            <button id="editor-add-dependency" type="button" class="subtle-button">Add</button>
+          </label>
+          <label>
+            Status
+            <select id="editor-status">
+              <option value="inbox">Inbox</option>
+              <option value="planned">Planned</option>
+              <option value="in-progress">In Progress</option>
+              <option value="waiting">Waiting</option>
+              <option value="blocked">Blocked</option>
+              <option value="done">Done</option>
+              <option value="canceled">Canceled</option>
+            </select>
+          </label>
+          <label>
+            Group
+            <input id="editor-group" type="text" list="task-group-options" placeholder="Ungrouped" />
+          </label>
+          <div class="recurrence-row">
+            <button id="editor-recurring-button" class="icon-button subtle-button" type="button" title="Set repeat">↻</button>
+            <span id="editor-recurring-summary" class="recurrence-summary">No repeat</span>
           </div>
-          <div id="editor-dependency-list" class="task-editor-deps-list"></div>
-        </div>
+          <label>
+            Due
+            <input id="editor-due" type="datetime-local" />
+          </label>
+          <label>
+            Reminder (days before)
+            <input id="editor-reminder" type="number" min="0" placeholder="0" />
+          </label>
+          <div id="editor-followup-section" class="task-editor-followup span-2 hidden">
+            <label>
+              Follow-up
+              <input id="editor-followup" type="datetime-local" />
+            </label>
+            <div class="task-editor-followup-actions">
+              <button id="editor-followup-now" type="button" class="subtle-button">Follow up now</button>
+              <button id="editor-followup-snooze" type="button" class="subtle-button">Snooze 3 days</button>
+              <button id="editor-followup-clear" type="button" class="subtle-button">Clear follow-up</button>
+            </div>
+          </div>
+          <div class="task-editor-field span-2">
+            <div class="task-editor-label">Notes</div>
+            <div class="notes-editor is-rich" id="notes-editor">
+              <div class="notes-toolbar">
+                <div class="notes-toolbar-left">
+                  <button type="button" class="notes-btn" data-command="heading" data-level="1">H1</button>
+                  <button type="button" class="notes-btn" data-command="heading" data-level="2">H2</button>
+                  <button type="button" class="notes-btn" data-command="bold"><strong>B</strong></button>
+                  <button type="button" class="notes-btn" data-command="italic"><em>I</em></button>
+                  <button type="button" class="notes-btn" data-command="bullet">• List</button>
+                  <button type="button" class="notes-btn" data-command="ordered">1. List</button>
+                  <button type="button" class="notes-btn" data-command="quote">Quote</button>
+                  <button type="button" class="notes-btn" data-command="code">Code</button>
+                  <button type="button" class="notes-btn" data-command="codeblock">Code block</button>
+                  <button type="button" class="notes-btn" data-command="link">Link</button>
+                </div>
+                <div class="notes-toolbar-right">
+                  <button type="button" class="notes-btn notes-mode" data-mode="markdown">MD</button>
+                </div>
+              </div>
+              <div id="editor-notes" class="editor-notes"></div>
+              <textarea id="editor-desc" class="editor-desc-fallback" rows="6" placeholder="Write notes..."></textarea>
+            </div>
+          </div>
+          <label class="span-2">
+            Subtask of
+            <select id="editor-parent"></select>
+          </label>
+          <div class="task-editor-subtasks span-2">
+            <div class="task-editor-subtasks-header">
+              <span>Subtasks</span>
+              <span id="editor-subtask-count" class="task-editor-subtasks-count"></span>
+            </div>
+            <div id="editor-subtask-list" class="task-editor-subtasks-list"></div>
+          </div>
+          <div class="task-editor-deps span-2">
+            <div class="task-editor-deps-header">
+              <span>Dependencies</span>
+              <span id="editor-dependency-count" class="task-editor-subtasks-count"></span>
+            </div>
+            <div class="task-editor-deps-controls">
+              <select id="editor-dependency-select">
+                <option value="">Select task...</option>
+              </select>
+              <button id="editor-add-dependency" type="button" class="subtle-button">Add</button>
+            </div>
+            <div id="editor-dependency-list" class="task-editor-deps-list"></div>
+          </div>
           <div class="task-editor-actions span-2">
             <button type="submit">Save</button>
             <button id="editor-cancel" type="button">Cancel</button>

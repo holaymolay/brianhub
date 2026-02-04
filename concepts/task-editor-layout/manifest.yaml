@@ -1,0 +1,14 @@
+name: task-editor-layout
+purpose: Refine the task editor layout to a 2-column form and tune title sizing.
+state:
+  ui:
+    - apps/web/index.html
+    - apps/web/styles.css
+  behavior:
+    - apps/web/app.js
+behaviors:
+  - task editor fields are grouped in a 2-column layout
+  - title input is visually emphasized
+  - start date field is optional; editor guards missing input
+dependencies:
+  - apps/web

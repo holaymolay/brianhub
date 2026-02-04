@@ -2437,7 +2437,7 @@ function buildTaskEditorPatch(task) {
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
   const reminderValue = parseInt(editorReminder?.value ?? '', 10);
   const reminder = Number.isFinite(reminderValue) ? reminderValue : null;
-  const startAt = fromDatetimeLocal(editorStart?.value ?? '');
+  const startAt = editorStart ? fromDatetimeLocal(editorStart.value) : null;
   const dueAt = fromDatetimeLocal(editorDue?.value ?? '');
   const projectId = editorProject?.value || null;
   const priority = editorPriority?.value ?? task.priority ?? 'medium';
@@ -2457,7 +2457,7 @@ function buildTaskEditorPatch(task) {
     patch.recurrence_unit = nextRecurrenceUnit ?? null;
   }
   if ((reminder ?? null) !== (task.reminder_offset_days ?? null)) patch.reminder_offset_days = reminder;
-  if ((startAt ?? null) !== (task.start_at ?? null)) patch.start_at = startAt;
+  if (editorStart && (startAt ?? null) !== (task.start_at ?? null)) patch.start_at = startAt;
   if ((dueAt ?? null) !== (task.due_at ?? null)) patch.due_at = dueAt;
   if (nextStatus !== (task.status ?? getDefaultStatusKey())) patch.status = nextStatus;
 
@@ -6251,7 +6251,7 @@ function populateTaskEditor(task) {
     updateEditorFollowupVisibility(editorStatus.value);
     const followupValue = task.waiting_followup_at ?? task.next_checkin_at ?? null;
     setEditorFollowupValue(followupValue);
-    editorStart.value = toDatetimeLocal(task.start_at);
+    if (editorStart) editorStart.value = toDatetimeLocal(task.start_at);
     editorDue.value = toDatetimeLocal(task.due_at);
     setNotesContent(task.description_md ?? '');
     renderTaskEditorSubtasks(task);
@@ -7002,6 +7002,7 @@ taskEditorForm?.addEventListener('submit', async (event) => {
   const typeLabel = editorType.value ? editorType.value.trim() : null;
   const groupLabel = editorGroup?.value ? editorGroup.value.trim() : null;
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
+  const startAt = editorStart ? fromDatetimeLocal(editorStart.value) : null;
   const patch = {
     type_label: typeLabel,
     title,
@@ -7013,10 +7014,12 @@ taskEditorForm?.addEventListener('submit', async (event) => {
     recurrence_unit: recurrence.interval ? recurrence.unit : null,
     reminder_offset_days: parseInt(editorReminder.value, 10) || null,
     auto_debit: task.auto_debit ?? 0,
-    start_at: fromDatetimeLocal(editorStart.value),
     due_at: fromDatetimeLocal(editorDue.value),
     status: nextStatus
   };
+  if (editorStart) {
+    patch.start_at = startAt;
+  }
   if (parentChanged) {
     patch.sort_order = getNextTaskSortOrder(nextParentId, nextParentId ? null : nextStatus);
   }

@@ -1883,6 +1883,11 @@ button:hover { opacity: 0.9; }
   width: 100%;
 }
 
+.task-editor-form #editor-title {
+  font-size: 1.05rem;
+  padding: 0.8rem 0.9rem;
+}
+
 .task-editor-actions {
   display: flex;
   gap: 0.5rem;
