@@ -1,0 +1,14 @@
+name: local-sync-push
+purpose: replay offline change queue to server and keep ids stable
+state:
+  modules:
+    - sync-queue
+    - push-replay
+    - server-idempotency
+behaviors:
+  - replay-pending-changes
+  - client-provided-ids
+  - cursor-sync-compatibility
+dependencies:
+  api: services/api
+  web: apps/web

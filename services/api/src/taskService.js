@@ -87,8 +87,12 @@ export async function getWorkspace(db, id, orgId = DEFAULT_ORG_ID) {
   return getRow(db, 'SELECT * FROM workspaces WHERE id = ? AND org_id = ?', [id, orgId]);
 }
 
-export async function createWorkspace(db, { name, type, org_id: orgId = DEFAULT_ORG_ID, org_name }) {
-  const id = randomUUID();
+export async function createWorkspace(db, { id: providedId, name, type, org_id: orgId = DEFAULT_ORG_ID, org_name }) {
+  if (providedId) {
+    const existing = await getWorkspace(db, providedId, orgId);
+    if (existing) return existing;
+  }
+  const id = providedId ?? randomUUID();
   const timestamp = nowIso();
   await ensureOrg(db, orgId, org_name ?? (orgId === DEFAULT_ORG_ID ? 'Default' : orgId));
   await run(
@@ -1005,7 +1009,11 @@ export async function seedWorkspaceNoticeTypes(db, workspaceId) {
 }
 
 export async function createTask(db, data, clientId = null) {
-  const id = randomUUID();
+  if (data?.id) {
+    const existing = await getTask(db, data.id);
+    if (existing) return existing;
+  }
+  const id = data?.id ?? randomUUID();
   const timestamp = nowIso();
   const fallbackStatus = await getFallbackStatus(db, data.workspace_id);
   const statusKey = data.status ?? fallbackStatus?.key ?? TaskStatus.INBOX;

@@ -1,6 +1,7 @@
 import { loadState, saveState, createId } from './localStore.js';
 import { loadLocalData, saveLocalData, recordLocalChange } from './localData.js';
 import { applyRemoteChanges } from './syncState.js';
+import { replayPendingChanges } from './syncQueue.js';
 import { getClientId } from './clientId.js';
 import * as api from './api.js';
 import { compareTasksByPriority } from '../../packages/core/priority.js';
@@ -1088,9 +1089,19 @@ async function primeSyncCursor() {
 
 async function autoRefreshOnChanges() {
   if (!state.workspace || syncInFlight) return;
-  if (hasPendingLocalChanges()) return;
   syncInFlight = true;
   try {
+    if (hasPendingLocalChanges()) {
+      if (!navigator.onLine) {
+        syncStatus.textContent = 'Offline changes pending';
+        return;
+      }
+      const pushResult = await pushPendingChanges();
+      if (pushResult.error || pushResult.remaining.length) {
+        syncStatus.textContent = 'Offline changes pending';
+        return;
+      }
+    }
     const cursor = state.ui?.syncCursor ?? 0;
     const result = await api.pullChanges(state.workspace.id, cursor);
     if (result?.next_cursor !== undefined) {
@@ -1621,6 +1632,70 @@ function applyLocalDataSnapshot(data) {
   state.shoppingItems = data.shoppingItems ?? {};
 }
 
+async function pushPendingChanges() {
+  const pending = [...(state.local?.pendingChanges ?? [])];
+  if (!pending.length || !state.workspace) {
+    return { applied: [], remaining: pending, error: null };
+  }
+
+  const result = await replayPendingChanges(pending, async (change) => {
+    if (!change) return;
+    if (change.entity_type === 'task') {
+      if (change.action === 'create') {
+        const created = await api.createTask(change.payload ?? {});
+        if (created) upsertTask(created);
+        return;
+      }
+      if (change.action === 'update') {
+        const updated = await api.updateTask(change.entity_id, change.payload ?? {});
+        if (updated) upsertTask(updated);
+        return;
+      }
+      if (change.action === 'reparent') {
+        const updated = await api.reparentTask(change.entity_id, change.payload?.new_parent_id ?? null);
+        if (updated) upsertTask(updated);
+        return;
+      }
+      if (change.action === 'delete') {
+        const result = await api.deleteTask(change.entity_id);
+        if (result?.ids?.length) {
+          result.ids.forEach(taskId => delete state.tasks[taskId]);
+        } else {
+          delete state.tasks[change.entity_id];
+        }
+        return;
+      }
+    }
+
+    if (change.entity_type === 'workspace') {
+      if (change.action === 'create') {
+        const created = await api.createWorkspace(change.payload ?? {});
+        if (created) upsertWorkspace(created);
+        return;
+      }
+      if (change.action === 'update') {
+        const updated = await api.updateWorkspace(change.entity_id, change.payload ?? {});
+        if (updated) upsertWorkspace(updated);
+        return;
+      }
+      if (change.action === 'delete') {
+        await api.deleteWorkspace(change.entity_id);
+        state.workspaces = (state.workspaces ?? []).filter(ws => ws.id !== change.entity_id);
+        if (state.workspace?.id === change.entity_id) {
+          state.workspace = null;
+        }
+      }
+    }
+  });
+
+  if (result.applied.length) {
+    state.local.pendingChanges = result.remaining;
+    persistLocalData();
+  }
+
+  return result;
+}
+
 function ensureLocalWorkspaceDefaults(workspace) {
   if (!workspace) return;
   const hasStatuses = (state.statuses ?? []).some(status => status.workspace_id === workspace.id);
@@ -1822,6 +1897,20 @@ function normalizeTask(task) {
 
 function upsertTask(task) {
   state.tasks[task.id] = normalizeTask(task);
+}
+
+function upsertWorkspace(workspace) {
+  state.workspaces = state.workspaces ?? [];
+  const normalized = normalizeWorkspace(workspace);
+  const index = state.workspaces.findIndex(item => item.id === normalized.id);
+  if (index >= 0) {
+    state.workspaces[index] = normalized;
+  } else {
+    state.workspaces.push(normalized);
+  }
+  if (state.workspace?.id === normalized.id) {
+    state.workspace = normalized;
+  }
 }
 
 function upsertProject(project) {
@@ -7218,12 +7307,20 @@ templateModalForm?.addEventListener('submit', async (event) => {
 });
 
 syncBtn.addEventListener('click', async () => {
-  if (hasPendingLocalChanges()) {
-    syncStatus.textContent = 'Local changes pending (offline)';
-    return;
-  }
-  syncStatus.textContent = 'Refreshing...';
+  if (!state.workspace) return;
+  syncStatus.textContent = 'Syncing...';
   try {
+    if (hasPendingLocalChanges()) {
+      if (!navigator.onLine) {
+        syncStatus.textContent = 'Local changes pending (offline)';
+        return;
+      }
+      const pushResult = await pushPendingChanges();
+      if (pushResult.error || pushResult.remaining.length) {
+        syncStatus.textContent = 'Local changes pending (offline)';
+        return;
+      }
+    }
     await refreshWorkspace();
     await primeSyncCursor();
     syncStatus.textContent = 'Synced (local)';

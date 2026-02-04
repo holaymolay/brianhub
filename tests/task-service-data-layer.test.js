@@ -36,3 +36,16 @@ test('task service works with DbClient interface', async () => {
     assert.equal(tasks.length, 1);
   });
 });
+
+test('createWorkspace and createTask honor provided ids', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { id: 'ws-local', name: 'Offline', type: 'personal' });
+    assert.equal(workspace.id, 'ws-local');
+
+    const task = await createTask(db, { id: 'task-local', workspace_id: workspace.id, title: 'Offline Task' });
+    assert.equal(task.id, 'task-local');
+
+    const fetched = await getTask(db, 'task-local');
+    assert.equal(fetched.id, 'task-local');
+  });
+});
