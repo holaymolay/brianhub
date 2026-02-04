@@ -1275,6 +1275,20 @@ button:hover { opacity: 0.9; }
   padding: 0.35rem;
 }
 
+.task-add-section {
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 0.6rem;
+  padding: 0.6rem;
+}
+
+.task-add-section .task-add-input {
+  background: transparent;
+}
+
+.task-add-section-task {
+  margin-top: 0.25rem;
+}
+
 .status-dot {
   width: 0.55rem;
   height: 0.55rem;

@@ -10,6 +10,7 @@ function defaultData() {
     taskTypes: [],
     tasks: {},
     taskDependencies: [],
+    taskSections: [],
     templates: [],
     notices: [],
     noticeTypes: [],
@@ -26,6 +27,7 @@ function normalizeData(data) {
   if (!Array.isArray(next.statuses)) next.statuses = [];
   if (!Array.isArray(next.taskTypes)) next.taskTypes = [];
   if (!Array.isArray(next.taskDependencies)) next.taskDependencies = [];
+  if (!Array.isArray(next.taskSections)) next.taskSections = [];
   if (!Array.isArray(next.templates)) next.templates = [];
   if (!Array.isArray(next.notices)) next.notices = [];
   if (!Array.isArray(next.noticeTypes)) next.noticeTypes = [];

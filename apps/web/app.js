@@ -17,6 +17,7 @@ const state = {
   templates: localData.templates ?? [],
   statuses: localData.statuses ?? [],
   taskTypes: localData.taskTypes ?? [],
+  taskSections: localData.taskSections ?? [],
   storeRules: localData.storeRules ?? [],
   tasks: localData.tasks ?? {},
   taskDependencies: localData.taskDependencies ?? [],
@@ -270,7 +271,6 @@ const editorCancel = document.getElementById('editor-cancel');
 const editorDelete = document.getElementById('editor-delete');
 const editorClose = document.getElementById('editor-close');
 const editorProject = document.getElementById('editor-project');
-const editorGroup = document.getElementById('editor-group');
 const editorParent = document.getElementById('editor-parent');
 const templatePrompt = document.getElementById('template-prompt');
 const templatePromptTitle = document.getElementById('template-prompt-title');
@@ -287,8 +287,6 @@ const bulkEditApplyPriority = document.getElementById('bulk-edit-apply-priority'
 const bulkEditPriority = document.getElementById('bulk-edit-priority');
 const bulkEditApplyProject = document.getElementById('bulk-edit-apply-project');
 const bulkEditProject = document.getElementById('bulk-edit-project');
-const bulkEditApplyGroup = document.getElementById('bulk-edit-apply-group');
-const bulkEditGroup = document.getElementById('bulk-edit-group');
 const bulkEditApplyType = document.getElementById('bulk-edit-apply-type');
 const bulkEditType = document.getElementById('bulk-edit-type');
 const bulkEditApplyStart = document.getElementById('bulk-edit-apply-start');
@@ -302,7 +300,6 @@ const groupRenameModal = document.getElementById('group-rename-modal');
 const groupRenameForm = document.getElementById('group-rename-form');
 const groupRenameInput = document.getElementById('group-rename-input');
 const groupRenameCancel = document.getElementById('group-rename-cancel');
-const taskGroupOptions = document.getElementById('task-group-options');
 let openMenu = null;
 let renameGroupLabel = null;
 let editingTemplateId = null;
@@ -1046,6 +1043,58 @@ function setTaskGroupMode(mode) {
   state.ui.taskGroupMode = normalizeTaskGroupMode(mode);
 }
 
+function getSectionsForWorkspace() {
+  if (!state.workspace) return [];
+  const workspaceId = state.workspace.id;
+  const sections = (state.taskSections ?? [])
+    .filter(section => section.workspace_id === workspaceId);
+  const byLabel = new Map(sections.map(section => [section.label, section]));
+  Object.values(state.tasks ?? {})
+    .filter(task => task.workspace_id === workspaceId)
+    .forEach(task => {
+      const label = (task.group_label ?? '').trim();
+      if (!label || byLabel.has(label)) return;
+      byLabel.set(label, {
+        id: `derived-${label}`,
+        workspace_id: workspaceId,
+        label,
+        sort_order: null
+      });
+    });
+
+  const items = Array.from(byLabel.values());
+  return items.sort((a, b) => {
+    const aOrder = Number.isFinite(a.sort_order) ? a.sort_order : Number.POSITIVE_INFINITY;
+    const bOrder = Number.isFinite(b.sort_order) ? b.sort_order : Number.POSITIVE_INFINITY;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+function createSectionRecord(label) {
+  if (!state.workspace) return null;
+  const trimmed = String(label ?? '').trim();
+  if (!trimmed) return null;
+  const workspaceId = state.workspace.id;
+  const existing = getSectionsForWorkspace().find(section => section.label === trimmed);
+  if (existing && existing.workspace_id === workspaceId) return existing;
+  const now = new Date().toISOString();
+  const maxSort = Math.max(0, ...((state.taskSections ?? [])
+    .filter(section => section.workspace_id === workspaceId)
+    .map(section => section.sort_order ?? 0)));
+  const section = {
+    id: createId(),
+    workspace_id: workspaceId,
+    label: trimmed,
+    sort_order: maxSort + 10,
+    created_at: now,
+    updated_at: now
+  };
+  state.taskSections = [...(state.taskSections ?? []), section];
+  persistLocalData();
+  return section;
+}
+
 function getNoticeFilterKey() {
   return state.ui?.noticeFilter ?? 'all';
 }
@@ -1611,6 +1660,7 @@ function persistLocalData() {
     projects: state.projects ?? [],
     statuses: state.statuses ?? [],
     taskTypes: state.taskTypes ?? [],
+    taskSections: state.taskSections ?? [],
     tasks: state.tasks ?? {},
     taskDependencies: state.taskDependencies ?? [],
     templates: state.templates ?? [],
@@ -1637,6 +1687,7 @@ function snapshotLocalData() {
     projects: state.projects ?? [],
     statuses: state.statuses ?? [],
     taskTypes: state.taskTypes ?? [],
+    taskSections: state.taskSections ?? [],
     tasks: state.tasks ?? {},
     taskDependencies: state.taskDependencies ?? [],
     templates: state.templates ?? [],
@@ -1653,6 +1704,7 @@ function applyLocalDataSnapshot(data) {
   state.projects = data.projects ?? [];
   state.statuses = data.statuses ?? [];
   state.taskTypes = data.taskTypes ?? [];
+  state.taskSections = data.taskSections ?? [];
   state.tasks = data.tasks ?? {};
   state.taskDependencies = data.taskDependencies ?? [];
   state.templates = data.templates ?? [];
@@ -2920,8 +2972,6 @@ function buildTaskEditorPatch(task) {
   const nextParentId = editorParent?.value || null;
   const description = getNotesContent();
   const typeLabel = editorType?.value ? editorType.value.trim() : null;
-  const groupLabel = editorGroup?.value ? editorGroup.value.trim() : '';
-  const normalizedGroup = groupLabel || null;
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
   const reminderValue = parseInt(editorReminder?.value ?? '', 10);
   const reminder = Number.isFinite(reminderValue) ? reminderValue : null;
@@ -2936,7 +2986,6 @@ function buildTaskEditorPatch(task) {
   if ((typeLabel ?? null) !== (task.type_label ?? null)) patch.type_label = typeLabel;
   if (priority !== (task.priority ?? 'medium')) patch.priority = priority;
   if ((projectId ?? null) !== (task.project_id ?? null)) patch.project_id = projectId;
-  if ((normalizedGroup ?? null) !== (task.group_label ?? null)) patch.group_label = normalizedGroup;
   if ((recurrence.interval ?? null) !== (task.recurrence_interval ?? null)) {
     patch.recurrence_interval = recurrence.interval ?? null;
   }
@@ -3973,7 +4022,6 @@ function render() {
   renderNoticeFilter();
   renderNoticeSort();
   renderTaskViewToggle();
-  populateGroupOptions();
   renderBulkSelectionBar();
   if (activeTaskId && !state.tasks[activeTaskId]) {
     closeTaskEditor();
@@ -4389,29 +4437,6 @@ function populateTaskTypeSelect(selectEl, selectedName = null) {
   } else {
     selectEl.value = '';
   }
-}
-
-function getGroupLabelsForWorkspace() {
-  if (!state.workspace) return [];
-  const labels = new Set();
-  Object.values(state.tasks ?? {})
-    .filter(task => task.workspace_id === state.workspace.id)
-    .forEach(task => {
-      const label = (task.group_label ?? '').trim();
-      if (label) labels.add(label);
-    });
-  return Array.from(labels).sort((a, b) => a.localeCompare(b));
-}
-
-function populateGroupOptions() {
-  if (!taskGroupOptions) return;
-  const labels = getGroupLabelsForWorkspace();
-  taskGroupOptions.innerHTML = '';
-  labels.forEach(label => {
-    const option = document.createElement('option');
-    option.value = label;
-    taskGroupOptions.appendChild(option);
-  });
 }
 
 function renderTemplateList() {
@@ -5102,9 +5127,102 @@ function renderTaskList(roots) {
     attachTaskDropzone(list, { parentId: null });
   }
   let defaultGroupList = null;
-  if (groupMode !== 'none') {
+  if (groupMode === 'section') {
+    const sections = getSectionsForWorkspace();
     const grouped = new Map();
-    const defaultKey = '__none__';
+    const ungrouped = [];
+
+    roots.forEach(task => {
+      const label = (task.group_label ?? '').trim();
+      if (!label) {
+        ungrouped.push(task);
+        return;
+      }
+      if (!grouped.has(label)) grouped.set(label, []);
+      grouped.get(label).push(task);
+    });
+
+    const createSectionAddRow = (sectionLabel) => {
+      const addRow = document.createElement('div');
+      addRow.className = 'task-add-subtask task-add-task task-add-section-task';
+      const addInput = document.createElement('input');
+      addInput.type = 'text';
+      addInput.className = 'task-add-input';
+      addInput.placeholder = 'Add task...';
+      addInput.addEventListener('keydown', async (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          const title = addInput.value.trim();
+          if (!title) return;
+          await createTaskRecord({ title, group_label: sectionLabel });
+          addInput.value = '';
+          render();
+        }
+        if (event.key === 'Escape') {
+          addInput.value = '';
+          addInput.blur();
+        }
+      });
+      addRow.appendChild(addInput);
+      return addRow;
+    };
+
+    sections.forEach(sectionInfo => {
+      const label = sectionInfo.label;
+      const section = document.createElement('div');
+      section.className = 'task-group-section';
+      section.dataset.groupMode = 'section';
+      section.dataset.groupValue = label;
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'task-group-header';
+      sectionHeader.textContent = label;
+      sectionHeader.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showTaskGroupContextMenu(label, event.clientX, event.clientY);
+      });
+      section.appendChild(sectionHeader);
+      const groupList = document.createElement('div');
+      groupList.className = 'task-group-list';
+      attachTaskDropzone(groupList, { parentId: null, groupMode: 'section', groupValue: label });
+      (grouped.get(label) ?? []).forEach(node => groupList.appendChild(renderTask(node)));
+      groupList.appendChild(createSectionAddRow(label));
+      section.appendChild(groupList);
+      list.appendChild(section);
+    });
+
+    if (ungrouped.length) {
+      const ungroupedList = document.createElement('div');
+      ungroupedList.className = 'task-group-list task-ungrouped-list';
+      attachTaskDropzone(ungroupedList, { parentId: null, groupMode: 'section', groupValue: null });
+      ungrouped.forEach(node => ungroupedList.appendChild(renderTask(node)));
+      list.appendChild(ungroupedList);
+    }
+
+    const addSectionRow = document.createElement('div');
+    addSectionRow.className = 'task-add-section';
+    const addSectionInput = document.createElement('input');
+    addSectionInput.type = 'text';
+    addSectionInput.className = 'task-add-input';
+    addSectionInput.placeholder = 'Add section...';
+    addSectionInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const name = addSectionInput.value.trim();
+        if (!name) return;
+        createSectionRecord(name);
+        addSectionInput.value = '';
+        render();
+      }
+      if (event.key === 'Escape') {
+        addSectionInput.value = '';
+        addSectionInput.blur();
+      }
+    });
+    addSectionRow.appendChild(addSectionInput);
+    list.appendChild(addSectionRow);
+  } else if (groupMode !== 'none') {
+    const grouped = new Map();
     const priorityOrder = ['critical', 'high', 'medium', 'low'];
     const priorityLabel = {
       critical: 'Critical',
@@ -5113,18 +5231,10 @@ function renderTaskList(roots) {
       low: 'Low'
     };
     const getGroupInfo = (task) => {
-      if (groupMode === 'section') {
-        const value = (task.group_label ?? '').trim();
-        return {
-          key: value || defaultKey,
-          value: value || null,
-          label: value || 'No section'
-        };
-      }
       if (groupMode === 'task-type') {
         const value = (task.type_label ?? '').trim();
         return {
-          key: value || defaultKey,
+          key: value || '__none__',
           value: value || null,
           label: value || 'No type'
         };
@@ -5137,7 +5247,7 @@ function renderTaskList(roots) {
           label: priorityLabel[value] ?? value
         };
       }
-      return { key: defaultKey, value: null, label: 'No section' };
+      return { key: '__none__', value: null, label: 'No type' };
     };
 
     roots.forEach(task => {
@@ -5148,15 +5258,8 @@ function renderTaskList(roots) {
       grouped.get(info.key).tasks.push(task);
     });
 
-    if (groupMode === 'section' || groupMode === 'task-type') {
-      if (!grouped.has(defaultKey)) {
-        grouped.set(defaultKey, {
-          key: defaultKey,
-          value: null,
-          label: groupMode === 'section' ? 'No section' : 'No type',
-          tasks: []
-        });
-      }
+    if (groupMode === 'task-type' && !grouped.has('__none__')) {
+      grouped.set('__none__', { key: '__none__', value: null, label: 'No type', tasks: [] });
     }
     if (groupMode === 'priority' && !grouped.has('medium')) {
       grouped.set('medium', { key: 'medium', value: 'medium', label: 'Medium', tasks: [] });
@@ -5174,8 +5277,8 @@ function renderTaskList(roots) {
       });
     } else {
       groups = groups.sort((a, b) => {
-        if (a.key === defaultKey) return 1;
-        if (b.key === defaultKey) return -1;
+        if (a.key === '__none__') return 1;
+        if (b.key === '__none__') return -1;
         return a.label.localeCompare(b.label);
       });
     }
@@ -5188,13 +5291,7 @@ function renderTaskList(roots) {
       const sectionHeader = document.createElement('div');
       sectionHeader.className = 'task-group-header';
       sectionHeader.textContent = group.label;
-      if (groupMode === 'section' && group.value) {
-        sectionHeader.addEventListener('contextmenu', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          showTaskGroupContextMenu(group.value, event.clientX, event.clientY);
-        });
-      }
+      // non-section group headers do not support rename
       section.appendChild(sectionHeader);
       const groupList = document.createElement('div');
       groupList.className = 'task-group-list';
@@ -5206,7 +5303,7 @@ function renderTaskList(roots) {
       group.tasks.forEach(node => groupList.appendChild(renderTask(node)));
       section.appendChild(groupList);
       list.appendChild(section);
-      if (group.key === defaultKey || groupMode === 'priority' && group.value === 'medium') {
+      if (group.key === '__none__' || groupMode === 'priority' && group.value === 'medium') {
         defaultGroupList = groupList;
       }
     });
@@ -5252,10 +5349,12 @@ function renderTaskList(roots) {
     }
   });
   addRow.appendChild(addInput);
-  if (groupMode === 'none') {
-    list.appendChild(addRow);
-  } else {
-    (defaultGroupList ?? list).appendChild(addRow);
+  if (groupMode === 'none' || (groupMode !== 'section' && groupMode !== 'none')) {
+    if (groupMode === 'none') {
+      list.appendChild(addRow);
+    } else {
+      (defaultGroupList ?? list).appendChild(addRow);
+    }
   }
   taskTreeEl.appendChild(list);
 
@@ -6365,7 +6464,6 @@ function openBulkEditModal() {
   if (bulkEditApplyStatus) bulkEditApplyStatus.checked = false;
   if (bulkEditApplyPriority) bulkEditApplyPriority.checked = false;
   if (bulkEditApplyProject) bulkEditApplyProject.checked = false;
-  if (bulkEditApplyGroup) bulkEditApplyGroup.checked = false;
   if (bulkEditApplyType) bulkEditApplyType.checked = false;
   if (bulkEditApplyStart) bulkEditApplyStart.checked = false;
   if (bulkEditApplyDue) bulkEditApplyDue.checked = false;
@@ -6373,7 +6471,6 @@ function openBulkEditModal() {
   populateStatusSelect(bulkEditStatus, getDefaultStatusKey());
   populateProjectSelect(bulkEditProject, '', true);
   populateTaskTypeSelect(bulkEditType, '');
-  if (bulkEditGroup) bulkEditGroup.value = '';
   if (bulkEditPriority) bulkEditPriority.value = 'medium';
   if (bulkEditStart) bulkEditStart.value = '';
   if (bulkEditDue) bulkEditDue.value = '';
@@ -6416,11 +6513,6 @@ function buildBulkEditTemplate() {
   if (bulkEditApplyProject?.checked) {
     template.project_id = bulkEditProject?.value || null;
     fields.add('project_id');
-  }
-  if (bulkEditApplyGroup?.checked) {
-    const label = bulkEditGroup?.value ? bulkEditGroup.value.trim() : '';
-    template.group_label = label || null;
-    fields.add('group_label');
   }
   if (bulkEditApplyType?.checked) {
     template.type_label = bulkEditType?.value || null;
@@ -6531,6 +6623,17 @@ async function renameTaskGroup(label, nextName) {
   if (!updatedName || updatedName === label) return;
   const workspaceId = state.workspace?.id;
   if (!workspaceId) return;
+  const sections = state.taskSections ?? [];
+  const existingSection = sections.find(section => section.workspace_id === workspaceId && section.label === label);
+  const duplicateSection = sections.find(section => section.workspace_id === workspaceId && section.label === updatedName);
+  if (existingSection) {
+    if (duplicateSection && duplicateSection !== existingSection) {
+      state.taskSections = sections.filter(section => section !== existingSection);
+    } else {
+      existingSection.label = updatedName;
+      existingSection.updated_at = nowIso();
+    }
+  }
   const tasks = Object.values(state.tasks ?? {});
   for (const task of tasks) {
     if (task.workspace_id !== workspaceId) continue;
@@ -6813,7 +6916,6 @@ function populateTaskEditor(task) {
     populateTaskTypeSelect(editorType, task.type_label ?? '');
     editorPriority.value = task.priority ?? 'medium';
     populateProjectSelect(editorProject, task.project_id ?? '', true);
-    if (editorGroup) editorGroup.value = task.group_label ?? '';
     populateParentSelect(editorParent, task.id, task.parent_id ?? null);
     setRecurrenceState('editor', task.recurrence_interval ?? null, task.recurrence_unit ?? 'month');
     editorReminder.value = task.reminder_offset_days ?? '';
@@ -7454,8 +7556,6 @@ editorTitle?.addEventListener('blur', () => scheduleTaskEditorAutosave('title-bl
 editorType?.addEventListener('change', () => scheduleTaskEditorAutosave('type', 300));
 editorPriority?.addEventListener('change', () => scheduleTaskEditorAutosave('priority', 300));
 editorProject?.addEventListener('change', () => scheduleTaskEditorAutosave('project', 300));
-editorGroup?.addEventListener('input', () => scheduleTaskEditorAutosave('group', 500));
-editorGroup?.addEventListener('change', () => scheduleTaskEditorAutosave('group', 300));
 editorParent?.addEventListener('change', () => scheduleTaskEditorAutosave('parent', 300));
 editorReminder?.addEventListener('input', () => scheduleTaskEditorAutosave('reminder', 500));
 editorReminder?.addEventListener('change', () => scheduleTaskEditorAutosave('reminder', 300));
@@ -7570,7 +7670,6 @@ taskEditorForm?.addEventListener('submit', async (event) => {
   const parentChanged = (task.parent_id ?? null) !== (nextParentId ?? null);
   const description = getNotesContent();
   const typeLabel = editorType.value ? editorType.value.trim() : null;
-  const groupLabel = editorGroup?.value ? editorGroup.value.trim() : null;
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
   const startAt = editorStart ? fromDatetimeLocal(editorStart.value) : null;
   const patch = {
@@ -7579,7 +7678,6 @@ taskEditorForm?.addEventListener('submit', async (event) => {
     description_md: description,
     priority: editorPriority.value,
     project_id: editorProject.value || null,
-    group_label: groupLabel || null,
     recurrence_interval: recurrence.interval ?? null,
     recurrence_unit: recurrence.interval ? recurrence.unit : null,
     reminder_offset_days: parseInt(editorReminder.value, 10) || null,

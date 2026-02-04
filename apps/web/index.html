@@ -692,10 +692,6 @@
               <option value="canceled">Canceled</option>
             </select>
           </label>
-          <label>
-            Section
-            <input id="editor-group" type="text" list="task-group-options" placeholder="No section" />
-          </label>
           <div class="recurrence-row">
             <button id="editor-recurring-button" class="icon-button subtle-button" type="button" title="Set repeat">↻</button>
             <span id="editor-recurring-summary" class="recurrence-summary">No repeat</span>
@@ -867,10 +863,6 @@
             <select id="bulk-edit-project"></select>
           </label>
           <label class="bulk-edit-field">
-            <span><input id="bulk-edit-apply-group" type="checkbox" /> Section</span>
-            <input id="bulk-edit-group" type="text" list="task-group-options" placeholder="No section" />
-          </label>
-          <label class="bulk-edit-field">
             <span><input id="bulk-edit-apply-type" type="checkbox" /> Type</span>
             <select id="bulk-edit-type"></select>
           </label>
@@ -912,8 +904,6 @@
     </div>
 
     <div id="task-context-menu" class="workspace-menu task-context-menu hidden"></div>
-    <datalist id="task-group-options"></datalist>
-
     <script type="module" src="/apps/web/app.js"></script>
   </body>
 </html>
