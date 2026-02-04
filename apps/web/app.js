@@ -1155,6 +1155,31 @@ function getStatusKind(key) {
   return getStatusByKey(key)?.kind ?? null;
 }
 
+function slugifyLabel(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getNextStatusKey(label) {
+  const base = slugifyLabel(label) || 'status';
+  let key = base;
+  let suffix = 2;
+  const existingKeys = new Set(getStatusDefinitions().map(status => status.key));
+  while (existingKeys.has(key)) {
+    key = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return key;
+}
+
+function getNextStatusSortOrder() {
+  const maxSort = Math.max(0, ...(getStatusDefinitions().map(status => status.sort_order ?? 0)));
+  return maxSort + 10;
+}
+
 function getStatusKeyByKind(kind) {
   return getStatusDefinitions().find(status => status.kind === kind)?.key ?? null;
 }
@@ -1686,6 +1711,57 @@ async function pushPendingChanges() {
         }
       }
     }
+
+    if (change.entity_type === 'project') {
+      if (change.action === 'create') {
+        const created = await api.createProject(change.payload ?? {});
+        if (created) upsertProject(created);
+        return;
+      }
+      if (change.action === 'update') {
+        const updated = await api.updateProject(change.entity_id, change.payload ?? {});
+        if (updated) upsertProject(updated);
+        return;
+      }
+      if (change.action === 'delete') {
+        await api.deleteProject(change.entity_id);
+        state.projects = (state.projects ?? []).filter(project => project.id !== change.entity_id);
+      }
+    }
+
+    if (change.entity_type === 'status') {
+      if (change.action === 'create') {
+        const created = await api.createStatus(change.payload ?? {});
+        if (created) upsertStatus(created);
+        return;
+      }
+      if (change.action === 'update') {
+        const updated = await api.updateStatus(change.entity_id, change.payload ?? {});
+        if (updated) upsertStatus(updated);
+        return;
+      }
+      if (change.action === 'delete') {
+        await api.deleteStatus(change.entity_id);
+        state.statuses = (state.statuses ?? []).filter(status => status.id !== change.entity_id);
+      }
+    }
+
+    if (change.entity_type === 'task_type') {
+      if (change.action === 'create') {
+        const created = await api.createTaskType(change.payload ?? {});
+        if (created) upsertTaskType(created);
+        return;
+      }
+      if (change.action === 'update') {
+        const updated = await api.updateTaskType(change.entity_id, change.payload ?? {});
+        if (updated) upsertTaskType(updated);
+        return;
+      }
+      if (change.action === 'delete') {
+        await api.deleteTaskType(change.entity_id);
+        state.taskTypes = (state.taskTypes ?? []).filter(type => type.id !== change.entity_id);
+      }
+    }
   });
 
   if (result.applied.length) {
@@ -2193,46 +2269,318 @@ async function deleteTaskRecord(id) {
   return { deleted: 1, ids: allIds };
 }
 
+async function createProjectRecord(name) {
+  if (!state.workspace) return null;
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return null;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const created = await api.createProject({ name: trimmed, workspace_id: state.workspace.id, kind: 'project' });
+      if (created) upsertProject(created);
+      return created;
+    } catch {
+      // fall back to local create
+    }
+  }
+  const now = new Date().toISOString();
+  const localProject = normalizeProject({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    name: trimmed,
+    kind: 'project',
+    archived: 0,
+    created_at: now,
+    updated_at: now
+  });
+  upsertProject(localProject);
+  queueLocalChange({
+    entity_type: 'project',
+    entity_id: localProject.id,
+    action: 'create',
+    payload: { ...localProject }
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return localProject;
+}
+
+async function updateProjectRecord(id, patch) {
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const updated = await api.updateProject(id, patch);
+      if (updated) upsertProject(updated);
+      return updated;
+    } catch {
+      // fall back to local update
+    }
+  }
+  const existing = (state.projects ?? []).find(project => project.id === id);
+  if (!existing) return null;
+  const next = {
+    ...existing,
+    name: patch.name ?? existing.name,
+    kind: patch.kind ?? existing.kind,
+    archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived,
+    updated_at: new Date().toISOString()
+  };
+  upsertProject(next);
+  queueLocalChange({
+    entity_type: 'project',
+    entity_id: id,
+    action: 'update',
+    payload: patch
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return next;
+}
+
+async function deleteProjectRecord(id) {
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const result = await api.deleteProject(id);
+      if (result?.deleted) {
+        state.projects = (state.projects ?? []).filter(project => project.id !== id);
+        Object.values(state.tasks ?? {}).forEach(task => {
+          if (task.project_id === id) {
+            task.project_id = null;
+          }
+        });
+      }
+      return result;
+    } catch {
+      // fall back to local delete
+    }
+  }
+  state.projects = (state.projects ?? []).filter(project => project.id !== id);
+  Object.values(state.tasks ?? {}).forEach(task => {
+    if (task.project_id === id) {
+      task.project_id = null;
+    }
+  });
+  queueLocalChange({
+    entity_type: 'project',
+    entity_id: id,
+    action: 'delete',
+    payload: {}
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return { deleted: 1 };
+}
+
 async function createStatusRecord(label) {
   if (!state.workspace) return null;
-  const created = await api.createStatus({ workspace_id: state.workspace.id, label });
-  if (created) upsertStatus(created);
-  return created;
+  const trimmed = String(label ?? '').trim();
+  if (!trimmed) return null;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const created = await api.createStatus({ workspace_id: state.workspace.id, label: trimmed });
+      if (created) upsertStatus(created);
+      return created;
+    } catch {
+      // fall back to local create
+    }
+  }
+  const now = new Date().toISOString();
+  const status = normalizeStatus({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    key: getNextStatusKey(trimmed),
+    label: trimmed,
+    kind: 'custom',
+    sort_order: getNextStatusSortOrder(),
+    kanban_visible: 1,
+    created_at: now,
+    updated_at: now
+  });
+  upsertStatus(status);
+  queueLocalChange({
+    entity_type: 'status',
+    entity_id: status.id,
+    action: 'create',
+    payload: { ...status }
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return status;
 }
 
 async function updateStatusRecord(id, patch) {
-  const updated = await api.updateStatus(id, patch);
-  if (updated) upsertStatus(updated);
-  return updated;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const updated = await api.updateStatus(id, patch);
+      if (updated) upsertStatus(updated);
+      return updated;
+    } catch {
+      // fall back to local update
+    }
+  }
+  const existing = (state.statuses ?? []).find(status => status.id === id);
+  if (!existing) return null;
+  const next = {
+    ...existing,
+    label: patch.label !== undefined ? String(patch.label).trim() || existing.label : existing.label,
+    sort_order: Number.isFinite(patch.sort_order) ? patch.sort_order : existing.sort_order,
+    kanban_visible: patch.kanban_visible !== undefined ? (patch.kanban_visible ? 1 : 0) : existing.kanban_visible,
+    updated_at: new Date().toISOString()
+  };
+  upsertStatus(next);
+  queueLocalChange({
+    entity_type: 'status',
+    entity_id: id,
+    action: 'update',
+    payload: patch
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return next;
 }
 
 async function deleteStatusRecord(id) {
-  const result = await api.deleteStatus(id);
-  if (result?.deleted) {
-    state.statuses = (state.statuses ?? []).filter(status => status.id !== id);
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const result = await api.deleteStatus(id);
+      if (result?.deleted) {
+        state.statuses = (state.statuses ?? []).filter(status => status.id !== id);
+      }
+      return result;
+    } catch {
+      // fall back to local delete
+    }
   }
-  return result;
+  const existing = (state.statuses ?? []).find(status => status.id === id);
+  if (!existing) return { deleted: 0 };
+  if (existing.kind && existing.kind !== 'custom') {
+    return { deleted: 0, error: 'protected' };
+  }
+  const fallbackKey = getFallbackActiveStatusKey();
+  Object.values(state.tasks ?? {}).forEach(task => {
+    if (task.status === existing.key) {
+      task.status = fallbackKey;
+      task.updated_at = new Date().toISOString();
+    }
+  });
+  state.statuses = (state.statuses ?? []).filter(status => status.id !== id);
+  queueLocalChange({
+    entity_type: 'status',
+    entity_id: id,
+    action: 'delete',
+    payload: {}
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return { deleted: 1 };
 }
 
 async function createTaskTypeRecord(name) {
   if (!state.workspace) return null;
-  const created = await api.createTaskType({ workspace_id: state.workspace.id, name });
-  if (created) upsertTaskType(created);
-  return created;
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return null;
+  const existing = (state.taskTypes ?? []).find(type => type.workspace_id === state.workspace.id && type.name === trimmed);
+  if (existing) return existing;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const created = await api.createTaskType({ workspace_id: state.workspace.id, name: trimmed });
+      if (created) upsertTaskType(created);
+      return created;
+    } catch {
+      // fall back to local create
+    }
+  }
+  const now = new Date().toISOString();
+  const type = normalizeTaskType({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    name: trimmed,
+    is_default: 0,
+    archived: 0,
+    created_at: now,
+    updated_at: now
+  });
+  upsertTaskType(type);
+  queueLocalChange({
+    entity_type: 'task_type',
+    entity_id: type.id,
+    action: 'create',
+    payload: { ...type }
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return type;
 }
 
 async function updateTaskTypeRecord(id, patch) {
-  const updated = await api.updateTaskType(id, patch);
-  if (updated) upsertTaskType(updated);
-  return updated;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const updated = await api.updateTaskType(id, patch);
+      if (updated) upsertTaskType(updated);
+      return updated;
+    } catch {
+      // fall back to local update
+    }
+  }
+  const existing = (state.taskTypes ?? []).find(type => type.id === id);
+  if (!existing) return null;
+  const nextName = patch.name !== undefined ? String(patch.name).trim() : existing.name;
+  if (!nextName) return null;
+  const next = {
+    ...existing,
+    name: nextName,
+    archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived,
+    updated_at: new Date().toISOString()
+  };
+  if (nextName !== existing.name) {
+    Object.values(state.tasks ?? {}).forEach(task => {
+      if (task.type_label === existing.name) {
+        task.type_label = nextName;
+      }
+    });
+  }
+  upsertTaskType(next);
+  queueLocalChange({
+    entity_type: 'task_type',
+    entity_id: id,
+    action: 'update',
+    payload: patch
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return next;
 }
 
 async function deleteTaskTypeRecord(id) {
-  const result = await api.deleteTaskType(id);
-  if (result?.deleted) {
-    state.taskTypes = (state.taskTypes ?? []).filter(type => type.id !== id);
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const result = await api.deleteTaskType(id);
+      if (result?.deleted) {
+        state.taskTypes = (state.taskTypes ?? []).filter(type => type.id !== id);
+      }
+      return result;
+    } catch {
+      // fall back to local delete
+    }
   }
-  return result;
+  const existing = (state.taskTypes ?? []).find(type => type.id === id);
+  if (!existing) return { deleted: 0 };
+  if (existing.is_default) {
+    return { deleted: 0, error: 'protected' };
+  }
+  Object.values(state.tasks ?? {}).forEach(task => {
+    if (task.type_label === existing.name) {
+      task.type_label = null;
+    }
+  });
+  state.taskTypes = (state.taskTypes ?? []).filter(type => type.id !== id);
+  queueLocalChange({
+    entity_type: 'task_type',
+    entity_id: id,
+    action: 'delete',
+    payload: {}
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return { deleted: 1 };
 }
 
 async function createNoticeRecord(payload) {
@@ -3859,8 +4207,7 @@ function renderProjectList() {
       const nextName = prompt('Project name', project.name);
       if (!nextName) return;
       const updatedName = nextName.trim() || project.name;
-      const updated = await api.updateProject(project.id, { name: updatedName });
-      if (updated) upsertProject(updated);
+      await updateProjectRecord(project.id, { name: updatedName });
       menu.classList.add('hidden');
       openMenu = null;
       render();
@@ -3872,8 +4219,7 @@ function renderProjectList() {
     archiveItem.textContent = 'Archive';
     archiveItem.addEventListener('click', async (event) => {
       event.stopPropagation();
-      const updated = await api.updateProject(project.id, { archived: 1 });
-      if (updated) upsertProject(updated);
+      await updateProjectRecord(project.id, { archived: 1 });
       if (state.ui?.activeProjectId === project.id) {
         state.ui.activeProjectId = null;
       }
@@ -3890,7 +4236,7 @@ function renderProjectList() {
       event.stopPropagation();
       const confirmed = confirm(`Delete project \"${project.name}\"? Tasks will become unassigned.`);
       if (!confirmed) return;
-      await api.deleteProject(project.id);
+      await deleteProjectRecord(project.id);
       await refreshWorkspace();
       menu.classList.add('hidden');
       openMenu = null;
@@ -7372,9 +7718,8 @@ newProjectBtn?.addEventListener('click', async () => {
   const name = prompt('Project name');
   if (!name) return;
   if (!state.workspace) return;
-  const project = await api.createProject({ name: name.trim(), workspace_id: state.workspace.id, kind: 'project' });
+  const project = await createProjectRecord(name.trim());
   if (!project) return;
-  upsertProject(project);
   state.ui = state.ui ?? {};
   state.ui.activeProjectId = project.id;
   render();

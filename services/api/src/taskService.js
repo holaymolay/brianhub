@@ -147,7 +147,11 @@ export async function listProjects(db, workspaceId) {
 }
 
 export async function createProject(db, data, clientId = null) {
-  const id = randomUUID();
+  if (data?.id) {
+    const existing = await getProject(db, data.id);
+    if (existing) return existing;
+  }
+  const id = data?.id ?? randomUUID();
   const timestamp = nowIso();
   const project = {
     id,
@@ -746,7 +750,11 @@ async function getDefaultTaskType(db, workspaceId) {
 }
 
 export async function createTaskType(db, data, clientId = null) {
-  const id = randomUUID();
+  if (data?.id) {
+    const existing = await getTaskType(db, data.id);
+    if (existing) return existing;
+  }
+  const id = data?.id ?? randomUUID();
   const timestamp = nowIso();
   const name = (data.name ?? '').trim();
   if (!name) throw new Error('Invalid task type name');
@@ -835,6 +843,11 @@ export async function getStatusByKey(db, workspaceId, key) {
   return getRow(db, 'SELECT * FROM workspace_statuses WHERE workspace_id = ? AND key = ?', [workspaceId, key]);
 }
 
+async function getStatusById(db, id) {
+  if (!id) return null;
+  return getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [id]);
+}
+
 async function getFallbackStatus(db, workspaceId) {
   if (!workspaceId) return null;
   const inbox = await getRow(
@@ -861,7 +874,11 @@ async function ensureStatusKeyUnique(db, workspaceId, baseKey) {
 }
 
 export async function createStatus(db, data, clientId = null) {
-  const id = randomUUID();
+  if (data?.id) {
+    const existing = await getStatusById(db, data.id);
+    if (existing) return existing;
+  }
+  const id = data?.id ?? randomUUID();
   const timestamp = nowIso();
   const label = (data.label ?? '').trim();
   const keyBase = data.key ? slugify(data.key) : slugify(label);

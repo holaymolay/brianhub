@@ -5,6 +5,9 @@ import { applyMigrations } from '../concepts/data-layer/migrations/runner.js';
 import {
   createWorkspace,
   createTask,
+  createProject,
+  createStatus,
+  createTaskType,
   listTasks,
   getTask
 } from '../services/api/src/taskService.js';
@@ -47,5 +50,20 @@ test('createWorkspace and createTask honor provided ids', async () => {
 
     const fetched = await getTask(db, 'task-local');
     assert.equal(fetched.id, 'task-local');
+  });
+});
+
+test('createProject/status/taskType honor provided ids', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { id: 'ws-seed', name: 'Seed', type: 'personal' });
+
+    const project = await createProject(db, { id: 'proj-local', workspace_id: workspace.id, name: 'Project' });
+    assert.equal(project.id, 'proj-local');
+
+    const status = await createStatus(db, { id: 'status-local', workspace_id: workspace.id, label: 'Custom' });
+    assert.equal(status.id, 'status-local');
+
+    const taskType = await createTaskType(db, { id: 'type-local', workspace_id: workspace.id, name: 'Type' });
+    assert.equal(taskType.id, 'type-local');
   });
 });
