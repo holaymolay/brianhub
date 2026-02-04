@@ -1,5 +1,5 @@
 name: task-groups
-purpose: Add optional task group labels for list-view grouping and organization.
+purpose: Add optional section labels and grouping modes for list-view organization.
 state:
   schema:
     - services/api/db/migrations/016_task_groups.sql
@@ -10,9 +10,9 @@ state:
     - apps/web/index.html
     - apps/web/styles.css
 behaviors:
-  - group_label stored per task
-  - list view can group tasks by group_label
-  - group rename flow updates task group_label values
+  - group_label stored per task (section label)
+  - list view can group tasks by section, task type, or priority
+  - section rename flow updates task group_label values
 dependencies:
   - services/api
   - apps/web

@@ -1031,13 +1031,19 @@ function setTaskSortKey(key) {
   state.ui.taskSort = key;
 }
 
+function normalizeTaskGroupMode(mode) {
+  if (mode === 'group') return 'section';
+  if (['none', 'section', 'task-type', 'priority'].includes(mode)) return mode;
+  return 'none';
+}
+
 function getTaskGroupMode() {
-  return state.ui?.taskGroupMode ?? 'none';
+  return normalizeTaskGroupMode(state.ui?.taskGroupMode ?? 'none');
 }
 
 function setTaskGroupMode(mode) {
   state.ui = state.ui ?? {};
-  state.ui.taskGroupMode = mode;
+  state.ui.taskGroupMode = normalizeTaskGroupMode(mode);
 }
 
 function getNoticeFilterKey() {
@@ -3624,9 +3630,10 @@ function getDirectTaskItems(container) {
   return Array.from(container.querySelectorAll(':scope > .task-item'));
 }
 
-async function persistTaskOrder(container, parentId, statusKey, groupLabel) {
+async function persistTaskOrder(container, parentId, statusKey, groupMeta) {
   const items = getDirectTaskItems(container);
-  const normalizedGroup = groupLabel !== undefined ? (groupLabel || null) : undefined;
+  const normalizedGroup = groupMeta?.value !== undefined ? (groupMeta.value || null) : undefined;
+  const mode = groupMeta?.mode ?? null;
   for (let index = 0; index < items.length; index += 1) {
     const id = items[index].dataset.taskId;
     const task = state.tasks[id];
@@ -3635,8 +3642,15 @@ async function persistTaskOrder(container, parentId, statusKey, groupLabel) {
     const patch = {};
     if (task.sort_order !== nextSort) patch.sort_order = nextSort;
     if (statusKey && task.status !== statusKey) patch.status = statusKey;
-    if (parentId === null && normalizedGroup !== undefined) {
-      if ((task.group_label ?? null) !== normalizedGroup) patch.group_label = normalizedGroup;
+    if (parentId === null && mode) {
+      if (mode === 'section') {
+        if ((task.group_label ?? null) !== normalizedGroup) patch.group_label = normalizedGroup;
+      } else if (mode === 'task-type') {
+        if ((task.type_label ?? null) !== normalizedGroup) patch.type_label = normalizedGroup;
+      } else if (mode === 'priority') {
+        const nextPriority = normalizedGroup ?? 'medium';
+        if ((task.priority ?? 'medium') !== nextPriority) patch.priority = nextPriority;
+      }
     }
     if (Object.keys(patch).length) {
       await updateTaskRecord(id, patch);
@@ -3680,7 +3694,7 @@ async function persistColumnOrder(board) {
   render();
 }
 
-function attachTaskDropzone(container, { parentId = null, statusKey = null, groupLabel } = {}) {
+function attachTaskDropzone(container, { parentId = null, statusKey = null, groupMode = null, groupValue } = {}) {
   const normalizedParent = parentId ? parentId : null;
   container.dataset.parentId = normalizedParent ?? '';
   if (statusKey) {
@@ -3688,10 +3702,12 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
   } else {
     delete container.dataset.statusKey;
   }
-  if (groupLabel !== undefined) {
-    container.dataset.groupLabel = groupLabel ?? '';
+  if (groupMode) {
+    container.dataset.groupMode = groupMode;
+    container.dataset.groupValue = groupValue ?? '';
   } else {
-    delete container.dataset.groupLabel;
+    delete container.dataset.groupMode;
+    delete container.dataset.groupValue;
   }
   container.addEventListener('dragover', (event) => {
     if (!draggingTaskId || draggingColumnKey) return;
@@ -3736,7 +3752,8 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
       }
     }
     if (targetContainer) {
-      await persistTaskOrder(targetContainer, parentId, statusKey, groupLabel);
+      const meta = groupMode ? { mode: groupMode, value: groupValue ?? null } : null;
+      await persistTaskOrder(targetContainer, parentId, statusKey, meta);
     }
   });
 }
@@ -3780,8 +3797,9 @@ function attachTaskDragHandlers(item, task) {
     const container = item.parentElement;
     const parentId = container?.dataset?.parentId ?? null;
     const statusKey = container?.dataset?.statusKey ?? null;
-    const groupLabelValue = container?.dataset?.groupLabel;
-    const groupLabel = groupLabelValue !== undefined ? (groupLabelValue || null) : undefined;
+    const groupMode = container?.dataset?.groupMode ?? null;
+    const groupValue = container?.dataset?.groupValue;
+    const groupMeta = groupMode ? { mode: groupMode, value: groupValue !== undefined ? (groupValue || null) : null } : null;
     const allowed = canDropTaskInContainer(parentId ? parentId : null, statusKey ?? null);
     if (!allowed) return;
     event.preventDefault();
@@ -3808,7 +3826,7 @@ function attachTaskDragHandlers(item, task) {
     const rect = item.getBoundingClientRect();
     const insertAfter = event.clientY > rect.top + rect.height / 2;
     container.insertBefore(draggingEl, insertAfter ? item.nextSibling : item);
-    await persistTaskOrder(container, normalizedParent, statusKey ?? null, groupLabel);
+    await persistTaskOrder(container, normalizedParent, statusKey ?? null, groupMeta);
   });
 }
 
@@ -4095,10 +4113,12 @@ function renderTaskGroup() {
   if (!taskGroupButton || !taskGroupMenu) return;
   const mode = getTaskGroupMode();
   const labelMap = {
-    none: 'Group',
-    group: 'Group: Group'
+    none: 'Group by',
+    section: 'Group by: Section',
+    'task-type': 'Group by: Task type',
+    priority: 'Group by: Priority'
   };
-  taskGroupButton.textContent = `${labelMap[mode] ?? 'Group'} ▾`;
+  taskGroupButton.textContent = `${labelMap[mode] ?? 'Group by'} ▾`;
 }
 
 function renderNoticeFilter() {
@@ -5069,7 +5089,7 @@ function renderNotificationStatus() {
 
 function renderTaskList(roots) {
   const groupMode = getTaskGroupMode();
-  if (groupMode !== 'group') {
+  if (groupMode === 'none') {
     const topDropzone = document.createElement('div');
     topDropzone.className = 'task-root-dropzone';
     attachTaskDropzone(topDropzone, { parentId: null });
@@ -5078,48 +5098,118 @@ function renderTaskList(roots) {
 
   const list = document.createElement('div');
   list.className = 'task-list';
-  if (groupMode !== 'group') {
+  if (groupMode === 'none') {
     attachTaskDropzone(list, { parentId: null });
   }
-  let ungroupedList = null;
-  if (groupMode === 'group') {
+  let defaultGroupList = null;
+  if (groupMode !== 'none') {
     const grouped = new Map();
-    const ungrouped = [];
-    roots.forEach(task => {
-      const label = (task.group_label ?? '').trim();
-      if (!label) {
-        ungrouped.push(task);
-        return;
+    const defaultKey = '__none__';
+    const priorityOrder = ['critical', 'high', 'medium', 'low'];
+    const priorityLabel = {
+      critical: 'Critical',
+      high: 'High',
+      medium: 'Medium',
+      low: 'Low'
+    };
+    const getGroupInfo = (task) => {
+      if (groupMode === 'section') {
+        const value = (task.group_label ?? '').trim();
+        return {
+          key: value || defaultKey,
+          value: value || null,
+          label: value || 'No section'
+        };
       }
-      if (!grouped.has(label)) grouped.set(label, []);
-      grouped.get(label).push(task);
+      if (groupMode === 'task-type') {
+        const value = (task.type_label ?? '').trim();
+        return {
+          key: value || defaultKey,
+          value: value || null,
+          label: value || 'No type'
+        };
+      }
+      if (groupMode === 'priority') {
+        const value = (task.priority ?? 'medium') || 'medium';
+        return {
+          key: value,
+          value,
+          label: priorityLabel[value] ?? value
+        };
+      }
+      return { key: defaultKey, value: null, label: 'No section' };
+    };
+
+    roots.forEach(task => {
+      const info = getGroupInfo(task);
+      if (!grouped.has(info.key)) {
+        grouped.set(info.key, { ...info, tasks: [] });
+      }
+      grouped.get(info.key).tasks.push(task);
     });
-    const labels = Array.from(grouped.keys()).sort((a, b) => a.localeCompare(b));
-    labels.forEach(label => {
+
+    if (groupMode === 'section' || groupMode === 'task-type') {
+      if (!grouped.has(defaultKey)) {
+        grouped.set(defaultKey, {
+          key: defaultKey,
+          value: null,
+          label: groupMode === 'section' ? 'No section' : 'No type',
+          tasks: []
+        });
+      }
+    }
+    if (groupMode === 'priority' && !grouped.has('medium')) {
+      grouped.set('medium', { key: 'medium', value: 'medium', label: 'Medium', tasks: [] });
+    }
+
+    let groups = Array.from(grouped.values());
+    if (groupMode === 'priority') {
+      groups = groups.sort((a, b) => {
+        const aIndex = priorityOrder.indexOf(a.value);
+        const bIndex = priorityOrder.indexOf(b.value);
+        if (aIndex === -1 && bIndex === -1) return a.label.localeCompare(b.label);
+        if (aIndex === -1) return 1;
+        if (bIndex === -1) return -1;
+        return aIndex - bIndex;
+      });
+    } else {
+      groups = groups.sort((a, b) => {
+        if (a.key === defaultKey) return 1;
+        if (b.key === defaultKey) return -1;
+        return a.label.localeCompare(b.label);
+      });
+    }
+
+    groups.forEach(group => {
       const section = document.createElement('div');
       section.className = 'task-group-section';
-      section.dataset.groupLabel = label;
+      section.dataset.groupMode = groupMode;
+      section.dataset.groupValue = group.value ?? '';
       const sectionHeader = document.createElement('div');
       sectionHeader.className = 'task-group-header';
-      sectionHeader.textContent = label;
-      sectionHeader.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        showTaskGroupContextMenu(label, event.clientX, event.clientY);
-      });
+      sectionHeader.textContent = group.label;
+      if (groupMode === 'section' && group.value) {
+        sectionHeader.addEventListener('contextmenu', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          showTaskGroupContextMenu(group.value, event.clientX, event.clientY);
+        });
+      }
       section.appendChild(sectionHeader);
       const groupList = document.createElement('div');
       groupList.className = 'task-group-list';
-      attachTaskDropzone(groupList, { parentId: null, groupLabel: label });
-      grouped.get(label).forEach(node => groupList.appendChild(renderTask(node)));
+      attachTaskDropzone(groupList, {
+        parentId: null,
+        groupMode,
+        groupValue: group.value
+      });
+      group.tasks.forEach(node => groupList.appendChild(renderTask(node)));
       section.appendChild(groupList);
       list.appendChild(section);
+      if (group.key === defaultKey || groupMode === 'priority' && group.value === 'medium') {
+        defaultGroupList = groupList;
+      }
     });
-    ungroupedList = document.createElement('div');
-    ungroupedList.className = 'task-group-list task-ungrouped-list';
-    attachTaskDropzone(ungroupedList, { parentId: null, groupLabel: null });
-    ungrouped.forEach(node => ungroupedList.appendChild(renderTask(node)));
-    list.appendChild(ungroupedList);
   } else {
     roots.forEach(node => list.appendChild(renderTask(node)));
   }
@@ -5162,14 +5252,14 @@ function renderTaskList(roots) {
     }
   });
   addRow.appendChild(addInput);
-  if (groupMode === 'group') {
-    (ungroupedList ?? list).appendChild(addRow);
-  } else {
+  if (groupMode === 'none') {
     list.appendChild(addRow);
+  } else {
+    (defaultGroupList ?? list).appendChild(addRow);
   }
   taskTreeEl.appendChild(list);
 
-  if (groupMode !== 'group') {
+  if (groupMode === 'none') {
     const bottomDropzone = document.createElement('div');
     bottomDropzone.className = 'task-root-dropzone';
     attachTaskDropzone(bottomDropzone, { parentId: null });
@@ -6461,7 +6551,7 @@ function showTaskGroupContextMenu(label, x, y) {
   const renameItem = document.createElement('button');
   renameItem.type = 'button';
   renameItem.className = 'workspace-menu-item';
-  renameItem.textContent = 'Rename group';
+  renameItem.textContent = 'Rename section';
   renameItem.addEventListener('click', () => {
     taskContextMenu.classList.add('hidden');
     openMenu = null;

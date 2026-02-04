@@ -130,10 +130,12 @@
                 </div>
               </div>
               <div class="task-group">
-                <button id="task-group-button" class="subtle-button" type="button">Group ▾</button>
+                <button id="task-group-button" class="subtle-button" type="button">Group by ▾</button>
                 <div id="task-group-menu" class="workspace-menu hidden">
                   <button class="workspace-menu-item" type="button" data-group="none">None</button>
-                  <button class="workspace-menu-item" type="button" data-group="group">Group</button>
+                  <button class="workspace-menu-item" type="button" data-group="section">Section</button>
+                  <button class="workspace-menu-item" type="button" data-group="task-type">Task type</button>
+                  <button class="workspace-menu-item" type="button" data-group="priority">Priority</button>
                 </div>
               </div>
               <select id="task-view-select" class="task-view-select" aria-label="Task view">
@@ -691,8 +693,8 @@
             </select>
           </label>
           <label>
-            Group
-            <input id="editor-group" type="text" list="task-group-options" placeholder="Ungrouped" />
+            Section
+            <input id="editor-group" type="text" list="task-group-options" placeholder="No section" />
           </label>
           <div class="recurrence-row">
             <button id="editor-recurring-button" class="icon-button subtle-button" type="button" title="Set repeat">↻</button>
@@ -865,8 +867,8 @@
             <select id="bulk-edit-project"></select>
           </label>
           <label class="bulk-edit-field">
-            <span><input id="bulk-edit-apply-group" type="checkbox" /> Group</span>
-            <input id="bulk-edit-group" type="text" list="task-group-options" placeholder="Ungrouped" />
+            <span><input id="bulk-edit-apply-group" type="checkbox" /> Section</span>
+            <input id="bulk-edit-group" type="text" list="task-group-options" placeholder="No section" />
           </label>
           <label class="bulk-edit-field">
             <span><input id="bulk-edit-apply-type" type="checkbox" /> Type</span>
@@ -895,10 +897,10 @@
     <div id="group-rename-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
-        <h2>Rename group</h2>
+        <h2>Rename section</h2>
         <form id="group-rename-form">
           <label>
-            Group name
+            Section name
             <input id="group-rename-input" type="text" autocomplete="off" />
           </label>
           <div class="modal-actions">
