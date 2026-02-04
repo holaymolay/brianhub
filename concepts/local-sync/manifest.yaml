@@ -1,0 +1,12 @@
+name: local-sync
+purpose: local-first state merge + cursor-based sync pull
+state:
+  modules:
+    - sync-state
+    - client-id
+behaviors:
+  - apply-remote-changes
+  - cursor-sync
+  - client-id-header
+dependencies:
+  storage: localStorage

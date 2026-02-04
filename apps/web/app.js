@@ -1,5 +1,7 @@
 import { loadState, saveState, createId } from './localStore.js';
 import { loadLocalData, saveLocalData, recordLocalChange } from './localData.js';
+import { applyRemoteChanges } from './syncState.js';
+import { getClientId } from './clientId.js';
 import * as api from './api.js';
 import { compareTasksByPriority } from '../../packages/core/priority.js';
 import { reparent as reparentTasks } from '../../packages/core/tree.js';
@@ -1095,12 +1097,23 @@ async function autoRefreshOnChanges() {
       state.ui = state.ui ?? {};
       state.ui.syncCursor = result.next_cursor;
     }
-    if (Array.isArray(result?.changes) && result.changes.length) {
-      const hasWorkspaceChange = result.changes.some(change => change.entity_type === 'workspace');
+    const clientId = getClientId();
+    const changes = Array.isArray(result?.changes)
+      ? result.changes.filter(change => change.client_id !== clientId)
+      : [];
+    if (changes.length) {
+      const hasWorkspaceChange = changes.some(change => change.entity_type === 'workspace');
       if (hasWorkspaceChange) {
         await reloadWorkspacesAndData();
       } else {
-        await refreshWorkspace();
+        const snapshot = snapshotLocalData();
+        const merged = applyRemoteChanges(snapshot, changes);
+        if (merged.needsRefresh) {
+          await refreshWorkspace();
+        } else {
+          applyLocalDataSnapshot(merged.data);
+          render();
+        }
       }
       syncStatus.textContent = 'Auto-refreshed';
     }
@@ -1574,6 +1587,38 @@ function queueLocalChange(change) {
   }, change);
   state.local.localSeq = updated.localSeq;
   state.local.pendingChanges = updated.pendingChanges;
+}
+
+function snapshotLocalData() {
+  return {
+    workspaces: state.workspaces ?? [],
+    projects: state.projects ?? [],
+    statuses: state.statuses ?? [],
+    taskTypes: state.taskTypes ?? [],
+    tasks: state.tasks ?? {},
+    taskDependencies: state.taskDependencies ?? [],
+    templates: state.templates ?? [],
+    notices: state.notices ?? [],
+    noticeTypes: state.noticeTypes ?? [],
+    storeRules: state.storeRules ?? [],
+    shoppingLists: state.shoppingLists ?? [],
+    shoppingItems: state.shoppingItems ?? {}
+  };
+}
+
+function applyLocalDataSnapshot(data) {
+  state.workspaces = data.workspaces ?? [];
+  state.projects = data.projects ?? [];
+  state.statuses = data.statuses ?? [];
+  state.taskTypes = data.taskTypes ?? [];
+  state.tasks = data.tasks ?? {};
+  state.taskDependencies = data.taskDependencies ?? [];
+  state.templates = data.templates ?? [];
+  state.notices = data.notices ?? [];
+  state.noticeTypes = data.noticeTypes ?? [];
+  state.storeRules = data.storeRules ?? [];
+  state.shoppingLists = data.shoppingLists ?? [];
+  state.shoppingItems = data.shoppingItems ?? {};
 }
 
 function ensureLocalWorkspaceDefaults(workspace) {

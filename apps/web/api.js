@@ -1,8 +1,14 @@
+import { getClientId } from './clientId.js';
+
 const API_BASE = 'http://localhost:3000';
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Client-Id': getClientId(),
+      ...(options.headers ?? {})
+    },
     ...options
   });
   if (!res.ok) {
