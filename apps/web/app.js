@@ -55,6 +55,12 @@ const DEFAULT_TASK_TYPE_DEFS = [
   { name: 'General', is_default: 1 },
   { name: 'Bill Due', is_default: 1 }
 ];
+
+function normalizeTitleInput(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 const taskTreeEl = document.getElementById('task-tree');
 const taskFilterButton = document.getElementById('task-filter-button');
 const taskFilterMenu = document.getElementById('task-filter-menu');
@@ -1180,7 +1186,7 @@ function isPersistedSection(section) {
 
 function createSectionRecord(label) {
   if (!state.workspace) return null;
-  const trimmed = String(label ?? '').trim();
+  const trimmed = normalizeTitleInput(label);
   if (!trimmed) return null;
   const workspaceId = state.workspace.id;
   const existing = getSectionsForWorkspace().find(section => section.label === trimmed);
@@ -1409,7 +1415,7 @@ function getNextWorkflowSortOrder(items) {
 
 function createWorkflowRecord({ name, description }) {
   if (!state.workspace) return null;
-  const trimmed = String(name ?? '').trim();
+  const trimmed = normalizeTitleInput(name);
   if (!trimmed) return null;
   const now = nowIso();
   const workflow = normalizeWorkflow({
@@ -1427,6 +1433,9 @@ function createWorkflowRecord({ name, description }) {
 }
 
 function updateWorkflowRecord(id, patch) {
+  if (patch.name !== undefined) {
+    patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
   const workflows = state.workflows ?? [];
   const index = workflows.findIndex(item => item.id === id);
   if (index < 0) return null;
@@ -1468,7 +1477,7 @@ function deleteWorkflowRecord(id) {
 }
 
 function createWorkflowVariantRecord(workflowId, name) {
-  const trimmed = String(name ?? '').trim();
+  const trimmed = normalizeTitleInput(name);
   if (!trimmed) return null;
   const variants = state.workflowVariants ?? [];
   const now = nowIso();
@@ -1487,6 +1496,9 @@ function createWorkflowVariantRecord(workflowId, name) {
 }
 
 function updateWorkflowVariantRecord(id, patch) {
+  if (patch.name !== undefined) {
+    patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
   const variants = state.workflowVariants ?? [];
   const index = variants.findIndex(item => item.id === id);
   if (index < 0) return null;
@@ -1516,7 +1528,7 @@ function deleteWorkflowVariantRecord(id) {
 }
 
 function createWorkflowPhaseRecord(workflowId, name) {
-  const trimmed = String(name ?? '').trim();
+  const trimmed = normalizeTitleInput(name);
   if (!trimmed) return null;
   const phases = state.workflowPhases ?? [];
   const now = nowIso();
@@ -1535,6 +1547,9 @@ function createWorkflowPhaseRecord(workflowId, name) {
 }
 
 function updateWorkflowPhaseRecord(id, patch) {
+  if (patch.name !== undefined) {
+    patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
   const phases = state.workflowPhases ?? [];
   const index = phases.findIndex(item => item.id === id);
   if (index < 0) return null;
@@ -1646,7 +1661,7 @@ function unlinkWorkflowVariantPhase(variantId, phaseId) {
 }
 
 function createWorkflowPhaseTaskRecord(phaseId, title) {
-  const trimmed = String(title ?? '').trim();
+  const trimmed = normalizeTitleInput(title);
   if (!trimmed) return null;
   const tasks = state.workflowPhaseTasks ?? [];
   const now = nowIso();
@@ -1666,6 +1681,9 @@ function createWorkflowPhaseTaskRecord(phaseId, title) {
 }
 
 function updateWorkflowPhaseTaskRecord(id, patch) {
+  if (patch.title !== undefined) {
+    patch = { ...patch, title: normalizeTitleInput(patch.title) };
+  }
   const tasks = state.workflowPhaseTasks ?? [];
   const index = tasks.findIndex(item => item.id === id);
   if (index < 0) return null;
@@ -1694,7 +1712,7 @@ function deleteWorkflowPhaseTaskRecord(id) {
 
 function createWorkflowInstanceRecord({ workflowId, variantId, title, notes }) {
   if (!state.workspace) return null;
-  const trimmed = String(title ?? '').trim();
+  const trimmed = normalizeTitleInput(title);
   if (!trimmed) return null;
   const now = nowIso();
   const instance = normalizeWorkflowInstance({
@@ -2945,8 +2963,14 @@ async function createTaskRecord(payload) {
   const sortOrder = payload.sort_order === undefined || payload.sort_order === null
     ? getNextTaskSortOrder(parentId, statusKey)
     : payload.sort_order;
+  const normalizedTitle = normalizeTitleInput(payload.title);
+  const normalizedType = payload.type_label ? normalizeTitleInput(payload.type_label) : payload.type_label;
+  const normalizedGroup = payload.group_label ? normalizeTitleInput(payload.group_label) : payload.group_label;
   const taskPayload = {
     ...payload,
+    title: normalizedTitle,
+    type_label: normalizedType ?? null,
+    group_label: normalizedGroup ?? null,
     sort_order: sortOrder,
     workspace_id: state.workspace.id
   };
@@ -3016,6 +3040,15 @@ async function createTaskRecord(payload) {
 }
 
 async function updateTaskRecord(id, patch) {
+  if (patch.title !== undefined) {
+    patch = { ...patch, title: normalizeTitleInput(patch.title) };
+  }
+  if (patch.type_label !== undefined) {
+    patch = { ...patch, type_label: patch.type_label ? normalizeTitleInput(patch.type_label) : null };
+  }
+  if (patch.group_label !== undefined) {
+    patch = { ...patch, group_label: patch.group_label ? normalizeTitleInput(patch.group_label) : null };
+  }
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
     try {
@@ -3117,7 +3150,7 @@ async function deleteTaskRecord(id) {
 
 async function createProjectRecord(name) {
   if (!state.workspace) return null;
-  const trimmed = String(name ?? '').trim();
+  const trimmed = normalizeTitleInput(name);
   if (!trimmed) return null;
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
@@ -3151,6 +3184,9 @@ async function createProjectRecord(name) {
 }
 
 async function updateProjectRecord(id, patch) {
+  if (patch.name !== undefined) {
+    patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
     try {
@@ -3217,7 +3253,7 @@ async function deleteProjectRecord(id) {
 
 async function createStatusRecord(label) {
   if (!state.workspace) return null;
-  const trimmed = String(label ?? '').trim();
+  const trimmed = normalizeTitleInput(label);
   if (!trimmed) return null;
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
@@ -3253,6 +3289,9 @@ async function createStatusRecord(label) {
 }
 
 async function updateStatusRecord(id, patch) {
+  if (patch.label !== undefined) {
+    patch = { ...patch, label: normalizeTitleInput(patch.label) };
+  }
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
     try {
@@ -3321,7 +3360,7 @@ async function deleteStatusRecord(id) {
 
 async function createTaskTypeRecord(name) {
   if (!state.workspace) return null;
-  const trimmed = String(name ?? '').trim();
+  const trimmed = normalizeTitleInput(name);
   if (!trimmed) return null;
   const existing = (state.taskTypes ?? []).find(type => type.workspace_id === state.workspace.id && type.name === trimmed);
   if (existing) return existing;
@@ -3357,6 +3396,9 @@ async function createTaskTypeRecord(name) {
 }
 
 async function updateTaskTypeRecord(id, patch) {
+  if (patch.name !== undefined) {
+    patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
     try {
@@ -3431,25 +3473,33 @@ async function deleteTaskTypeRecord(id) {
 
 async function createNoticeRecord(payload) {
   if (!state.workspace) return null;
-  const created = await api.createNotice({ ...payload, workspace_id: state.workspace.id });
+  const title = payload?.title !== undefined ? normalizeTitleInput(payload.title) : payload?.title;
+  const created = await api.createNotice({ ...payload, title, workspace_id: state.workspace.id });
   if (created) upsertNotice(created);
   return created;
 }
 
 async function createNoticeTypeRecord(payload) {
   if (!state.workspace) return null;
-  const created = await api.createNoticeType({ ...payload, workspace_id: state.workspace.id });
+  const label = payload?.label !== undefined ? normalizeTitleInput(payload.label) : payload?.label;
+  const created = await api.createNoticeType({ ...payload, label, workspace_id: state.workspace.id });
   if (created) upsertNoticeType(created);
   return created;
 }
 
 async function updateNoticeRecord(id, patch) {
+  if (patch.title !== undefined) {
+    patch = { ...patch, title: normalizeTitleInput(patch.title) };
+  }
   const updated = await api.updateNotice(id, patch);
   if (updated) upsertNotice(updated);
   return updated;
 }
 
 async function updateNoticeTypeRecord(id, patch) {
+  if (patch.label !== undefined) {
+    patch = { ...patch, label: normalizeTitleInput(patch.label) };
+  }
   const updated = await api.updateNoticeType(id, patch);
   if (updated) upsertNoticeType(updated);
   return updated;
@@ -3473,12 +3523,16 @@ async function deleteNoticeTypeRecord(id) {
 
 async function createStoreRuleRecord(payload) {
   if (!state.workspace) return null;
-  const created = await api.createStoreRule({ ...payload, workspace_id: state.workspace.id });
+  const storeName = payload?.store_name !== undefined ? normalizeTitleInput(payload.store_name) : payload?.store_name;
+  const created = await api.createStoreRule({ ...payload, store_name: storeName, workspace_id: state.workspace.id });
   if (created) upsertStoreRule(created);
   return created;
 }
 
 async function updateStoreRuleRecord(id, patch) {
+  if (patch.store_name !== undefined) {
+    patch = { ...patch, store_name: normalizeTitleInput(patch.store_name) };
+  }
   const updated = await api.updateStoreRule(id, patch);
   if (updated) upsertStoreRule(updated);
   return updated;
@@ -3494,12 +3548,16 @@ async function deleteStoreRuleRecord(id) {
 
 async function createShoppingListRecord(payload) {
   if (!state.workspace) return null;
-  const created = await api.createShoppingList({ ...payload, workspace_id: state.workspace.id });
+  const name = payload?.name !== undefined ? normalizeTitleInput(payload.name) : payload?.name;
+  const created = await api.createShoppingList({ ...payload, name, workspace_id: state.workspace.id });
   if (created) upsertShoppingList(created);
   return created;
 }
 
 async function updateShoppingListRecord(id, patch) {
+  if (patch.name !== undefined) {
+    patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
   const updated = await api.updateShoppingList(id, patch);
   if (updated) upsertShoppingList(updated);
   return updated;
@@ -3516,13 +3574,20 @@ async function deleteShoppingListRecord(id) {
 
 async function createShoppingItemsRecord(listId, items) {
   if (!items.length) return [];
-  const result = await api.createShoppingItems(listId, items);
+  const normalizedItems = items.map(item => ({
+    ...item,
+    name: item.name !== undefined ? normalizeTitleInput(item.name) : item.name
+  }));
+  const result = await api.createShoppingItems(listId, normalizedItems);
   const createdItems = Array.isArray(result?.items) ? result.items : [];
   createdItems.forEach(item => upsertShoppingItem(item));
   return createdItems;
 }
 
 async function updateShoppingItemRecord(id, patch) {
+  if (patch.name !== undefined) {
+    patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
   const updated = await api.updateShoppingItem(id, patch);
   if (updated) upsertShoppingItem(updated);
   return updated;
@@ -7331,7 +7396,7 @@ function createWorkspaceManageRow(workspace, isArchivedView) {
     renameBtn.addEventListener('click', async () => {
       const nextName = prompt('Workspace name', workspace.name);
       if (!nextName) return;
-      const updatedName = nextName.trim();
+      const updatedName = normalizeTitleInput(nextName);
       if (!updatedName) return;
       await api.updateWorkspace(workspace.id, { name: updatedName });
       await reloadWorkspacesAndData();
@@ -8173,7 +8238,7 @@ async function handleBulkDelete() {
 }
 
 async function renameTaskGroup(label, nextName) {
-  const updatedName = nextName.trim();
+  const updatedName = normalizeTitleInput(nextName);
   if (!updatedName || updatedName === label) return;
   const workspaceId = state.workspace?.id;
   if (!workspaceId) return;
@@ -9004,6 +9069,9 @@ shoppingListForm?.addEventListener('submit', async (event) => {
     const detectedStore = detectStoreFromItems(items);
     if (detectedStore) store = detectedStore;
   }
+  if (store) {
+    store = normalizeTitleInput(store);
+  }
   if (store && shoppingListStoreSelect?.value === '__add_new__') {
     const existing = getStoreNames().some(name => name.toLowerCase() === store.toLowerCase());
     if (!existing) {
@@ -9409,7 +9477,7 @@ templateModal?.querySelector('.modal-backdrop')?.addEventListener('click', close
 
 templateModalForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const name = templateName.value.trim();
+  const name = normalizeTitleInput(templateName.value);
   if (!name) return;
   const data = {
     name,
@@ -9506,7 +9574,7 @@ newWorkspaceBtn.addEventListener('click', async () => {
   openMenu = null;
   const name = prompt('Workspace name');
   if (!name) return;
-  const trimmed = name.trim();
+  const trimmed = normalizeTitleInput(name);
   let workspace = null;
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
@@ -9544,7 +9612,7 @@ newProjectBtn?.addEventListener('click', async () => {
   const name = prompt('Project name');
   if (!name) return;
   if (!state.workspace) return;
-  const project = await createProjectRecord(name.trim());
+  const project = await createProjectRecord(normalizeTitleInput(name));
   if (!project) return;
   state.ui = state.ui ?? {};
   state.ui.activeProjectId = project.id;
