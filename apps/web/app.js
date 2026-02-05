@@ -488,7 +488,7 @@ taskEditorResizeObserver?.observe(taskEditorBody);
 
 workspaceMenuButton?.addEventListener('click', (event) => {
   event.stopPropagation();
-  if (openMenu && openMenu !== workspaceMenu) {
+  if (openMenu && openMenu !== workspaceMenu && openMenu !== accountMenu) {
     openMenu.classList.add('hidden');
   }
   if (workspaceMenu.classList.contains('hidden')) {
@@ -502,7 +502,7 @@ workspaceMenuButton?.addEventListener('click', (event) => {
 
 workspaceDropdownButton?.addEventListener('click', (event) => {
   event.stopPropagation();
-  if (openMenu && openMenu !== workspaceListEl) {
+  if (openMenu && openMenu !== workspaceListEl && openMenu !== accountMenu) {
     openMenu.classList.add('hidden');
   }
   if (workspaceListEl.classList.contains('hidden')) {

@@ -10,22 +10,6 @@
     <header class="app-header">
       <div class="header-left">
         <h1>BrianHub</h1>
-        <div class="header-workspace">
-          <div class="workspace-dropdown">
-            <button id="workspace-dropdown-button" class="workspace-dropdown-button" type="button">
-              Workspaces
-            </button>
-            <div id="workspace-list" class="workspace-list workspace-dropdown-list hidden"></div>
-          </div>
-          <div class="workspace-menu-wrapper">
-            <button id="workspace-menu-button" class="icon-button menu-icon workspace-menu-button" type="button" title="Workspace settings">⋯</button>
-            <div id="workspace-menu" class="workspace-menu hidden">
-              <button id="new-workspace-btn" class="workspace-menu-item" type="button">New</button>
-              <button id="manage-workspaces-btn" class="workspace-menu-item" type="button">Manage</button>
-              <button id="archived-workspaces-btn" class="workspace-menu-item" type="button">Archive</button>
-            </div>
-          </div>
-        </div>
       </div>
       <div class="sync-controls">
         <button id="sync-btn">Sync Now</button>
@@ -57,6 +41,26 @@
                   <span class="account-avatar large" id="account-profile-avatar">BJ</span>
                   <div class="account-profile-name" id="account-profile-name">Organization</div>
                   <div class="account-profile-email" id="account-profile-email">you@example.com</div>
+                </div>
+                <div class="account-divider"></div>
+                <div class="account-workspaces">
+                  <div class="account-menu-title">Workspaces</div>
+                  <div class="account-workspace-row">
+                    <div class="workspace-dropdown">
+                      <button id="workspace-dropdown-button" class="workspace-dropdown-button" type="button">
+                        Workspaces
+                      </button>
+                      <div id="workspace-list" class="workspace-list workspace-dropdown-list hidden"></div>
+                    </div>
+                    <div class="workspace-menu-wrapper">
+                      <button id="workspace-menu-button" class="icon-button menu-icon workspace-menu-button" type="button" title="Workspace settings">⋯</button>
+                      <div id="workspace-menu" class="workspace-menu hidden">
+                        <button id="new-workspace-btn" class="workspace-menu-item" type="button">New</button>
+                        <button id="manage-workspaces-btn" class="workspace-menu-item" type="button">Manage</button>
+                        <button id="archived-workspaces-btn" class="workspace-menu-item" type="button">Archive</button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div class="account-action-list">
                   <button id="account-admin" class="account-action" type="button">Admin console</button>

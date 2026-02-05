@@ -538,6 +538,26 @@ body {
   background: #0f141c;
 }
 
+.account-workspaces {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.account-workspace-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.account-workspaces .workspace-dropdown {
+  width: 100%;
+}
+
+.account-workspaces .workspace-dropdown-button {
+  width: 100%;
+}
+
 .account-profile {
   display: grid;
   justify-items: center;
