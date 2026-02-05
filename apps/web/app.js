@@ -7949,8 +7949,10 @@ function renderWorkflowList() {
     return;
   }
   workflowListEl.innerHTML = '';
+  const viewMode = getWorkflowViewMode();
+  const showAll = viewMode === 'manage';
   const workflows = getWorkflowsForWorkspace()
-    .filter(workflow => isWorkflowUsable(workflow.id));
+    .filter(workflow => showAll || isWorkflowUsable(workflow.id));
   let activeId = getActiveWorkflowId();
   if (activeId && !workflows.some(workflow => workflow.id === activeId)) {
     setActiveWorkflowId(null);
@@ -7959,7 +7961,7 @@ function renderWorkflowList() {
   if (!workflows.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = 'No workflows yet.';
+    empty.textContent = showAll ? 'No blueprints yet.' : 'No workflows yet.';
     workflowListEl.appendChild(empty);
     return;
   }
