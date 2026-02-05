@@ -3808,10 +3808,11 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
     const targetContainer = container.classList.contains('task-root-dropzone')
       ? taskTreeEl?.querySelector('.task-list')
       : container;
+    const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
     const originParent = draggingTaskOrigin?.parentId ?? null;
     const normalizedParent = parentId ? parentId : null;
     const movingToRoot = normalizedParent === null && originParent !== null;
-    const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
+    const movingBetweenRoots = normalizedParent === null && originParent === null && draggingEl && draggingEl.parentElement !== targetContainer;
     if (movingToRoot) {
       try {
         await reparentTaskRecord(draggingTaskId, null);
@@ -3823,7 +3824,7 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
         return;
       }
     }
-    if (draggingEl && targetContainer && (draggingEl.parentElement === targetContainer || movingToRoot)) {
+    if (draggingEl && targetContainer && (draggingEl.parentElement === targetContainer || movingToRoot || movingBetweenRoots)) {
       const addRow = targetContainer.querySelector('.task-add-task');
       if (addRow) {
         targetContainer.insertBefore(draggingEl, addRow);
