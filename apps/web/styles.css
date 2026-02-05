@@ -1359,6 +1359,52 @@ button:hover { opacity: 0.9; }
   margin-top: 1rem;
 }
 
+.workflow-manage-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.workflow-blueprint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.workflow-blueprint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: #0c1118;
+}
+
+.workflow-blueprint-row.active {
+  border-color: rgba(56, 217, 169, 0.6);
+  box-shadow: 0 0 0 1px rgba(56, 217, 169, 0.2);
+}
+
+.workflow-blueprint-name {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.workflow-blueprint-name:hover {
+  color: var(--accent);
+}
+
+.workflow-blueprint-menu {
+  position: relative;
+}
+
 .workflow-section {
   background: #0f141c;
   border: 1px solid var(--border);
