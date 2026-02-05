@@ -1548,6 +1548,28 @@ button:hover { opacity: 0.9; }
   gap: 0.5rem;
 }
 
+.task-menu-button {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.task-item:hover .task-menu-button,
+.task-item.menu-open .task-menu-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.task-title-input {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.4rem;
+  font-size: 0.95rem;
+  width: 100%;
+}
+
 .task-complete-button {
   background: #0f141c;
   color: var(--text);

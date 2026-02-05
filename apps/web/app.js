@@ -388,6 +388,7 @@ document.addEventListener('click', () => {
   if (openMenu) {
     openMenu.classList.add('hidden');
     openMenu = null;
+    document.querySelectorAll('.task-item.menu-open').forEach(item => item.classList.remove('menu-open'));
   }
 });
 
@@ -1826,6 +1827,54 @@ function isCanceledStatusKey(key) {
 
 function isWaitingStatusKey(key) {
   return getStatusKind(key) === TaskStatus.WAITING;
+}
+
+function requestInlineTaskEdit(taskId) {
+  state.ui = state.ui ?? {};
+  state.ui.inlineEditTaskId = taskId;
+}
+
+async function beginInlineTaskEdit(task, item, titleEl, { selectAll = true } = {}) {
+  if (!task || !item || !titleEl) return;
+  if (item.classList.contains('is-editing')) return;
+  item.classList.add('is-editing');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'task-title-input';
+  input.value = task.title ?? '';
+  titleEl.replaceWith(input);
+  input.focus();
+  if (selectAll) {
+    input.select();
+  } else {
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  const finish = async (apply) => {
+    if (!item.classList.contains('is-editing')) return;
+    item.classList.remove('is-editing');
+    const nextTitle = input.value.trim();
+    if (apply) {
+      if (nextTitle !== (task.title ?? '')) {
+        await updateTaskRecord(task.id, { title: nextTitle });
+      }
+    }
+    render();
+  };
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      finish(true);
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener('blur', () => {
+    finish(true);
+  });
 }
 
 function stringToHue(value) {
@@ -4259,6 +4308,49 @@ function getDirectTaskItems(container) {
   return Array.from(container.querySelectorAll(':scope > .task-item'));
 }
 
+function getGroupMetaForContainer(container) {
+  const mode = container?.dataset?.groupMode ?? null;
+  if (!mode) return null;
+  const raw = container.dataset.groupValue;
+  const value = raw !== undefined ? (raw || null) : null;
+  return { mode, value };
+}
+
+function getSelectedDragTaskIds(originParentId) {
+  const selected = getSelectedTaskIds();
+  if (!selected.includes(draggingTaskId)) return [draggingTaskId];
+  if (originParentId !== null) return [draggingTaskId];
+  const roots = selected.filter(id => (state.tasks?.[id]?.parent_id ?? null) === null);
+  if (roots.length <= 1) return [draggingTaskId];
+  const originContainer = draggingTaskEl?.parentElement;
+  if (originContainer) {
+    const ordered = Array.from(originContainer.querySelectorAll(':scope > .task-item'))
+      .map(el => el.dataset.taskId)
+      .filter(id => roots.includes(id));
+    return ordered.length ? ordered : roots;
+  }
+  return roots;
+}
+
+function getTaskElementsByIds(taskIds) {
+  return taskIds
+    .map(id => document.querySelector(`.task-item[data-task-id="${id}"]`))
+    .filter(Boolean);
+}
+
+function attachQuickAddClick(addInput, createFn) {
+  addInput.addEventListener('mousedown', async (event) => {
+    if (event.button !== 0) return;
+    if (addInput.value.trim()) return;
+    event.preventDefault();
+    const created = await createFn();
+    if (created?.id) {
+      requestInlineTaskEdit(created.id);
+      render();
+    }
+  });
+}
+
 async function persistTaskOrder(container, parentId, statusKey, groupMeta) {
   const items = getDirectTaskItems(container);
   const normalizedGroup = groupMeta?.value !== undefined ? (groupMeta.value || null) : undefined;
@@ -4358,6 +4450,7 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
       ? taskTreeEl?.querySelector('.task-list')
       : container;
     const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
+    const originContainer = draggingEl?.parentElement ?? null;
     const originParent = draggingTaskOrigin?.parentId ?? null;
     const normalizedParent = parentId ? parentId : null;
     const movingToRoot = normalizedParent === null && originParent !== null;
@@ -4375,15 +4468,33 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
     }
     if (draggingEl && targetContainer && (draggingEl.parentElement === targetContainer || movingToRoot || movingBetweenRoots)) {
       const addRow = targetContainer.querySelector('.task-add-task');
-      if (addRow) {
-        targetContainer.insertBefore(draggingEl, addRow);
+      const selectedIds = getSelectedDragTaskIds(originParent);
+      if (selectedIds.length > 1 && normalizedParent === null) {
+        const elements = getTaskElementsByIds(selectedIds);
+        elements.forEach(el => {
+          if (addRow) {
+            targetContainer.insertBefore(el, addRow);
+          } else {
+            targetContainer.appendChild(el);
+          }
+        });
       } else {
-        targetContainer.appendChild(draggingEl);
+        if (addRow) {
+          targetContainer.insertBefore(draggingEl, addRow);
+        } else {
+          targetContainer.appendChild(draggingEl);
+        }
       }
     }
     if (targetContainer) {
       const meta = groupMode ? { mode: groupMode, value: groupValue ?? null } : null;
       await persistTaskOrder(targetContainer, parentId, statusKey, meta);
+      if (originContainer && originContainer !== targetContainer) {
+        const originParentId = originContainer.dataset.parentId || null;
+        const originStatus = originContainer.dataset.statusKey || null;
+        const originMeta = getGroupMetaForContainer(originContainer);
+        await persistTaskOrder(originContainer, originParentId || null, originStatus || null, originMeta);
+      }
     }
   });
 }
@@ -4417,7 +4528,9 @@ function attachTaskDragHandlers(item, task) {
   });
   item.addEventListener('drop', async (event) => {
     if (!draggingTaskId || draggingColumnKey) return;
+    const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
     if (canReparentTask(task.id) && isSubtaskDropZone(event, item)) {
+      if (selectedIds.length > 1) return;
       event.preventDefault();
       item.classList.remove('drop-subtask');
       await handleSubtaskDrop(task.id);
@@ -4435,6 +4548,7 @@ function attachTaskDragHandlers(item, task) {
     event.preventDefault();
     const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
     if (!draggingEl || draggingEl === item) return;
+    const originContainer = draggingEl.parentElement;
     const originParent = draggingTaskOrigin?.parentId ?? null;
     const normalizedParent = parentId ? parentId : null;
     const movingToRoot = normalizedParent === null && originParent !== null;
@@ -4455,8 +4569,20 @@ function attachTaskDragHandlers(item, task) {
     }
     const rect = item.getBoundingClientRect();
     const insertAfter = event.clientY > rect.top + rect.height / 2;
-    container.insertBefore(draggingEl, insertAfter ? item.nextSibling : item);
+    if (selectedIds.length > 1 && normalizedParent === null) {
+      const elements = getTaskElementsByIds(selectedIds);
+      const referenceNode = insertAfter ? item.nextSibling : item;
+      elements.forEach(el => container.insertBefore(el, referenceNode));
+    } else {
+      container.insertBefore(draggingEl, insertAfter ? item.nextSibling : item);
+    }
     await persistTaskOrder(container, normalizedParent, statusKey ?? null, groupMeta);
+    if (originContainer && originContainer !== container) {
+      const originParentId = originContainer.dataset.parentId || null;
+      const originStatus = originContainer.dataset.statusKey || null;
+      const originMeta = getGroupMetaForContainer(originContainer);
+      await persistTaskOrder(originContainer, originParentId || null, originStatus || null, originMeta);
+    }
   });
 }
 
@@ -6118,6 +6244,7 @@ function renderTaskList(roots) {
       addInput.type = 'text';
       addInput.className = 'task-add-input';
       addInput.placeholder = 'Add task...';
+      attachQuickAddClick(addInput, () => createTaskRecord({ title: '', group_label: sectionLabel }));
       addInput.addEventListener('keydown', async (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
@@ -6235,6 +6362,7 @@ function renderTaskList(roots) {
       addInput.type = 'text';
       addInput.className = 'task-add-input';
       addInput.placeholder = 'Add task...';
+      attachQuickAddClick(addInput, () => createTaskRecord({ title: '' }));
       addInput.addEventListener('keydown', async (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
@@ -6349,6 +6477,7 @@ function renderTaskList(roots) {
   addInput.className = 'task-add-input';
   addInput.placeholder = 'Add task...';
   addInput.value = state.ui?.taskAddDraft ?? '';
+  attachQuickAddClick(addInput, () => createTaskRecord({ title: '' }));
   addInput.addEventListener('focus', () => {
     state.ui = state.ui ?? {};
     state.ui.taskAddFocused = true;
@@ -6994,6 +7123,12 @@ function renderTask(task) {
   const statusKey = task.status ?? getDefaultStatusKey();
 
   titleEl.textContent = task.title;
+  titleEl.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (event.button !== 0) return;
+    if (suppressTaskClick) return;
+    beginInlineTaskEdit(task, item, titleEl);
+  });
   item.dataset.status = statusKey;
   attachTaskDragHandlers(item, task);
   item.classList.toggle('is-selected', isTaskSelected(task.id));
@@ -7107,9 +7242,11 @@ function renderTask(task) {
     if (menu.classList.contains('hidden')) {
       menu.classList.remove('hidden');
       openMenu = menu;
+      item.classList.add('menu-open');
     } else {
       menu.classList.add('hidden');
       openMenu = null;
+      item.classList.remove('menu-open');
     }
   });
 
@@ -7178,6 +7315,7 @@ function renderTask(task) {
       }
       menu.classList.add('hidden');
       openMenu = null;
+      item.classList.remove('menu-open');
     });
   });
 
@@ -7189,6 +7327,11 @@ function renderTask(task) {
       item.classList.add('hidden');
     }
   });
+
+  if (state.ui?.inlineEditTaskId === task.id) {
+    state.ui.inlineEditTaskId = null;
+    beginInlineTaskEdit(task, item, titleEl, { selectAll: true });
+  }
 
   task.children.forEach(child => childrenEl.appendChild(renderTask(child)));
 
