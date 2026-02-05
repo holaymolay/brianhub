@@ -7989,18 +7989,20 @@ function renderWorkflowList() {
   }
   workflowListEl.innerHTML = '';
   const viewMode = getWorkflowViewMode();
-  const showAll = viewMode === 'manage';
-  const workflows = getWorkflowsForWorkspace()
-    .filter(workflow => showAll || isWorkflowUsable(workflow.id));
+  const workflows = getWorkflowsForWorkspace();
   let activeId = getActiveWorkflowId();
   if (activeId && !workflows.some(workflow => workflow.id === activeId)) {
     setActiveWorkflowId(null);
     activeId = null;
   }
+  if (!activeId && workflows.length && viewMode === 'manage') {
+    setActiveWorkflowId(workflows[0].id);
+    activeId = workflows[0].id;
+  }
   if (!workflows.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = showAll ? 'No blueprints yet.' : 'No workflows yet.';
+    empty.textContent = 'No workflows yet.';
     workflowListEl.appendChild(empty);
     return;
   }
@@ -8014,7 +8016,9 @@ function renderWorkflowList() {
     selectBtn.className = 'workspace-select';
     selectBtn.textContent = workflow.name;
     selectBtn.addEventListener('click', () => {
-      setWorkflowViewMode('runs');
+      const activeView = getActiveView();
+      const nextMode = activeView === 'workflows' && viewMode === 'manage' ? 'manage' : 'runs';
+      setWorkflowViewMode(nextMode);
       setWorkflowInstanceFilter('open');
       setActiveWorkflowId(workflow.id);
       setActiveView('workflows');
