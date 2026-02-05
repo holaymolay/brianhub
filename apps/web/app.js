@@ -776,6 +776,7 @@ noticesAddBtn?.addEventListener('click', () => {
   openNoticeModal();
 });
 workflowsOpenBtn?.addEventListener('click', () => {
+  setWorkflowViewMode('runs');
   setActiveView('workflows');
   render();
 });
@@ -835,6 +836,7 @@ workflowDeleteBtn?.addEventListener('click', () => {
 });
 
 workflowInstanceAddBtn?.addEventListener('click', () => {
+  setWorkflowViewMode('manage');
   openWorkflowModal();
 });
 
@@ -1076,6 +1078,7 @@ workflowSidebarMenuButton?.addEventListener('click', (event) => {
     openMenu.classList.add('hidden');
     openMenu = null;
   }
+  setWorkflowViewMode('manage');
   setActiveView('workflows');
   render();
 });
@@ -1407,6 +1410,15 @@ function getWorkflowInstanceFilter() {
 function setWorkflowInstanceFilter(value) {
   state.ui = state.ui ?? {};
   state.ui.workflowInstanceFilter = value;
+}
+
+function getWorkflowViewMode() {
+  return state.ui?.workflowViewMode ?? 'runs';
+}
+
+function setWorkflowViewMode(mode) {
+  state.ui = state.ui ?? {};
+  state.ui.workflowViewMode = mode;
 }
 
 function getNextWorkflowSortOrder(items) {
@@ -5772,20 +5784,30 @@ function renderWorkflowsPage() {
   if (!workflowDetailEl) return;
   workflowDetailEl.innerHTML = '';
   const workflow = getWorkflowById(getActiveWorkflowId());
+  const viewMode = getWorkflowViewMode();
+  const isManageView = viewMode === 'manage';
   if (!workflow || !state.workspace) {
-    if (workflowPageTitle) workflowPageTitle.textContent = 'Manage Workflows';
-    if (workflowPageSubtitle) workflowPageSubtitle.textContent = 'Select a blueprint to manage.';
-    workflowInstanceAddBtn?.classList.remove('hidden');
+    if (workflowPageTitle) workflowPageTitle.textContent = isManageView ? 'Manage Workflows' : 'Workflows';
+    if (workflowPageSubtitle) {
+      workflowPageSubtitle.textContent = isManageView
+        ? 'Select a blueprint to manage.'
+        : 'Select a workflow to view runs.';
+    }
+    workflowInstanceAddBtn?.classList.toggle('hidden', !isManageView);
     workflowMenuButton?.classList.add('hidden');
     workflowMenu?.classList.add('hidden');
     return;
   }
 
-  workflowInstanceAddBtn?.classList.remove('hidden');
-  workflowMenuButton?.classList.remove('hidden');
-  if (workflowPageTitle) workflowPageTitle.textContent = `${workflow.name} Blueprint`;
+  workflowInstanceAddBtn?.classList.toggle('hidden', !isManageView);
+  workflowMenuButton?.classList.toggle('hidden', !isManageView);
+  if (workflowPageTitle) {
+    workflowPageTitle.textContent = isManageView ? `${workflow.name} Blueprint` : workflow.name;
+  }
   if (workflowPageSubtitle) {
-    workflowPageSubtitle.textContent = workflow.description || 'Define types, phases, and tasks for this blueprint.';
+    workflowPageSubtitle.textContent = isManageView
+      ? (workflow.description || 'Define types, phases, and tasks for this blueprint.')
+      : 'Workflow runs';
   }
 
   const variants = getWorkflowVariants(workflow.id);
@@ -5798,332 +5820,334 @@ function renderWorkflowsPage() {
     setActiveWorkflowVariantId(activeVariantId);
   }
 
-  const builderSection = document.createElement('div');
-  builderSection.className = 'workflow-section';
-  const builderTitle = document.createElement('h3');
-  builderTitle.textContent = 'Blueprint Builder';
-  builderSection.appendChild(builderTitle);
+  if (isManageView) {
+    const builderSection = document.createElement('div');
+    builderSection.className = 'workflow-section';
+    const builderTitle = document.createElement('h3');
+    builderTitle.textContent = 'Blueprint Builder';
+    builderSection.appendChild(builderTitle);
 
-  const variantControls = document.createElement('div');
-  variantControls.className = 'workflow-variant-controls';
-  const variantSelect = document.createElement('select');
-  variantSelect.className = 'workflow-variant-select';
-  if (!variants.length) {
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = 'No types yet';
-    variantSelect.appendChild(placeholder);
-  } else {
-    variants.forEach(variant => {
-      const option = document.createElement('option');
-      option.value = variant.id;
-      option.textContent = variant.name;
-      variantSelect.appendChild(option);
-    });
-  }
-  variantSelect.value = activeVariantId ?? '';
-  variantSelect.addEventListener('change', () => {
-    setActiveWorkflowVariantId(variantSelect.value || null);
-    render();
-  });
-  variantControls.appendChild(variantSelect);
-
-  if (activeVariantId) {
-    const renameBtn = document.createElement('button');
-    renameBtn.type = 'button';
-    renameBtn.className = 'subtle-button';
-    renameBtn.textContent = 'Rename type';
-    renameBtn.addEventListener('click', () => {
-      const variant = variants.find(item => item.id === activeVariantId);
-      if (!variant) return;
-      const nextName = prompt('Type name', variant.name);
-      if (!nextName) return;
-      const trimmed = nextName.trim();
-      if (!trimmed || trimmed === variant.name) return;
-      updateWorkflowVariantRecord(variant.id, { name: trimmed });
-      render();
-    });
-    variantControls.appendChild(renameBtn);
-
-    const duplicateBtn = document.createElement('button');
-    duplicateBtn.type = 'button';
-    duplicateBtn.className = 'subtle-button';
-    duplicateBtn.textContent = 'Duplicate type';
-    duplicateBtn.addEventListener('click', () => {
-      const nextVariant = duplicateWorkflowVariantRecord(activeVariantId);
-      if (!nextVariant) return;
-      setActiveWorkflowVariantId(nextVariant.id);
-      render();
-    });
-    variantControls.appendChild(duplicateBtn);
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'danger-button';
-    deleteBtn.textContent = 'Delete type';
-    deleteBtn.addEventListener('click', () => {
-      const variant = variants.find(item => item.id === activeVariantId);
-      if (!variant) return;
-      const confirmed = confirm(`Delete type "${variant.name}"? Existing workflows will lose their template reference.`);
-      if (!confirmed) return;
-      deleteWorkflowVariantRecord(variant.id);
-      setActiveWorkflowVariantId(null);
-      render();
-    });
-    variantControls.appendChild(deleteBtn);
-  }
-
-  builderSection.appendChild(variantControls);
-
-  const addVariantRow = document.createElement('div');
-  addVariantRow.className = 'workflow-add-row';
-  const addVariantInput = document.createElement('input');
-  addVariantInput.type = 'text';
-  addVariantInput.placeholder = 'Add type...';
-  addVariantInput.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    const name = addVariantInput.value.trim();
-    if (!name) return;
-    const variant = createWorkflowVariantRecord(workflow.id, name);
-    if (variant) {
-      setActiveWorkflowVariantId(variant.id);
-      addVariantInput.value = '';
-      render();
+    const variantControls = document.createElement('div');
+    variantControls.className = 'workflow-variant-controls';
+    const variantSelect = document.createElement('select');
+    variantSelect.className = 'workflow-variant-select';
+    if (!variants.length) {
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'No types yet';
+      variantSelect.appendChild(placeholder);
+    } else {
+      variants.forEach(variant => {
+        const option = document.createElement('option');
+        option.value = variant.id;
+        option.textContent = variant.name;
+        variantSelect.appendChild(option);
+      });
     }
-  });
-  addVariantRow.appendChild(addVariantInput);
-  builderSection.appendChild(addVariantRow);
-
-  if (!activeVariantId) {
-    const empty = document.createElement('div');
-    empty.className = 'sidebar-note';
-    empty.textContent = 'Add a type to define phases and tasks.';
-    builderSection.appendChild(empty);
-  } else {
-    const phaseList = document.createElement('div');
-    phaseList.className = 'workflow-phase-list';
-    const variantPhases = getWorkflowVariantPhases(activeVariantId);
-    const taskOptions = [];
-    variantPhases.forEach(entry => {
-      const tasks = getWorkflowPhaseTasks(entry.phase.id);
-      tasks.forEach(task => {
-        taskOptions.push({
-          id: task.id,
-          label: `${entry.phase.name} · ${task.title}`
-        });
-      });
+    variantSelect.value = activeVariantId ?? '';
+    variantSelect.addEventListener('change', () => {
+      setActiveWorkflowVariantId(variantSelect.value || null);
+      render();
     });
+    variantControls.appendChild(variantSelect);
 
-    variantPhases.forEach(entry => {
-      const phase = entry.phase;
-      const phaseCard = document.createElement('div');
-      phaseCard.className = 'workflow-phase';
-
-      const header = document.createElement('div');
-      header.className = 'workflow-phase-header';
-      const nameInput = document.createElement('input');
-      nameInput.type = 'text';
-      nameInput.value = phase.name;
-      nameInput.addEventListener('change', () => {
-        const trimmed = nameInput.value.trim();
-        if (!trimmed || trimmed === phase.name) {
-          nameInput.value = phase.name;
-          return;
-        }
-        updateWorkflowPhaseRecord(phase.id, { name: trimmed });
+    if (activeVariantId) {
+      const renameBtn = document.createElement('button');
+      renameBtn.type = 'button';
+      renameBtn.className = 'subtle-button';
+      renameBtn.textContent = 'Rename type';
+      renameBtn.addEventListener('click', () => {
+        const variant = variants.find(item => item.id === activeVariantId);
+        if (!variant) return;
+        const nextName = prompt('Type name', variant.name);
+        if (!nextName) return;
+        const trimmed = nextName.trim();
+        if (!trimmed || trimmed === variant.name) return;
+        updateWorkflowVariantRecord(variant.id, { name: trimmed });
         render();
       });
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'icon-button';
-      removeBtn.textContent = '✕';
-      removeBtn.title = 'Remove phase';
-      removeBtn.addEventListener('click', () => {
-        const confirmed = confirm(`Remove phase "${phase.name}" from this type?`);
+      variantControls.appendChild(renameBtn);
+
+      const duplicateBtn = document.createElement('button');
+      duplicateBtn.type = 'button';
+      duplicateBtn.className = 'subtle-button';
+      duplicateBtn.textContent = 'Duplicate type';
+      duplicateBtn.addEventListener('click', () => {
+        const nextVariant = duplicateWorkflowVariantRecord(activeVariantId);
+        if (!nextVariant) return;
+        setActiveWorkflowVariantId(nextVariant.id);
+        render();
+      });
+      variantControls.appendChild(duplicateBtn);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'danger-button';
+      deleteBtn.textContent = 'Delete type';
+      deleteBtn.addEventListener('click', () => {
+        const variant = variants.find(item => item.id === activeVariantId);
+        if (!variant) return;
+        const confirmed = confirm(`Delete type "${variant.name}"? Existing workflows will lose their template reference.`);
         if (!confirmed) return;
-        unlinkWorkflowVariantPhase(activeVariantId, phase.id);
+        deleteWorkflowVariantRecord(variant.id);
+        setActiveWorkflowVariantId(null);
         render();
       });
-      header.appendChild(nameInput);
-      header.appendChild(removeBtn);
-      phaseCard.appendChild(header);
+      variantControls.appendChild(deleteBtn);
+    }
 
-      const taskList = document.createElement('div');
-      const phaseTasks = getWorkflowPhaseTasks(phase.id);
-      if (!phaseTasks.length) {
-        const empty = document.createElement('div');
-        empty.className = 'sidebar-note';
-        empty.textContent = 'No tasks yet.';
-        taskList.appendChild(empty);
-      }
-      phaseTasks.forEach(task => {
-        const row = document.createElement('div');
-        row.className = 'workflow-task-row';
-        const titleInput = document.createElement('input');
-        titleInput.type = 'text';
-        titleInput.value = task.title;
-        titleInput.addEventListener('change', () => {
-          const trimmed = titleInput.value.trim();
-          if (!trimmed || trimmed === task.title) {
-            titleInput.value = task.title;
-            return;
-          }
-          updateWorkflowPhaseTaskRecord(task.id, { title: trimmed });
-          render();
-        });
-        row.appendChild(titleInput);
+    builderSection.appendChild(variantControls);
 
-        const depSelect = document.createElement('select');
-        depSelect.className = 'workflow-task-dep';
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = 'Depends on...';
-        depSelect.appendChild(placeholder);
-        taskOptions.forEach(option => {
-          if (option.id === task.id) return;
-          const opt = document.createElement('option');
-          opt.value = option.id;
-          opt.textContent = option.label;
-          depSelect.appendChild(opt);
-        });
-        depSelect.value = task.depends_on_ids?.[0] ?? '';
-        depSelect.addEventListener('change', () => {
-          const value = depSelect.value;
-          updateWorkflowPhaseTaskRecord(task.id, { depends_on_ids: value ? [value] : [] });
-          render();
-        });
-        row.appendChild(depSelect);
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.type = 'button';
-        deleteBtn.className = 'icon-button';
-        deleteBtn.textContent = '✕';
-        deleteBtn.title = 'Delete task';
-        deleteBtn.addEventListener('click', () => {
-          const confirmed = confirm(`Delete task "${task.title}"?`);
-          if (!confirmed) return;
-          deleteWorkflowPhaseTaskRecord(task.id);
-          render();
-        });
-        row.appendChild(deleteBtn);
-        taskList.appendChild(row);
-      });
-
-      const addTaskRow = document.createElement('div');
-      addTaskRow.className = 'workflow-add-row';
-      const addTaskInput = document.createElement('input');
-      addTaskInput.type = 'text';
-      addTaskInput.placeholder = 'Add task...';
-      addTaskInput.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter') return;
-        event.preventDefault();
-        const name = addTaskInput.value.trim();
-        if (!name) return;
-        createWorkflowPhaseTaskRecord(phase.id, name);
-        addTaskInput.value = '';
-        render();
-      });
-      addTaskRow.appendChild(addTaskInput);
-      phaseCard.appendChild(taskList);
-      phaseCard.appendChild(addTaskRow);
-      phaseList.appendChild(phaseCard);
-    });
-
-    const addPhaseRow = document.createElement('div');
-    addPhaseRow.className = 'workflow-add-row';
-    const addPhaseInput = document.createElement('input');
-    addPhaseInput.type = 'text';
-    addPhaseInput.placeholder = 'Add phase...';
-    addPhaseInput.addEventListener('keydown', (event) => {
+    const addVariantRow = document.createElement('div');
+    addVariantRow.className = 'workflow-add-row';
+    const addVariantInput = document.createElement('input');
+    addVariantInput.type = 'text';
+    addVariantInput.placeholder = 'Add type...';
+    addVariantInput.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') return;
       event.preventDefault();
-      const name = addPhaseInput.value.trim();
+      const name = addVariantInput.value.trim();
       if (!name) return;
-      const existing = getWorkflowPhases(workflow.id)
-        .find(phase => phase.name.toLowerCase() === name.toLowerCase());
-      const phase = existing ?? createWorkflowPhaseRecord(workflow.id, name);
-      if (phase) {
-        linkWorkflowVariantPhase(activeVariantId, phase.id);
-        addPhaseInput.value = '';
+      const variant = createWorkflowVariantRecord(workflow.id, name);
+      if (variant) {
+        setActiveWorkflowVariantId(variant.id);
+        addVariantInput.value = '';
         render();
       }
     });
-    addPhaseRow.appendChild(addPhaseInput);
-    phaseList.appendChild(addPhaseRow);
+    addVariantRow.appendChild(addVariantInput);
+    builderSection.appendChild(addVariantRow);
 
-    const copyPhaseRow = document.createElement('div');
-    copyPhaseRow.className = 'workflow-copy-row';
-    const sourceBlueprints = getWorkflowsForWorkspace()
-      .filter(item => item.id !== workflow.id);
-    if (!sourceBlueprints.length) {
-      const note = document.createElement('div');
-      note.className = 'sidebar-note';
-      note.textContent = 'No other blueprints to copy phases from.';
-      copyPhaseRow.appendChild(note);
+    if (!activeVariantId) {
+      const empty = document.createElement('div');
+      empty.className = 'sidebar-note';
+      empty.textContent = 'Add a type to define phases and tasks.';
+      builderSection.appendChild(empty);
     } else {
-      const sourceSelect = document.createElement('select');
-      sourceSelect.className = 'workflow-copy-select';
-      sourceBlueprints.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item.id;
-        option.textContent = item.name;
-        sourceSelect.appendChild(option);
+      const phaseList = document.createElement('div');
+      phaseList.className = 'workflow-phase-list';
+      const variantPhases = getWorkflowVariantPhases(activeVariantId);
+      const taskOptions = [];
+      variantPhases.forEach(entry => {
+        const tasks = getWorkflowPhaseTasks(entry.phase.id);
+        tasks.forEach(task => {
+          taskOptions.push({
+            id: task.id,
+            label: `${entry.phase.name} · ${task.title}`
+          });
+        });
       });
 
-      const phaseSelect = document.createElement('select');
-      phaseSelect.className = 'workflow-copy-select';
+      variantPhases.forEach(entry => {
+        const phase = entry.phase;
+        const phaseCard = document.createElement('div');
+        phaseCard.className = 'workflow-phase';
 
-      const populatePhaseOptions = (sourceId) => {
-        phaseSelect.innerHTML = '';
-        const phases = getWorkflowPhases(sourceId);
-        if (!phases.length) {
-          const option = document.createElement('option');
-          option.value = '';
-          option.textContent = 'No phases available';
-          phaseSelect.appendChild(option);
-          return;
+        const header = document.createElement('div');
+        header.className = 'workflow-phase-header';
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = phase.name;
+        nameInput.addEventListener('change', () => {
+          const trimmed = nameInput.value.trim();
+          if (!trimmed || trimmed === phase.name) {
+            nameInput.value = phase.name;
+            return;
+          }
+          updateWorkflowPhaseRecord(phase.id, { name: trimmed });
+          render();
+        });
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'icon-button';
+        removeBtn.textContent = '✕';
+        removeBtn.title = 'Remove phase';
+        removeBtn.addEventListener('click', () => {
+          const confirmed = confirm(`Remove phase "${phase.name}" from this type?`);
+          if (!confirmed) return;
+          unlinkWorkflowVariantPhase(activeVariantId, phase.id);
+          render();
+        });
+        header.appendChild(nameInput);
+        header.appendChild(removeBtn);
+        phaseCard.appendChild(header);
+
+        const taskList = document.createElement('div');
+        const phaseTasks = getWorkflowPhaseTasks(phase.id);
+        if (!phaseTasks.length) {
+          const empty = document.createElement('div');
+          empty.className = 'sidebar-note';
+          empty.textContent = 'No tasks yet.';
+          taskList.appendChild(empty);
         }
-        phases.forEach(phase => {
+        phaseTasks.forEach(task => {
+          const row = document.createElement('div');
+          row.className = 'workflow-task-row';
+          const titleInput = document.createElement('input');
+          titleInput.type = 'text';
+          titleInput.value = task.title;
+          titleInput.addEventListener('change', () => {
+            const trimmed = titleInput.value.trim();
+            if (!trimmed || trimmed === task.title) {
+              titleInput.value = task.title;
+              return;
+            }
+            updateWorkflowPhaseTaskRecord(task.id, { title: trimmed });
+            render();
+          });
+          row.appendChild(titleInput);
+
+          const depSelect = document.createElement('select');
+          depSelect.className = 'workflow-task-dep';
+          const placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'Depends on...';
+          depSelect.appendChild(placeholder);
+          taskOptions.forEach(option => {
+            if (option.id === task.id) return;
+            const opt = document.createElement('option');
+            opt.value = option.id;
+            opt.textContent = option.label;
+            depSelect.appendChild(opt);
+          });
+          depSelect.value = task.depends_on_ids?.[0] ?? '';
+          depSelect.addEventListener('change', () => {
+            const value = depSelect.value;
+            updateWorkflowPhaseTaskRecord(task.id, { depends_on_ids: value ? [value] : [] });
+            render();
+          });
+          row.appendChild(depSelect);
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'icon-button';
+          deleteBtn.textContent = '✕';
+          deleteBtn.title = 'Delete task';
+          deleteBtn.addEventListener('click', () => {
+            const confirmed = confirm(`Delete task "${task.title}"?`);
+            if (!confirmed) return;
+            deleteWorkflowPhaseTaskRecord(task.id);
+            render();
+          });
+          row.appendChild(deleteBtn);
+          taskList.appendChild(row);
+        });
+
+        const addTaskRow = document.createElement('div');
+        addTaskRow.className = 'workflow-add-row';
+        const addTaskInput = document.createElement('input');
+        addTaskInput.type = 'text';
+        addTaskInput.placeholder = 'Add task...';
+        addTaskInput.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          const name = addTaskInput.value.trim();
+          if (!name) return;
+          createWorkflowPhaseTaskRecord(phase.id, name);
+          addTaskInput.value = '';
+          render();
+        });
+        addTaskRow.appendChild(addTaskInput);
+        phaseCard.appendChild(taskList);
+        phaseCard.appendChild(addTaskRow);
+        phaseList.appendChild(phaseCard);
+      });
+
+      const addPhaseRow = document.createElement('div');
+      addPhaseRow.className = 'workflow-add-row';
+      const addPhaseInput = document.createElement('input');
+      addPhaseInput.type = 'text';
+      addPhaseInput.placeholder = 'Add phase...';
+      addPhaseInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const name = addPhaseInput.value.trim();
+        if (!name) return;
+        const existing = getWorkflowPhases(workflow.id)
+          .find(phase => phase.name.toLowerCase() === name.toLowerCase());
+        const phase = existing ?? createWorkflowPhaseRecord(workflow.id, name);
+        if (phase) {
+          linkWorkflowVariantPhase(activeVariantId, phase.id);
+          addPhaseInput.value = '';
+          render();
+        }
+      });
+      addPhaseRow.appendChild(addPhaseInput);
+      phaseList.appendChild(addPhaseRow);
+
+      const copyPhaseRow = document.createElement('div');
+      copyPhaseRow.className = 'workflow-copy-row';
+      const sourceBlueprints = getWorkflowsForWorkspace()
+        .filter(item => item.id !== workflow.id);
+      if (!sourceBlueprints.length) {
+        const note = document.createElement('div');
+        note.className = 'sidebar-note';
+        note.textContent = 'No other blueprints to copy phases from.';
+        copyPhaseRow.appendChild(note);
+      } else {
+        const sourceSelect = document.createElement('select');
+        sourceSelect.className = 'workflow-copy-select';
+        sourceBlueprints.forEach(item => {
           const option = document.createElement('option');
-          option.value = phase.id;
-          option.textContent = phase.name;
-          phaseSelect.appendChild(option);
+          option.value = item.id;
+          option.textContent = item.name;
+          sourceSelect.appendChild(option);
         });
-      };
 
-      populatePhaseOptions(sourceSelect.value);
-      sourceSelect.addEventListener('change', () => {
+        const phaseSelect = document.createElement('select');
+        phaseSelect.className = 'workflow-copy-select';
+
+        const populatePhaseOptions = (sourceId) => {
+          phaseSelect.innerHTML = '';
+          const phases = getWorkflowPhases(sourceId);
+          if (!phases.length) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No phases available';
+            phaseSelect.appendChild(option);
+            return;
+          }
+          phases.forEach(phase => {
+            const option = document.createElement('option');
+            option.value = phase.id;
+            option.textContent = phase.name;
+            phaseSelect.appendChild(option);
+          });
+        };
+
         populatePhaseOptions(sourceSelect.value);
-      });
-
-      const copyBtn = document.createElement('button');
-      copyBtn.type = 'button';
-      copyBtn.className = 'subtle-button';
-      copyBtn.textContent = 'Copy phase';
-      copyBtn.addEventListener('click', () => {
-        const sourceId = sourceSelect.value;
-        const phaseId = phaseSelect.value;
-        if (!sourceId || !phaseId) return;
-        copyWorkflowPhaseToBlueprint({
-          sourceWorkflowId: sourceId,
-          phaseId,
-          targetWorkflowId: workflow.id,
-          targetVariantId: activeVariantId
+        sourceSelect.addEventListener('change', () => {
+          populatePhaseOptions(sourceSelect.value);
         });
-        render();
-      });
 
-      copyPhaseRow.appendChild(sourceSelect);
-      copyPhaseRow.appendChild(phaseSelect);
-      copyPhaseRow.appendChild(copyBtn);
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'subtle-button';
+        copyBtn.textContent = 'Copy phase';
+        copyBtn.addEventListener('click', () => {
+          const sourceId = sourceSelect.value;
+          const phaseId = phaseSelect.value;
+          if (!sourceId || !phaseId) return;
+          copyWorkflowPhaseToBlueprint({
+            sourceWorkflowId: sourceId,
+            phaseId,
+            targetWorkflowId: workflow.id,
+            targetVariantId: activeVariantId
+          });
+          render();
+        });
+
+        copyPhaseRow.appendChild(sourceSelect);
+        copyPhaseRow.appendChild(phaseSelect);
+        copyPhaseRow.appendChild(copyBtn);
+      }
+
+      phaseList.appendChild(copyPhaseRow);
+      builderSection.appendChild(phaseList);
     }
 
-    phaseList.appendChild(copyPhaseRow);
-    builderSection.appendChild(phaseList);
+    workflowDetailEl.appendChild(builderSection);
   }
-
-  workflowDetailEl.appendChild(builderSection);
 
   const instanceSection = document.createElement('div');
   instanceSection.className = 'workflow-section';
@@ -6134,7 +6158,7 @@ function renderWorkflowsPage() {
   const runBtn = document.createElement('button');
   runBtn.type = 'button';
   runBtn.className = 'subtle-button';
-  runBtn.textContent = 'Start workflow';
+  runBtn.textContent = `New ${workflow.name}`;
   runBtn.disabled = !isWorkflowUsable(workflow.id);
   runBtn.title = runBtn.disabled ? 'Add a type with tasks to run this blueprint.' : 'Start a workflow';
   runBtn.addEventListener('click', () => {
@@ -7949,20 +7973,11 @@ function renderWorkflowList() {
     selectBtn.className = 'workspace-select';
     selectBtn.textContent = workflow.name;
     selectBtn.addEventListener('click', () => {
-      const currentView = getActiveView();
+      setWorkflowViewMode('runs');
+      setWorkflowInstanceFilter('open');
       setActiveWorkflowId(workflow.id);
-      if (currentView === 'workflows') {
-        render();
-        return;
-      }
-      const variants = getWorkflowVariants(workflow.id);
-      if (!variants.length) {
-        setActiveView('workflows');
-        render();
-        alert('Add a type to this blueprint before starting a workflow.');
-        return;
-      }
-      openWorkflowInstanceModal();
+      setActiveView('workflows');
+      render();
     });
 
     row.appendChild(selectBtn);
