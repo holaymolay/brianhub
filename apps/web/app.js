@@ -105,8 +105,6 @@ const workflowsOpenBtn = document.getElementById('workflows-open');
 const workflowListEl = document.getElementById('workflow-list');
 const newWorkflowBtn = document.getElementById('new-workflow-btn');
 const workflowSidebarMenuButton = document.getElementById('workflow-sidebar-menu-button');
-const workflowSidebarMenu = document.getElementById('workflow-sidebar-menu');
-const showDraftWorkflowsToggle = document.getElementById('show-draft-workflows');
 const shoppingListListEl = document.getElementById('shopping-list-list');
 const newShoppingListBtn = document.getElementById('new-shopping-list-btn');
 const noticeListEl = document.getElementById('notice-list');
@@ -820,7 +818,7 @@ workflowRenameBtn?.addEventListener('click', () => {
 workflowDeleteBtn?.addEventListener('click', () => {
   const workflow = getWorkflowById(getActiveWorkflowId());
   if (!workflow) return;
-  const confirmed = confirm(`Delete workflow "${workflow.name}"? Instances will be removed, tasks will remain.`);
+  const confirmed = confirm(`Delete blueprint "${workflow.name}"? Workflows will be removed, tasks will remain.`);
   if (!confirmed) return;
   workflowMenu?.classList.add('hidden');
   openMenu = null;
@@ -831,7 +829,7 @@ workflowDeleteBtn?.addEventListener('click', () => {
 });
 
 workflowInstanceAddBtn?.addEventListener('click', () => {
-  openWorkflowInstanceModal();
+  openWorkflowModal();
 });
 
 noticeCancel?.addEventListener('click', closeNoticeModal);
@@ -1068,24 +1066,11 @@ shoppingListSidebarMenu?.addEventListener('click', (event) => {
 
 workflowSidebarMenuButton?.addEventListener('click', (event) => {
   event.stopPropagation();
-  if (openMenu && openMenu !== workflowSidebarMenu) {
+  if (openMenu) {
     openMenu.classList.add('hidden');
-  }
-  if (workflowSidebarMenu?.classList.contains('hidden')) {
-    workflowSidebarMenu.classList.remove('hidden');
-    openMenu = workflowSidebarMenu;
-  } else {
-    workflowSidebarMenu?.classList.add('hidden');
     openMenu = null;
   }
-});
-
-workflowSidebarMenu?.addEventListener('click', (event) => {
-  event.stopPropagation();
-});
-
-showDraftWorkflowsToggle?.addEventListener('change', () => {
-  setShowDraftWorkflows(showDraftWorkflowsToggle.checked);
+  setActiveView('workflows');
   render();
 });
 
@@ -1341,15 +1326,6 @@ function setActiveWorkflowVariantId(id) {
 
 function getActiveWorkflowVariantId() {
   return state.ui?.activeWorkflowVariantId ?? null;
-}
-
-function getShowDraftWorkflows() {
-  return Boolean(state.ui?.showDraftWorkflows);
-}
-
-function setShowDraftWorkflows(value) {
-  state.ui = state.ui ?? {};
-  state.ui.showDraftWorkflows = Boolean(value);
 }
 
 function getNextWorkflowSortOrder(items) {
@@ -5597,9 +5573,9 @@ function renderWorkflowsPage() {
   workflowDetailEl.innerHTML = '';
   const workflow = getWorkflowById(getActiveWorkflowId());
   if (!workflow || !state.workspace) {
-    if (workflowPageTitle) workflowPageTitle.textContent = 'Workflows';
-    if (workflowPageSubtitle) workflowPageSubtitle.textContent = 'Select a workflow to view details.';
-    workflowInstanceAddBtn?.classList.add('hidden');
+    if (workflowPageTitle) workflowPageTitle.textContent = 'Manage Workflows';
+    if (workflowPageSubtitle) workflowPageSubtitle.textContent = 'Select a blueprint to manage.';
+    workflowInstanceAddBtn?.classList.remove('hidden');
     workflowMenuButton?.classList.add('hidden');
     workflowMenu?.classList.add('hidden');
     return;
@@ -5607,15 +5583,12 @@ function renderWorkflowsPage() {
 
   workflowInstanceAddBtn?.classList.remove('hidden');
   workflowMenuButton?.classList.remove('hidden');
-  if (workflowPageTitle) workflowPageTitle.textContent = workflow.name;
+  if (workflowPageTitle) workflowPageTitle.textContent = `${workflow.name} Blueprint`;
   if (workflowPageSubtitle) {
-    workflowPageSubtitle.textContent = workflow.description || 'Build types, phases, and tasks.';
+    workflowPageSubtitle.textContent = workflow.description || 'Define types, phases, and tasks for this blueprint.';
   }
 
   const variants = getWorkflowVariants(workflow.id);
-  if (workflowInstanceAddBtn) {
-    workflowInstanceAddBtn.disabled = !variants.length;
-  }
   let activeVariantId = getActiveWorkflowVariantId();
   if (activeVariantId && !variants.some(variant => variant.id === activeVariantId)) {
     activeVariantId = null;
@@ -5628,7 +5601,7 @@ function renderWorkflowsPage() {
   const builderSection = document.createElement('div');
   builderSection.className = 'workflow-section';
   const builderTitle = document.createElement('h3');
-  builderTitle.textContent = 'Builder';
+  builderTitle.textContent = 'Blueprint Builder';
   builderSection.appendChild(builderTitle);
 
   const variantControls = document.createElement('div');
@@ -5679,7 +5652,7 @@ function renderWorkflowsPage() {
     deleteBtn.addEventListener('click', () => {
       const variant = variants.find(item => item.id === activeVariantId);
       if (!variant) return;
-      const confirmed = confirm(`Delete type "${variant.name}"? Existing instances will lose their template reference.`);
+      const confirmed = confirm(`Delete type "${variant.name}"? Existing workflows will lose their template reference.`);
       if (!confirmed) return;
       deleteWorkflowVariantRecord(variant.id);
       setActiveWorkflowVariantId(null);
@@ -5873,14 +5846,27 @@ function renderWorkflowsPage() {
 
   const instanceSection = document.createElement('div');
   instanceSection.className = 'workflow-section';
+  const instanceHeader = document.createElement('div');
+  instanceHeader.className = 'workflow-section-header';
   const instanceTitle = document.createElement('h3');
-  instanceTitle.textContent = 'Instances';
-  instanceSection.appendChild(instanceTitle);
+  instanceTitle.textContent = 'Workflows';
+  const runBtn = document.createElement('button');
+  runBtn.type = 'button';
+  runBtn.className = 'subtle-button';
+  runBtn.textContent = 'Start workflow';
+  runBtn.disabled = !isWorkflowUsable(workflow.id);
+  runBtn.title = runBtn.disabled ? 'Add a type with tasks to run this blueprint.' : 'Start a workflow';
+  runBtn.addEventListener('click', () => {
+    openWorkflowInstanceModal();
+  });
+  instanceHeader.appendChild(instanceTitle);
+  instanceHeader.appendChild(runBtn);
+  instanceSection.appendChild(instanceHeader);
   const instances = getWorkflowInstances(workflow.id);
   if (!instances.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = 'No workflow instances yet.';
+    empty.textContent = 'No workflows yet.';
     instanceSection.appendChild(empty);
   } else {
     instances.forEach(instance => {
@@ -5908,9 +5894,9 @@ function renderWorkflowsPage() {
       deleteBtn.type = 'button';
       deleteBtn.className = 'icon-button';
       deleteBtn.textContent = '✕';
-      deleteBtn.title = 'Remove instance';
+      deleteBtn.title = 'Remove workflow';
       deleteBtn.addEventListener('click', () => {
-        const confirmed = confirm(`Remove instance "${instance.title}"? Tasks will remain.`);
+        const confirmed = confirm(`Remove workflow "${instance.title}"? Tasks will remain.`);
         if (!confirmed) return;
         deleteWorkflowInstanceRecord(instance.id);
         render();
@@ -7634,12 +7620,8 @@ function renderWorkflowList() {
     return;
   }
   workflowListEl.innerHTML = '';
-  const showDrafts = getShowDraftWorkflows();
-  if (showDraftWorkflowsToggle) {
-    showDraftWorkflowsToggle.checked = showDrafts;
-  }
   const workflows = getWorkflowsForWorkspace()
-    .filter(workflow => showDrafts || isWorkflowUsable(workflow.id));
+    .filter(workflow => isWorkflowUsable(workflow.id));
   let activeId = getActiveWorkflowId();
   if (activeId && !workflows.some(workflow => workflow.id === activeId)) {
     setActiveWorkflowId(null);
@@ -7648,7 +7630,7 @@ function renderWorkflowList() {
   if (!workflows.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = showDrafts ? 'No workflows yet.' : 'No active workflows yet.';
+    empty.textContent = 'No workflows yet.';
     workflowListEl.appendChild(empty);
     return;
   }
@@ -7662,9 +7644,20 @@ function renderWorkflowList() {
     selectBtn.className = 'workspace-select';
     selectBtn.textContent = workflow.name;
     selectBtn.addEventListener('click', () => {
+      const currentView = getActiveView();
       setActiveWorkflowId(workflow.id);
-      setActiveView('workflows');
-      render();
+      if (currentView === 'workflows') {
+        render();
+        return;
+      }
+      const variants = getWorkflowVariants(workflow.id);
+      if (!variants.length) {
+        setActiveView('workflows');
+        render();
+        alert('Add a type to this blueprint before starting a workflow.');
+        return;
+      }
+      openWorkflowInstanceModal();
     });
 
     row.appendChild(selectBtn);
@@ -7707,7 +7700,7 @@ function openWorkflowModal(workflow = null) {
   if (!workflowModal || !workflowNameInput) return;
   editingWorkflowId = workflow?.id ?? null;
   if (workflowModalTitle) {
-    workflowModalTitle.textContent = workflow ? 'Edit Workflow' : 'New Workflow';
+    workflowModalTitle.textContent = workflow ? 'Edit Blueprint' : 'New Blueprint';
   }
   workflowNameInput.value = workflow?.name ?? '';
   if (workflowDescriptionInput) workflowDescriptionInput.value = workflow?.description ?? '';

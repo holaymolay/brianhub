@@ -92,16 +92,8 @@
           <div class="sidebar-header-row">
             <button id="workflows-open" class="sidebar-section-button" type="button">Workflows</button>
             <div class="sidebar-header-actions">
-              <button id="new-workflow-btn" class="icon-button menu-icon" type="button" title="New workflow">＋</button>
-              <div class="workspace-menu-wrapper">
-                <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Workflow menu">⋯</button>
-                <div id="workflow-sidebar-menu" class="workspace-menu hidden">
-                  <label class="workspace-menu-item checkbox-item">
-                    <input type="checkbox" id="show-draft-workflows" />
-                    Show drafts
-                  </label>
-                </div>
-              </div>
+              <button id="new-workflow-btn" class="icon-button menu-icon" type="button" title="New workflow blueprint">＋</button>
+              <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Manage workflows">⋯</button>
             </div>
           </div>
           <div id="workflow-list" class="workspace-list"></div>
@@ -234,16 +226,16 @@
               <div class="notice-header-left">
                 <button id="workflows-back" class="subtle-button" type="button">← Tasks</button>
                 <div>
-                  <h2 id="workflow-page-title">Workflows</h2>
-                  <div id="workflow-page-subtitle" class="sidebar-note">Select a workflow to view details.</div>
+                  <h2 id="workflow-page-title">Manage Workflows</h2>
+                  <div id="workflow-page-subtitle" class="sidebar-note">Select a blueprint to manage.</div>
                 </div>
               </div>
               <div class="workflow-panel-actions">
-                <button id="workflow-instance-add" class="icon-button" type="button" title="New workflow instance">＋</button>
-                <button id="workflow-menu-button" class="icon-button menu-icon" type="button" title="Workflow actions">⋯</button>
+                <button id="workflow-instance-add" class="icon-button" type="button" title="New workflow blueprint">＋</button>
+                <button id="workflow-menu-button" class="icon-button menu-icon" type="button" title="Blueprint actions">⋯</button>
                 <div id="workflow-menu" class="workspace-menu hidden">
-                  <button id="workflow-rename" class="workspace-menu-item" type="button">Rename</button>
-                  <button id="workflow-delete" class="workspace-menu-item" type="button">Delete</button>
+                  <button id="workflow-rename" class="workspace-menu-item" type="button">Rename blueprint</button>
+                  <button id="workflow-delete" class="workspace-menu-item" type="button">Delete blueprint</button>
                 </div>
               </div>
             </div>
@@ -511,15 +503,15 @@
     <div id="workflow-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
-        <h2 id="workflow-modal-title">New Workflow</h2>
+        <h2 id="workflow-modal-title">New Blueprint</h2>
         <form id="workflow-modal-form">
           <label>
-            Workflow name
+            Blueprint name
             <input id="workflow-name" type="text" required />
           </label>
           <label>
             Description
-            <textarea id="workflow-description" rows="3" placeholder="Optional notes about this workflow"></textarea>
+            <textarea id="workflow-description" rows="3" placeholder="Optional notes about this blueprint"></textarea>
           </label>
           <div class="modal-actions">
             <button type="submit">Save</button>
@@ -531,14 +523,14 @@
     <div id="workflow-instance-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
-        <h2>Create workflow instance</h2>
+        <h2>Start workflow</h2>
         <form id="workflow-instance-form">
           <label>
             Type
             <select id="workflow-instance-variant"></select>
           </label>
           <label>
-            Title
+            Workflow title
             <input id="workflow-instance-title" type="text" required />
           </label>
           <label>
@@ -546,7 +538,7 @@
             <textarea id="workflow-instance-notes" rows="3" placeholder="Optional notes"></textarea>
           </label>
           <div class="modal-actions">
-            <button type="submit">Create</button>
+            <button type="submit">Start</button>
             <button type="button" id="workflow-instance-cancel">Cancel</button>
           </div>
         </form>
