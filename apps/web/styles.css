@@ -1259,6 +1259,9 @@ button:hover { opacity: 0.9; }
 }
 
 .task-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1266,6 +1269,18 @@ button:hover { opacity: 0.9; }
   padding: 0.35rem 0.5rem;
   border-bottom: 1px solid var(--border);
   cursor: context-menu;
+}
+
+.section-drag-handle {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+}
+
+.task-group-section.dragging-section {
+  opacity: 0.65;
 }
 
 .task-group-list {

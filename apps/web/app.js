@@ -311,6 +311,9 @@ let draggingTaskEl = null;
 let draggingTaskOrigin = null;
 let draggingColumnKey = null;
 let draggingColumnEl = null;
+let draggingSectionId = null;
+let draggingSectionEl = null;
+let sectionOrderDirty = false;
 let columnOrderDirty = false;
 let suppressTaskClick = false;
 let recurrenceContext = 'modal';
@@ -1071,13 +1074,18 @@ function getSectionsForWorkspace() {
   });
 }
 
+function isPersistedSection(section) {
+  if (!section?.id) return false;
+  return (state.taskSections ?? []).some(record => record.id === section.id);
+}
+
 function createSectionRecord(label) {
   if (!state.workspace) return null;
   const trimmed = String(label ?? '').trim();
   if (!trimmed) return null;
   const workspaceId = state.workspace.id;
   const existing = getSectionsForWorkspace().find(section => section.label === trimmed);
-  if (existing && existing.workspace_id === workspaceId) return existing;
+  if (existing && existing.workspace_id === workspaceId && isPersistedSection(existing)) return existing;
   const now = new Date().toISOString();
   const maxSort = Math.max(0, ...((state.taskSections ?? [])
     .filter(section => section.workspace_id === workspaceId)
@@ -1093,6 +1101,29 @@ function createSectionRecord(label) {
   state.taskSections = [...(state.taskSections ?? []), section];
   persistLocalData();
   return section;
+}
+
+async function deleteTaskSection(label) {
+  if (!state.workspace) return;
+  const workspaceId = state.workspace.id;
+  const trimmed = String(label ?? '').trim();
+  if (!trimmed) return;
+  const sections = state.taskSections ?? [];
+  const updatedSections = sections.filter(section =>
+    !(section.workspace_id === workspaceId && section.label === trimmed)
+  );
+  if (updatedSections.length !== sections.length) {
+    state.taskSections = updatedSections;
+    persistLocalData();
+  }
+  const tasks = Object.values(state.tasks ?? {});
+  for (const task of tasks) {
+    if (task.workspace_id !== workspaceId) continue;
+    const currentLabel = (task.group_label ?? '').trim();
+    if (currentLabel !== trimmed) continue;
+    await updateTaskRecord(task.id, { group_label: null });
+  }
+  render();
 }
 
 function getNoticeFilterKey() {
@@ -3956,6 +3987,60 @@ function endColumnDrag(event) {
   }
 }
 
+function beginSectionDrag(event, sectionId, sectionEl) {
+  if (!sectionId || !sectionEl) return;
+  if (event.target.closest('button')) {
+    event.preventDefault();
+    return;
+  }
+  draggingSectionId = sectionId;
+  draggingSectionEl = sectionEl;
+  sectionOrderDirty = false;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', sectionId);
+  }
+  sectionEl.classList.add('dragging-section');
+}
+
+function endSectionDrag() {
+  if (draggingSectionEl) {
+    draggingSectionEl.classList.remove('dragging-section');
+  }
+  const list = draggingSectionEl?.parentElement;
+  const shouldPersist = sectionOrderDirty && list;
+  draggingSectionId = null;
+  draggingSectionEl = null;
+  sectionOrderDirty = false;
+  if (shouldPersist) {
+    persistSectionOrder(list);
+  }
+}
+
+function persistSectionOrder(listEl) {
+  const workspaceId = state.workspace?.id;
+  if (!workspaceId) return;
+  const sections = (state.taskSections ?? [])
+    .filter(section => section.workspace_id === workspaceId);
+  if (!sections.length) return;
+  const byId = new Map(sections.map(section => [section.id, section]));
+  const orderedIds = Array.from(listEl.querySelectorAll('.task-group-section'))
+    .map(section => section.dataset.sectionId)
+    .filter(id => id && byId.has(id));
+  orderedIds.forEach((id, index) => {
+    const record = byId.get(id);
+    const nextSort = (index + 1) * 10;
+    if (!record) return;
+    if (record.sort_order !== nextSort) {
+      record.sort_order = nextSort;
+      record.updated_at = nowIso();
+    }
+  });
+  state.taskSections = [...(state.taskSections ?? [])];
+  persistLocalData();
+  render();
+}
+
 function buildTree(tasks) {
   const map = new Map();
   tasks.forEach(task => {
@@ -5169,18 +5254,56 @@ function renderTaskList(roots) {
 
     sections.forEach(sectionInfo => {
       const label = sectionInfo.label;
+      const isPersisted = isPersistedSection(sectionInfo);
       const section = document.createElement('div');
       section.className = 'task-group-section';
+      if (isPersisted) {
+        section.dataset.sectionId = sectionInfo.id;
+      }
       section.dataset.groupMode = 'section';
       section.dataset.groupValue = label;
       const sectionHeader = document.createElement('div');
       sectionHeader.className = 'task-group-header';
-      sectionHeader.textContent = label;
+      const dragHandle = document.createElement('span');
+      dragHandle.className = 'section-drag-handle';
+      dragHandle.textContent = '⋮⋮';
+      if (isPersisted) {
+        dragHandle.draggable = true;
+        dragHandle.addEventListener('dragstart', (event) => beginSectionDrag(event, sectionInfo.id, section));
+        dragHandle.addEventListener('dragend', endSectionDrag);
+      }
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = label;
+      if (isPersisted) {
+        sectionHeader.appendChild(dragHandle);
+      }
+      sectionHeader.appendChild(labelSpan);
       sectionHeader.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
         showTaskGroupContextMenu(label, event.clientX, event.clientY);
       });
+      if (isPersisted) {
+        section.addEventListener('dragover', (event) => {
+          if (!draggingSectionEl || draggingTaskId || draggingColumnKey) return;
+          if (section === draggingSectionEl) return;
+          event.preventDefault();
+          const rect = section.getBoundingClientRect();
+          const insertAfter = event.clientY > rect.top + rect.height / 2;
+          const parent = section.parentElement;
+          if (!parent) return;
+          parent.insertBefore(draggingSectionEl, insertAfter ? section.nextSibling : section);
+          sectionOrderDirty = true;
+        });
+        section.addEventListener('drop', (event) => {
+          if (!draggingSectionEl || draggingTaskId || draggingColumnKey) return;
+          event.preventDefault();
+          if (sectionOrderDirty) {
+            persistSectionOrder(section.parentElement);
+            sectionOrderDirty = false;
+          }
+        });
+      }
       section.appendChild(sectionHeader);
       const groupList = document.createElement('div');
       groupList.className = 'task-group-list';
@@ -6686,6 +6809,19 @@ function showTaskGroupContextMenu(label, x, y) {
     openGroupRenameModal(label);
   });
   taskContextMenu.appendChild(renameItem);
+
+  const deleteItem = document.createElement('button');
+  deleteItem.type = 'button';
+  deleteItem.className = 'workspace-menu-item';
+  deleteItem.textContent = 'Delete section';
+  deleteItem.addEventListener('click', async () => {
+    taskContextMenu.classList.add('hidden');
+    openMenu = null;
+    const confirmed = confirm(`Delete section "${label}"? Tasks will be moved out of the section.`);
+    if (!confirmed) return;
+    await deleteTaskSection(label);
+  });
+  taskContextMenu.appendChild(deleteItem);
 
   taskContextMenu.classList.remove('hidden');
   openMenu = taskContextMenu;
