@@ -248,6 +248,8 @@ const noticeType = document.getElementById('notice-type');
 const noticeTypeNewRow = document.getElementById('notice-type-new-row');
 const noticeTypeNewInput = document.getElementById('notice-type-new');
 const noticeAt = document.getElementById('notice-at');
+const noticeRepeatInterval = document.getElementById('notice-repeat-interval');
+const noticeRepeatUnit = document.getElementById('notice-repeat-unit');
 const noticeSaveBtn = document.getElementById('notice-save');
 const noticeDismissBtn = document.getElementById('notice-dismiss');
 const noticeCancel = document.getElementById('notice-cancel');
@@ -865,6 +867,9 @@ noticeForm?.addEventListener('submit', async (event) => {
   if (!title) return;
   const notifyAt = fromDatetimeLocal(noticeAt.value);
   if (!notifyAt) return;
+  const repeatIntervalValue = noticeRepeatInterval?.value ? Number(noticeRepeatInterval.value) : null;
+  const repeatInterval = Number.isFinite(repeatIntervalValue) && repeatIntervalValue > 0 ? repeatIntervalValue : null;
+  const repeatUnit = repeatInterval ? (noticeRepeatUnit?.value ?? 'month') : null;
   let typeValue = noticeType?.value ?? 'general';
   if (typeValue === '__add_new__') {
     const newLabel = noticeTypeNewInput?.value?.trim();
@@ -873,9 +878,21 @@ noticeForm?.addEventListener('submit', async (event) => {
     typeValue = created?.key ?? newLabel.toLowerCase().replace(/\s+/g, '-');
   }
   if (activeNoticeId) {
-    await updateNoticeRecord(activeNoticeId, { title, notify_at: notifyAt, notice_type: typeValue });
+    await updateNoticeRecord(activeNoticeId, {
+      title,
+      notify_at: notifyAt,
+      notice_type: typeValue,
+      recurrence_interval: repeatInterval,
+      recurrence_unit: repeatUnit
+    });
   } else {
-    await createNoticeRecord({ title, notify_at: notifyAt, notice_type: typeValue });
+    await createNoticeRecord({
+      title,
+      notify_at: notifyAt,
+      notice_type: typeValue,
+      recurrence_interval: repeatInterval,
+      recurrence_unit: repeatUnit
+    });
   }
   closeNoticeModal();
   render();
@@ -2089,6 +2106,8 @@ function getStatusColor(key) {
   return STATUS_COLOR_MAP[key] ?? `hsl(${stringToHue(key ?? 'status')}, 60%, 55%)`;
 }
 
+const RECURRENCE_UNITS = new Set(['day', 'week', 'month', 'year']);
+
 function addInterval(date, interval, unit) {
   const next = new Date(date.getTime());
   if (unit === 'day') next.setDate(next.getDate() + interval);
@@ -2096,6 +2115,10 @@ function addInterval(date, interval, unit) {
   if (unit === 'month') next.setMonth(next.getMonth() + interval);
   if (unit === 'year') next.setFullYear(next.getFullYear() + interval);
   return next;
+}
+
+function normalizeRecurrenceUnit(unit) {
+  return RECURRENCE_UNITS.has(unit) ? unit : 'month';
 }
 
 function getProjectName(projectId) {
@@ -2158,6 +2181,8 @@ function closeNoticeModal() {
   activeNoticeId = null;
   noticeTypeNewRow?.classList.add('hidden');
   if (noticeTypeNewInput) noticeTypeNewInput.value = '';
+  if (noticeRepeatInterval) noticeRepeatInterval.value = '';
+  if (noticeRepeatUnit) noticeRepeatUnit.value = 'month';
   noticeDismissBtn?.classList.add('hidden');
 }
 
@@ -2166,6 +2191,12 @@ function openNoticeModalWithNotice(notice) {
   activeNoticeId = notice?.id ?? null;
   noticeTitle.value = notice?.title ?? '';
   noticeAt.value = notice?.notify_at ? toDatetimeLocal(notice.notify_at) : '';
+  if (noticeRepeatInterval) {
+    noticeRepeatInterval.value = notice?.recurrence_interval ? String(notice.recurrence_interval) : '';
+  }
+  if (noticeRepeatUnit) {
+    noticeRepeatUnit.value = notice?.recurrence_unit ?? 'month';
+  }
   renderNoticeTypeSelect(notice?.notice_type ?? 'general');
   noticeModal.querySelector('h2').textContent = notice ? 'Edit Notice' : 'New Notice';
   if (noticeSaveBtn) noticeSaveBtn.textContent = notice ? 'Save' : 'Create';
@@ -2818,7 +2849,9 @@ function normalizeNotice(notice) {
     ...notice,
     notice_type: notice.notice_type ?? 'general',
     dismissed_at: notice.dismissed_at ?? null,
-    notice_sent_at: notice.notice_sent_at ?? null
+    notice_sent_at: notice.notice_sent_at ?? null,
+    recurrence_interval: notice.recurrence_interval ?? null,
+    recurrence_unit: notice.recurrence_unit ?? null
   };
 }
 
@@ -5718,7 +5751,10 @@ function renderNoticeSidebarList() {
     const dateText = Number.isNaN(date.getTime())
       ? notice.notify_at
       : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    meta.textContent = `${getNoticeTypeLabel(notice.notice_type)} · ${dateText}`;
+    const recurrenceText = notice.recurrence_interval && notice.recurrence_unit
+      ? ` · repeats every ${notice.recurrence_interval} ${notice.recurrence_unit}${notice.recurrence_interval > 1 ? 's' : ''}`
+      : '';
+    meta.textContent = `${getNoticeTypeLabel(notice.notice_type)} · ${dateText}${recurrenceText}`;
     info.appendChild(title);
     info.appendChild(meta);
 
@@ -6292,7 +6328,10 @@ function renderNoticesPageList() {
     const dateText = Number.isNaN(date.getTime())
       ? notice.notify_at
       : date.toLocaleString();
-    meta.textContent = `${getNoticeTypeLabel(notice.notice_type)} · ${dateText}`;
+    const recurrenceText = notice.recurrence_interval && notice.recurrence_unit
+      ? ` · repeats every ${notice.recurrence_interval} ${notice.recurrence_unit}${notice.recurrence_interval > 1 ? 's' : ''}`
+      : '';
+    meta.textContent = `${getNoticeTypeLabel(notice.notice_type)} · ${dateText}${recurrenceText}`;
     info.appendChild(title);
     info.appendChild(meta);
 
@@ -8928,6 +8967,23 @@ function shouldNotify(task) {
   return true;
 }
 
+function getNextNoticeNotifyAt(notice) {
+  const interval = Number(notice?.recurrence_interval);
+  if (!Number.isFinite(interval) || interval <= 0) return null;
+  if (!notice?.notify_at) return null;
+  const base = new Date(notice.notify_at);
+  if (Number.isNaN(base.getTime())) return null;
+  const unit = normalizeRecurrenceUnit(notice.recurrence_unit ?? 'month');
+  let next = addInterval(base, interval, unit);
+  const now = Date.now();
+  let guard = 0;
+  while (next.getTime() <= now && guard < 1000) {
+    next = addInterval(next, interval, unit);
+    guard += 1;
+  }
+  return next.getTime() > now ? next : null;
+}
+
 async function checkNotices() {
   if (!state.ui?.notificationsEnabled) return;
   if (!('Notification' in window)) return;
@@ -8946,7 +9002,10 @@ async function checkNotices() {
       body: notice.title,
       tag: notice.id
     });
-    await updateNoticeRecord(notice.id, { notice_sent_at: nowIso() });
+    const nextNotifyAt = getNextNoticeNotifyAt(notice);
+    const patch = { notice_sent_at: nowIso() };
+    if (nextNotifyAt) patch.notify_at = nextNotifyAt.toISOString();
+    await updateNoticeRecord(notice.id, patch);
   }
 }
 

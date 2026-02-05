@@ -710,6 +710,18 @@
             Notify me at
             <input id="notice-at" type="datetime-local" required />
           </label>
+          <label>
+            Repeat every
+            <div class="inline-field">
+              <input id="notice-repeat-interval" type="number" min="1" placeholder="No repeat" />
+              <select id="notice-repeat-unit">
+                <option value="day">Day</option>
+                <option value="week">Week</option>
+                <option value="month">Month</option>
+                <option value="year">Year</option>
+              </select>
+            </div>
+          </label>
           <div class="modal-actions">
             <button type="submit" id="notice-save">Create</button>
             <button type="button" id="notice-dismiss" class="danger-button hidden">Dismiss</button>

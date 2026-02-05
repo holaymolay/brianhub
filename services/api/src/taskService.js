@@ -25,6 +25,7 @@ const DEFAULT_NOTICE_TYPES = [
   { key: 'bill', label: 'Bill notice' },
   { key: 'auto-payment', label: 'Auto-payment notice' }
 ];
+const NOTICE_RECURRENCE_UNITS = new Set(['day', 'week', 'month', 'year']);
 
 function nowIso() {
   return new Date().toISOString();
@@ -36,6 +37,15 @@ function slugify(text) {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function normalizeNoticeRecurrence(intervalValue, unitValue) {
+  const interval = Number(intervalValue);
+  if (!Number.isFinite(interval) || interval <= 0) {
+    return { interval: null, unit: null };
+  }
+  const unit = NOTICE_RECURRENCE_UNITS.has(unitValue) ? unitValue : 'month';
+  return { interval, unit };
 }
 
 function normalizeTemplateRow(row) {
@@ -519,6 +529,10 @@ export async function createNotice(db, data, clientId = null) {
   if (!title || !notifyAt) {
     throw new Error('Invalid notice');
   }
+  const { interval: recurrenceInterval, unit: recurrenceUnit } = normalizeNoticeRecurrence(
+    data.recurrence_interval,
+    data.recurrence_unit
+  );
   const notice = {
     id,
     workspace_id: data.workspace_id,
@@ -526,13 +540,18 @@ export async function createNotice(db, data, clientId = null) {
     notify_at: notifyAt,
     notice_type: data.notice_type ?? 'general',
     notice_sent_at: data.notice_sent_at ?? null,
+    recurrence_interval: recurrenceInterval,
+    recurrence_unit: recurrenceUnit,
     dismissed_at: data.dismissed_at ?? null,
     created_at: timestamp,
     updated_at: timestamp
   };
   await run(
     db,
-    'INSERT INTO notices (id, workspace_id, title, notify_at, notice_type, notice_sent_at, dismissed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    `INSERT INTO notices (
+      id, workspace_id, title, notify_at, notice_type, notice_sent_at, recurrence_interval,
+      recurrence_unit, dismissed_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       notice.id,
       notice.workspace_id,
@@ -540,6 +559,8 @@ export async function createNotice(db, data, clientId = null) {
       notice.notify_at,
       notice.notice_type,
       notice.notice_sent_at,
+      notice.recurrence_interval,
+      notice.recurrence_unit,
       notice.dismissed_at,
       notice.created_at,
       notice.updated_at
@@ -552,23 +573,33 @@ export async function createNotice(db, data, clientId = null) {
 export async function updateNotice(db, id, patch, clientId = null) {
   const existing = await getNotice(db, id);
   if (!existing) return null;
+  const { interval: recurrenceInterval, unit: recurrenceUnit } = normalizeNoticeRecurrence(
+    'recurrence_interval' in patch ? patch.recurrence_interval : existing.recurrence_interval,
+    'recurrence_unit' in patch ? patch.recurrence_unit : existing.recurrence_unit
+  );
   const next = {
     ...existing,
     title: patch.title !== undefined ? String(patch.title).trim() : existing.title,
     notify_at: patch.notify_at ?? existing.notify_at,
     notice_type: patch.notice_type ?? existing.notice_type ?? 'general',
     notice_sent_at: patch.notice_sent_at ?? existing.notice_sent_at,
+    recurrence_interval: recurrenceInterval,
+    recurrence_unit: recurrenceUnit,
     dismissed_at: patch.dismissed_at ?? existing.dismissed_at,
     updated_at: nowIso()
   };
   await run(
     db,
-    'UPDATE notices SET title = ?, notify_at = ?, notice_type = ?, notice_sent_at = ?, dismissed_at = ?, updated_at = ? WHERE id = ?',
+    `UPDATE notices SET
+      title = ?, notify_at = ?, notice_type = ?, notice_sent_at = ?, recurrence_interval = ?,
+      recurrence_unit = ?, dismissed_at = ?, updated_at = ? WHERE id = ?`,
     [
       next.title,
       next.notify_at,
       next.notice_type,
       next.notice_sent_at,
+      next.recurrence_interval,
+      next.recurrence_unit,
       next.dismissed_at,
       next.updated_at,
       id

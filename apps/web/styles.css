@@ -606,6 +606,17 @@ body {
   margin: 0.25rem 0;
 }
 
+.inline-field {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.inline-field input,
+.inline-field select {
+  flex: 1;
+}
+
 .workspace-menu-item {
   background: transparent;
   color: var(--text);
