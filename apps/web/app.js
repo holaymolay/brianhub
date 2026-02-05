@@ -5561,7 +5561,7 @@ function renderWorkflowsPage() {
   workflowMenuButton?.classList.remove('hidden');
   if (workflowPageTitle) workflowPageTitle.textContent = workflow.name;
   if (workflowPageSubtitle) {
-    workflowPageSubtitle.textContent = workflow.description || 'Build variants, phases, and tasks.';
+    workflowPageSubtitle.textContent = workflow.description || 'Build types, phases, and tasks.';
   }
 
   const variants = getWorkflowVariants(workflow.id);
@@ -5590,7 +5590,7 @@ function renderWorkflowsPage() {
   if (!variants.length) {
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = 'No variants yet';
+    placeholder.textContent = 'No types yet';
     variantSelect.appendChild(placeholder);
   } else {
     variants.forEach(variant => {
@@ -5611,11 +5611,11 @@ function renderWorkflowsPage() {
     const renameBtn = document.createElement('button');
     renameBtn.type = 'button';
     renameBtn.className = 'subtle-button';
-    renameBtn.textContent = 'Rename';
+    renameBtn.textContent = 'Rename type';
     renameBtn.addEventListener('click', () => {
       const variant = variants.find(item => item.id === activeVariantId);
       if (!variant) return;
-      const nextName = prompt('Variant name', variant.name);
+      const nextName = prompt('Type name', variant.name);
       if (!nextName) return;
       const trimmed = nextName.trim();
       if (!trimmed || trimmed === variant.name) return;
@@ -5627,11 +5627,11 @@ function renderWorkflowsPage() {
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.className = 'danger-button';
-    deleteBtn.textContent = 'Delete';
+    deleteBtn.textContent = 'Delete type';
     deleteBtn.addEventListener('click', () => {
       const variant = variants.find(item => item.id === activeVariantId);
       if (!variant) return;
-      const confirmed = confirm(`Delete variant "${variant.name}"? Existing instances will lose their template reference.`);
+      const confirmed = confirm(`Delete type "${variant.name}"? Existing instances will lose their template reference.`);
       if (!confirmed) return;
       deleteWorkflowVariantRecord(variant.id);
       setActiveWorkflowVariantId(null);
@@ -5646,7 +5646,7 @@ function renderWorkflowsPage() {
   addVariantRow.className = 'workflow-add-row';
   const addVariantInput = document.createElement('input');
   addVariantInput.type = 'text';
-  addVariantInput.placeholder = 'Add variant...';
+  addVariantInput.placeholder = 'Add type...';
   addVariantInput.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') return;
     event.preventDefault();
@@ -5665,7 +5665,7 @@ function renderWorkflowsPage() {
   if (!activeVariantId) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = 'Add a variant to define phases and tasks.';
+    empty.textContent = 'Add a type to define phases and tasks.';
     builderSection.appendChild(empty);
   } else {
     const phaseList = document.createElement('div');
@@ -5707,7 +5707,7 @@ function renderWorkflowsPage() {
       removeBtn.textContent = '✕';
       removeBtn.title = 'Remove phase';
       removeBtn.addEventListener('click', () => {
-        const confirmed = confirm(`Remove phase "${phase.name}" from this variant?`);
+        const confirmed = confirm(`Remove phase "${phase.name}" from this type?`);
         if (!confirmed) return;
         unlinkWorkflowVariantPhase(activeVariantId, phase.id);
         render();
@@ -5851,7 +5851,7 @@ function renderWorkflowsPage() {
       const meta = document.createElement('div');
       meta.className = 'workflow-instance-meta';
       const statusLabel = total > 0 && done === total ? 'Complete' : 'Open';
-      meta.textContent = `${variant?.name ?? 'Variant deleted'} · ${done}/${total} complete · ${statusLabel}`;
+      meta.textContent = `${variant?.name ?? 'Type deleted'} · ${done}/${total} complete · ${statusLabel}`;
       info.appendChild(title);
       info.appendChild(meta);
       row.appendChild(info);
@@ -7674,7 +7674,7 @@ function populateWorkflowInstanceVariantSelect(workflowId, selectedId = null) {
   if (!variants.length) {
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = 'No variants available';
+    placeholder.textContent = 'No types available';
     workflowInstanceVariant.appendChild(placeholder);
     workflowInstanceVariant.value = '';
     return;
