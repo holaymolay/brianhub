@@ -100,6 +100,12 @@ body {
   gap: 0.75rem;
 }
 
+.sidebar-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .workspace-header-row {
   display: flex;
   align-items: center;

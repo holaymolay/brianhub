@@ -104,6 +104,9 @@ const tasksOpenBtn = document.getElementById('tasks-open');
 const workflowsOpenBtn = document.getElementById('workflows-open');
 const workflowListEl = document.getElementById('workflow-list');
 const newWorkflowBtn = document.getElementById('new-workflow-btn');
+const workflowSidebarMenuButton = document.getElementById('workflow-sidebar-menu-button');
+const workflowSidebarMenu = document.getElementById('workflow-sidebar-menu');
+const showDraftWorkflowsToggle = document.getElementById('show-draft-workflows');
 const shoppingListListEl = document.getElementById('shopping-list-list');
 const newShoppingListBtn = document.getElementById('new-shopping-list-btn');
 const noticeListEl = document.getElementById('notice-list');
@@ -1063,6 +1066,29 @@ shoppingListSidebarMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
 });
 
+workflowSidebarMenuButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (openMenu && openMenu !== workflowSidebarMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (workflowSidebarMenu?.classList.contains('hidden')) {
+    workflowSidebarMenu.classList.remove('hidden');
+    openMenu = workflowSidebarMenu;
+  } else {
+    workflowSidebarMenu?.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+workflowSidebarMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+
+showDraftWorkflowsToggle?.addEventListener('change', () => {
+  setShowDraftWorkflows(showDraftWorkflowsToggle.checked);
+  render();
+});
+
 shoppingListMenuButton?.addEventListener('click', (event) => {
   event.stopPropagation();
   const activeList = getActiveShoppingList();
@@ -1241,6 +1267,19 @@ function getWorkflowById(id) {
   return (state.workflows ?? []).find(workflow => workflow.id === id) ?? null;
 }
 
+function isWorkflowUsable(workflowId) {
+  const variants = getWorkflowVariants(workflowId);
+  if (!variants.length) return false;
+  for (const variant of variants) {
+    const phases = getWorkflowVariantPhases(variant.id);
+    for (const entry of phases) {
+      const tasks = getWorkflowPhaseTasks(entry.phase.id);
+      if (tasks.length) return true;
+    }
+  }
+  return false;
+}
+
 function getWorkflowVariants(workflowId) {
   return (state.workflowVariants ?? [])
     .filter(variant => variant.workflow_id === workflowId)
@@ -1302,6 +1341,15 @@ function setActiveWorkflowVariantId(id) {
 
 function getActiveWorkflowVariantId() {
   return state.ui?.activeWorkflowVariantId ?? null;
+}
+
+function getShowDraftWorkflows() {
+  return Boolean(state.ui?.showDraftWorkflows);
+}
+
+function setShowDraftWorkflows(value) {
+  state.ui = state.ui ?? {};
+  state.ui.showDraftWorkflows = Boolean(value);
 }
 
 function getNextWorkflowSortOrder(items) {
@@ -7586,7 +7634,12 @@ function renderWorkflowList() {
     return;
   }
   workflowListEl.innerHTML = '';
-  const workflows = getWorkflowsForWorkspace();
+  const showDrafts = getShowDraftWorkflows();
+  if (showDraftWorkflowsToggle) {
+    showDraftWorkflowsToggle.checked = showDrafts;
+  }
+  const workflows = getWorkflowsForWorkspace()
+    .filter(workflow => showDrafts || isWorkflowUsable(workflow.id));
   let activeId = getActiveWorkflowId();
   if (activeId && !workflows.some(workflow => workflow.id === activeId)) {
     setActiveWorkflowId(null);
@@ -7595,7 +7648,7 @@ function renderWorkflowList() {
   if (!workflows.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = 'No workflows yet.';
+    empty.textContent = showDrafts ? 'No workflows yet.' : 'No active workflows yet.';
     workflowListEl.appendChild(empty);
     return;
   }
