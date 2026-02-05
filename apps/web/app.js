@@ -1332,6 +1332,50 @@ function getWorkflowInstanceTasks(instanceId) {
     .filter(link => link.workflow_instance_id === instanceId);
 }
 
+function getWorkflowInstanceLinkByTaskId(taskId) {
+  return (state.workflowInstanceTasks ?? []).find(link => link.task_id === taskId) ?? null;
+}
+
+function getWorkflowInstanceProgress(instanceId) {
+  const links = getWorkflowInstanceTasks(instanceId);
+  let done = 0;
+  let dismissed = 0;
+  links.forEach(link => {
+    if (link.dismissed_at) {
+      dismissed += 1;
+      return;
+    }
+    const task = state.tasks?.[link.task_id];
+    if (task && isDoneStatusKey(task.status)) {
+      done += 1;
+    }
+  });
+  const total = links.length;
+  const resolved = done + dismissed;
+  const isComplete = total > 0 && resolved >= total;
+  return {
+    total,
+    done,
+    dismissed,
+    resolved,
+    isComplete
+  };
+}
+
+function dismissWorkflowTask(taskId) {
+  const link = getWorkflowInstanceLinkByTaskId(taskId);
+  if (!link || link.dismissed_at) return;
+  link.dismissed_at = nowIso();
+  persistLocalData();
+}
+
+function restoreWorkflowTask(taskId) {
+  const link = getWorkflowInstanceLinkByTaskId(taskId);
+  if (!link || !link.dismissed_at) return;
+  delete link.dismissed_at;
+  persistLocalData();
+}
+
 function setActiveWorkflowId(id) {
   state.ui = state.ui ?? {};
   state.ui.activeWorkflowId = id ?? null;
@@ -1348,6 +1392,15 @@ function setActiveWorkflowVariantId(id) {
 
 function getActiveWorkflowVariantId() {
   return state.ui?.activeWorkflowVariantId ?? null;
+}
+
+function getWorkflowInstanceFilter() {
+  return state.ui?.workflowInstanceFilter ?? 'open';
+}
+
+function setWorkflowInstanceFilter(value) {
+  state.ui = state.ui ?? {};
+  state.ui.workflowInstanceFilter = value;
 }
 
 function getNextWorkflowSortOrder(items) {
@@ -1714,7 +1767,8 @@ async function scaffoldWorkflowInstance(instance, variantId) {
         phase_id: phaseEntry.phase.id,
         template_task_id: templateTask.id,
         sort_order: (phaseIndex + 1) * 1000 + (taskIndex + 1) * 10,
-        created_at: now
+        created_at: now,
+        dismissed_at: null
       });
     }
   }
@@ -6021,17 +6075,43 @@ function renderWorkflowsPage() {
   runBtn.addEventListener('click', () => {
     openWorkflowInstanceModal();
   });
+  const filterGroup = document.createElement('div');
+  filterGroup.className = 'workflow-instance-filters';
+  const openFilterBtn = document.createElement('button');
+  openFilterBtn.type = 'button';
+  openFilterBtn.className = `subtle-button${getWorkflowInstanceFilter() === 'open' ? ' is-active' : ''}`;
+  openFilterBtn.textContent = 'Open';
+  openFilterBtn.addEventListener('click', () => {
+    setWorkflowInstanceFilter('open');
+    render();
+  });
+  const completedFilterBtn = document.createElement('button');
+  completedFilterBtn.type = 'button';
+  completedFilterBtn.className = `subtle-button${getWorkflowInstanceFilter() === 'completed' ? ' is-active' : ''}`;
+  completedFilterBtn.textContent = 'Completed';
+  completedFilterBtn.addEventListener('click', () => {
+    setWorkflowInstanceFilter('completed');
+    render();
+  });
+  filterGroup.appendChild(openFilterBtn);
+  filterGroup.appendChild(completedFilterBtn);
   instanceHeader.appendChild(instanceTitle);
+  instanceHeader.appendChild(filterGroup);
   instanceHeader.appendChild(runBtn);
   instanceSection.appendChild(instanceHeader);
   const instances = getWorkflowInstances(workflow.id);
-  if (!instances.length) {
+  const filter = getWorkflowInstanceFilter();
+  const visibleInstances = instances.filter(instance => {
+    const progress = getWorkflowInstanceProgress(instance.id);
+    return filter === 'completed' ? progress.isComplete : !progress.isComplete;
+  });
+  if (!visibleInstances.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = 'No workflows yet.';
+    empty.textContent = filter === 'completed' ? 'No completed workflows yet.' : 'No open workflows yet.';
     instanceSection.appendChild(empty);
   } else {
-    instances.forEach(instance => {
+    visibleInstances.forEach(instance => {
       const row = document.createElement('div');
       row.className = 'workflow-instance-row';
       const info = document.createElement('div');
@@ -6039,15 +6119,13 @@ function renderWorkflowsPage() {
       title.textContent = instance.title;
       const variant = variants.find(item => item.id === instance.variant_id);
       const links = getWorkflowInstanceTasks(instance.id);
-      const total = links.length;
-      const done = links.filter(link => {
-        const task = state.tasks?.[link.task_id];
-        return task && isDoneStatusKey(task.status);
-      }).length;
+      const progress = getWorkflowInstanceProgress(instance.id);
       const meta = document.createElement('div');
       meta.className = 'workflow-instance-meta';
-      const statusLabel = total > 0 && done === total ? 'Complete' : 'Open';
-      meta.textContent = `${variant?.name ?? 'Type deleted'} · ${done}/${total} complete · ${statusLabel}`;
+      const statusLabel = progress.isComplete ? 'Complete' : 'Open';
+      const resolvedText = progress.total ? `${progress.resolved}/${progress.total} resolved` : 'No tasks';
+      const dismissedText = progress.dismissed ? ` · ${progress.dismissed} dismissed` : '';
+      meta.textContent = `${variant?.name ?? 'Type deleted'} · ${resolvedText}${dismissedText} · ${statusLabel}`;
       info.appendChild(title);
       info.appendChild(meta);
       row.appendChild(info);
@@ -8183,6 +8261,31 @@ function showTaskContextMenu(taskId, x, y) {
     openMenu = null;
   });
   taskContextMenu.appendChild(selectItem);
+
+  const workflowLink = getWorkflowInstanceLinkByTaskId(taskId);
+  if (workflowLink) {
+    const dismissItem = document.createElement('button');
+    dismissItem.type = 'button';
+    dismissItem.className = 'workspace-menu-item';
+    if (workflowLink.dismissed_at) {
+      dismissItem.textContent = 'Restore workflow task';
+      dismissItem.addEventListener('click', () => {
+        restoreWorkflowTask(taskId);
+        taskContextMenu.classList.add('hidden');
+        openMenu = null;
+        render();
+      });
+    } else {
+      dismissItem.textContent = 'Mark not applicable';
+      dismissItem.addEventListener('click', () => {
+        dismissWorkflowTask(taskId);
+        taskContextMenu.classList.add('hidden');
+        openMenu = null;
+        render();
+      });
+    }
+    taskContextMenu.appendChild(dismissItem);
+  }
 
   const bulkEditItem = document.createElement('button');
   bulkEditItem.type = 'button';

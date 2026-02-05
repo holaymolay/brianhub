@@ -1066,6 +1066,12 @@ button:hover { opacity: 0.9; }
   border: 1px solid var(--border);
 }
 
+.subtle-button.is-active {
+  background: #1f2a3c;
+  border-color: rgba(115, 158, 255, 0.6);
+  box-shadow: 0 0 0 1px rgba(115, 158, 255, 0.25);
+}
+
 .danger-button {
   background: #f05454;
   color: #160a0a;
@@ -1337,6 +1343,12 @@ button:hover { opacity: 0.9; }
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.workflow-instance-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .workflow-variant-controls {
