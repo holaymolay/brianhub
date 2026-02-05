@@ -11,6 +11,10 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 - Minimal web UI for list + task detail + inline subtasks
 - AI stub (suggestions only; no mutation)
 - Tests for state machine + nesting invariants
+- Workflows (templates → variants → phases → scaffolded tasks)
+  - Workflow instance is a separate entity linked to tasks
+  - Phases are milestones (grouping only, not tasks)
+  - Tasks can have dependencies; assignments support users or free‑text people
 
 ## Out of Scope (explicitly excluded)
 - Notes / markdown
@@ -33,6 +37,7 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 5) Search/filter UI
 6) Inbox view/filter
 7) Urgency (decide: remove from M1 or re‑introduce as a field)
+8) Workflow templates + instances + phase/task scaffolding
 
 ## Task Tracking (M1)
 
@@ -55,6 +60,13 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 - [ ] Add search/filter UI
   - [ ] Text search via `/tasks/search`
   - [ ] Inline filter controls (list view)
+- [ ] Add workflow templates + instances
+  - [ ] Define workflow template (variants + phases + tasks)
+  - [ ] Create workflow instance (title + notes only)
+  - [ ] Scaffold tasks from template with phase grouping
+  - [ ] Track instance open/closed based on linked task completion
+  - [ ] Support task dependencies inside workflow scaffold
+  - [ ] Support assignees (user id or free‑text person)
 
 ### P1 — Usability polish
 - [ ] Add Inbox view/filter
@@ -73,6 +85,7 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 - Waiting tasks resurface as intended
 - Search/filter works in list view
 - AI suggestions visible and explicitly accepted/rejected
+- Workflow instance scaffolds tasks by phase and remains open until all tasks complete
 
 ## Progress Log
 - YYYY‑MM‑DD: Created M1 plan and gap list
