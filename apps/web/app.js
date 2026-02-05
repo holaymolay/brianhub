@@ -1272,6 +1272,28 @@ function getWorkflowVariants(workflowId) {
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 }
 
+function makeUniqueVariantName(workflowId, baseName) {
+  const existing = new Set(getWorkflowVariants(workflowId).map(variant => variant.name.toLowerCase()));
+  let name = baseName;
+  let attempt = 1;
+  while (existing.has(name.toLowerCase())) {
+    name = `${baseName} (${attempt})`;
+    attempt += 1;
+  }
+  return name;
+}
+
+function makeUniquePhaseName(workflowId, baseName) {
+  const existing = new Set(getWorkflowPhases(workflowId).map(phase => phase.name.toLowerCase()));
+  let name = baseName;
+  let attempt = 1;
+  while (existing.has(name.toLowerCase())) {
+    name = `${baseName} (${attempt})`;
+    attempt += 1;
+  }
+  return name;
+}
+
 function getWorkflowPhases(workflowId) {
   return (state.workflowPhases ?? [])
     .filter(phase => phase.workflow_id === workflowId)
@@ -1481,6 +1503,65 @@ function deleteWorkflowPhaseRecord(id) {
   state.workflowPhaseTasks = (state.workflowPhaseTasks ?? [])
     .filter(task => task.phase_id !== id);
   persistLocalData();
+}
+
+function duplicateWorkflowVariantRecord(variantId) {
+  const variant = (state.workflowVariants ?? []).find(item => item.id === variantId);
+  if (!variant) return null;
+  const workflowId = variant.workflow_id;
+  const name = makeUniqueVariantName(workflowId, `${variant.name} copy`);
+  const nextVariant = createWorkflowVariantRecord(workflowId, name);
+  if (!nextVariant) return null;
+  const links = (state.workflowVariantPhases ?? [])
+    .filter(link => link.variant_id === variantId)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  if (links.length) {
+    const nextLinks = state.workflowVariantPhases ?? [];
+    const now = nowIso();
+    const cloned = links.map(link => ({
+      id: createId(),
+      variant_id: nextVariant.id,
+      phase_id: link.phase_id,
+      sort_order: link.sort_order ?? 0,
+      created_at: now,
+      updated_at: now
+    }));
+    state.workflowVariantPhases = [...nextLinks, ...cloned];
+    persistLocalData();
+  }
+  return nextVariant;
+}
+
+function copyWorkflowPhaseToBlueprint({ sourceWorkflowId, phaseId, targetWorkflowId, targetVariantId }) {
+  const sourcePhase = getWorkflowPhases(sourceWorkflowId).find(phase => phase.id === phaseId);
+  if (!sourcePhase) return null;
+  const newPhaseName = makeUniquePhaseName(targetWorkflowId, `${sourcePhase.name} copy`);
+  const newPhase = createWorkflowPhaseRecord(targetWorkflowId, newPhaseName);
+  if (!newPhase) return null;
+  linkWorkflowVariantPhase(targetVariantId, newPhase.id);
+  const sourceTasks = getWorkflowPhaseTasks(sourcePhase.id)
+    .slice()
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const taskIdMap = new Map();
+  sourceTasks.forEach(task => {
+    const created = createWorkflowPhaseTaskRecord(newPhase.id, task.title);
+    if (!created) return;
+    taskIdMap.set(task.id, created.id);
+    if (task.description_md) {
+      updateWorkflowPhaseTaskRecord(created.id, { description_md: task.description_md });
+    }
+  });
+  sourceTasks.forEach(task => {
+    const newId = taskIdMap.get(task.id);
+    if (!newId) return;
+    const nextDeps = (task.depends_on_ids ?? [])
+      .map(depId => taskIdMap.get(depId))
+      .filter(Boolean);
+    if (nextDeps.length) {
+      updateWorkflowPhaseTaskRecord(newId, { depends_on_ids: nextDeps });
+    }
+  });
+  return newPhase;
 }
 
 function linkWorkflowVariantPhase(variantId, phaseId) {
@@ -5645,6 +5726,18 @@ function renderWorkflowsPage() {
     });
     variantControls.appendChild(renameBtn);
 
+    const duplicateBtn = document.createElement('button');
+    duplicateBtn.type = 'button';
+    duplicateBtn.className = 'subtle-button';
+    duplicateBtn.textContent = 'Duplicate type';
+    duplicateBtn.addEventListener('click', () => {
+      const nextVariant = duplicateWorkflowVariantRecord(activeVariantId);
+      if (!nextVariant) return;
+      setActiveWorkflowVariantId(nextVariant.id);
+      render();
+    });
+    variantControls.appendChild(duplicateBtn);
+
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.className = 'danger-button';
@@ -5839,6 +5932,75 @@ function renderWorkflowsPage() {
     });
     addPhaseRow.appendChild(addPhaseInput);
     phaseList.appendChild(addPhaseRow);
+
+    const copyPhaseRow = document.createElement('div');
+    copyPhaseRow.className = 'workflow-copy-row';
+    const sourceBlueprints = getWorkflowsForWorkspace()
+      .filter(item => item.id !== workflow.id);
+    if (!sourceBlueprints.length) {
+      const note = document.createElement('div');
+      note.className = 'sidebar-note';
+      note.textContent = 'No other blueprints to copy phases from.';
+      copyPhaseRow.appendChild(note);
+    } else {
+      const sourceSelect = document.createElement('select');
+      sourceSelect.className = 'workflow-copy-select';
+      sourceBlueprints.forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = item.name;
+        sourceSelect.appendChild(option);
+      });
+
+      const phaseSelect = document.createElement('select');
+      phaseSelect.className = 'workflow-copy-select';
+
+      const populatePhaseOptions = (sourceId) => {
+        phaseSelect.innerHTML = '';
+        const phases = getWorkflowPhases(sourceId);
+        if (!phases.length) {
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = 'No phases available';
+          phaseSelect.appendChild(option);
+          return;
+        }
+        phases.forEach(phase => {
+          const option = document.createElement('option');
+          option.value = phase.id;
+          option.textContent = phase.name;
+          phaseSelect.appendChild(option);
+        });
+      };
+
+      populatePhaseOptions(sourceSelect.value);
+      sourceSelect.addEventListener('change', () => {
+        populatePhaseOptions(sourceSelect.value);
+      });
+
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'subtle-button';
+      copyBtn.textContent = 'Copy phase';
+      copyBtn.addEventListener('click', () => {
+        const sourceId = sourceSelect.value;
+        const phaseId = phaseSelect.value;
+        if (!sourceId || !phaseId) return;
+        copyWorkflowPhaseToBlueprint({
+          sourceWorkflowId: sourceId,
+          phaseId,
+          targetWorkflowId: workflow.id,
+          targetVariantId: activeVariantId
+        });
+        render();
+      });
+
+      copyPhaseRow.appendChild(sourceSelect);
+      copyPhaseRow.appendChild(phaseSelect);
+      copyPhaseRow.appendChild(copyBtn);
+    }
+
+    phaseList.appendChild(copyPhaseRow);
     builderSection.appendChild(phaseList);
   }
 

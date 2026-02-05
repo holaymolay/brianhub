@@ -1396,6 +1396,18 @@ button:hover { opacity: 0.9; }
   padding: 0.5rem;
 }
 
+.workflow-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.workflow-copy-select {
+  min-width: 180px;
+  flex: 1;
+}
+
 .workflow-instance-row {
   display: flex;
   align-items: center;
