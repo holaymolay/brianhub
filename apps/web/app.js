@@ -5220,6 +5220,31 @@ function renderTaskList(roots) {
       }
     });
     addSectionRow.appendChild(addSectionInput);
+
+    if (!sections.length) {
+      const addRow = document.createElement('div');
+      addRow.className = 'task-add-subtask task-add-task';
+      const addInput = document.createElement('input');
+      addInput.type = 'text';
+      addInput.className = 'task-add-input';
+      addInput.placeholder = 'Add task...';
+      addInput.addEventListener('keydown', async (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          const title = addInput.value.trim();
+          if (!title) return;
+          await createTaskRecord({ title });
+          addInput.value = '';
+          render();
+        }
+        if (event.key === 'Escape') {
+          addInput.value = '';
+          addInput.blur();
+        }
+      });
+      addRow.appendChild(addInput);
+      list.appendChild(addRow);
+    }
     list.appendChild(addSectionRow);
   } else if (groupMode !== 'none') {
     const grouped = new Map();
