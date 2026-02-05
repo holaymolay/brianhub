@@ -12,6 +12,13 @@ function defaultData() {
     taskDependencies: [],
     taskSections: [],
     templates: [],
+    workflows: [],
+    workflowVariants: [],
+    workflowPhases: [],
+    workflowVariantPhases: [],
+    workflowPhaseTasks: [],
+    workflowInstances: [],
+    workflowInstanceTasks: [],
     notices: [],
     noticeTypes: [],
     storeRules: [],
@@ -29,6 +36,13 @@ function normalizeData(data) {
   if (!Array.isArray(next.taskDependencies)) next.taskDependencies = [];
   if (!Array.isArray(next.taskSections)) next.taskSections = [];
   if (!Array.isArray(next.templates)) next.templates = [];
+  if (!Array.isArray(next.workflows)) next.workflows = [];
+  if (!Array.isArray(next.workflowVariants)) next.workflowVariants = [];
+  if (!Array.isArray(next.workflowPhases)) next.workflowPhases = [];
+  if (!Array.isArray(next.workflowVariantPhases)) next.workflowVariantPhases = [];
+  if (!Array.isArray(next.workflowPhaseTasks)) next.workflowPhaseTasks = [];
+  if (!Array.isArray(next.workflowInstances)) next.workflowInstances = [];
+  if (!Array.isArray(next.workflowInstanceTasks)) next.workflowInstanceTasks = [];
   if (!Array.isArray(next.notices)) next.notices = [];
   if (!Array.isArray(next.noticeTypes)) next.noticeTypes = [];
   if (!Array.isArray(next.storeRules)) next.storeRules = [];

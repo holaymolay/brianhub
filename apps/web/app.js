@@ -15,6 +15,13 @@ const state = {
   workspace: null,
   projects: localData.projects ?? [],
   templates: localData.templates ?? [],
+  workflows: localData.workflows ?? [],
+  workflowVariants: localData.workflowVariants ?? [],
+  workflowPhases: localData.workflowPhases ?? [],
+  workflowVariantPhases: localData.workflowVariantPhases ?? [],
+  workflowPhaseTasks: localData.workflowPhaseTasks ?? [],
+  workflowInstances: localData.workflowInstances ?? [],
+  workflowInstanceTasks: localData.workflowInstanceTasks ?? [],
   statuses: localData.statuses ?? [],
   taskTypes: localData.taskTypes ?? [],
   taskSections: localData.taskSections ?? [],
@@ -94,12 +101,25 @@ const storeRuleAddBtn = document.getElementById('store-rule-add');
 const projectListEl = document.getElementById('project-list');
 const newProjectBtn = document.getElementById('new-project-btn');
 const tasksOpenBtn = document.getElementById('tasks-open');
+const workflowsOpenBtn = document.getElementById('workflows-open');
+const workflowListEl = document.getElementById('workflow-list');
+const newWorkflowBtn = document.getElementById('new-workflow-btn');
 const shoppingListListEl = document.getElementById('shopping-list-list');
 const newShoppingListBtn = document.getElementById('new-shopping-list-btn');
 const noticeListEl = document.getElementById('notice-list');
 const newNoticeSidebarBtn = document.getElementById('new-notice-sidebar-btn');
 const noticesOpenBtn = document.getElementById('notices-open');
 const noticesPage = document.getElementById('notices-page');
+const workflowsPage = document.getElementById('workflows-page');
+const workflowsBackBtn = document.getElementById('workflows-back');
+const workflowPageTitle = document.getElementById('workflow-page-title');
+const workflowPageSubtitle = document.getElementById('workflow-page-subtitle');
+const workflowMenuButton = document.getElementById('workflow-menu-button');
+const workflowMenu = document.getElementById('workflow-menu');
+const workflowRenameBtn = document.getElementById('workflow-rename');
+const workflowDeleteBtn = document.getElementById('workflow-delete');
+const workflowInstanceAddBtn = document.getElementById('workflow-instance-add');
+const workflowDetailEl = document.getElementById('workflow-detail');
 const noticesBackBtn = document.getElementById('notices-back');
 const noticesListEl = document.getElementById('notices-list');
 const noticesAddBtn = document.getElementById('notices-add-btn');
@@ -170,6 +190,18 @@ const templateRepeatInterval = document.getElementById('template-repeat-interval
 const templateRepeatUnit = document.getElementById('template-repeat-unit');
 const templateCancel = document.getElementById('template-cancel');
 const templateProject = document.getElementById('template-project');
+const workflowModal = document.getElementById('workflow-modal');
+const workflowModalTitle = document.getElementById('workflow-modal-title');
+const workflowModalForm = document.getElementById('workflow-modal-form');
+const workflowNameInput = document.getElementById('workflow-name');
+const workflowDescriptionInput = document.getElementById('workflow-description');
+const workflowCancel = document.getElementById('workflow-cancel');
+const workflowInstanceModal = document.getElementById('workflow-instance-modal');
+const workflowInstanceForm = document.getElementById('workflow-instance-form');
+const workflowInstanceVariant = document.getElementById('workflow-instance-variant');
+const workflowInstanceTitleInput = document.getElementById('workflow-instance-title');
+const workflowInstanceNotesInput = document.getElementById('workflow-instance-notes');
+const workflowInstanceCancel = document.getElementById('workflow-instance-cancel');
 const accountButton = document.getElementById('account-button');
 const accountMenu = document.getElementById('account-menu');
 const accountAvatar = document.getElementById('account-avatar');
@@ -303,6 +335,7 @@ const groupRenameCancel = document.getElementById('group-rename-cancel');
 let openMenu = null;
 let renameGroupLabel = null;
 let editingTemplateId = null;
+let editingWorkflowId = null;
 let activeTaskId = null;
 let templatePromptTaskId = null;
 let taskModalDefaults = {};
@@ -734,6 +767,10 @@ noticesAddBtn?.addEventListener('click', () => {
   setActiveView('notices');
   openNoticeModal();
 });
+workflowsOpenBtn?.addEventListener('click', () => {
+  setActiveView('workflows');
+  render();
+});
 tasksOpenBtn?.addEventListener('click', () => {
   setActiveView('tasks');
   render();
@@ -741,6 +778,56 @@ tasksOpenBtn?.addEventListener('click', () => {
 noticesBackBtn?.addEventListener('click', () => {
   setActiveView('tasks');
   render();
+});
+workflowsBackBtn?.addEventListener('click', () => {
+  setActiveView('tasks');
+  render();
+});
+
+newWorkflowBtn?.addEventListener('click', () => {
+  openWorkflowModal();
+});
+
+workflowMenuButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!workflowMenu) return;
+  if (openMenu && openMenu !== workflowMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (workflowMenu.classList.contains('hidden')) {
+    workflowMenu.classList.remove('hidden');
+    openMenu = workflowMenu;
+  } else {
+    workflowMenu.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+workflowMenu?.addEventListener('click', (event) => event.stopPropagation());
+
+workflowRenameBtn?.addEventListener('click', () => {
+  const workflow = getWorkflowById(getActiveWorkflowId());
+  if (!workflow) return;
+  workflowMenu?.classList.add('hidden');
+  openMenu = null;
+  openWorkflowModal(workflow);
+});
+
+workflowDeleteBtn?.addEventListener('click', () => {
+  const workflow = getWorkflowById(getActiveWorkflowId());
+  if (!workflow) return;
+  const confirmed = confirm(`Delete workflow "${workflow.name}"? Instances will be removed, tasks will remain.`);
+  if (!confirmed) return;
+  workflowMenu?.classList.add('hidden');
+  openMenu = null;
+  deleteWorkflowRecord(workflow.id);
+  setActiveWorkflowId(null);
+  setActiveWorkflowVariantId(null);
+  render();
+});
+
+workflowInstanceAddBtn?.addEventListener('click', () => {
+  openWorkflowInstanceModal();
 });
 
 noticeCancel?.addEventListener('click', closeNoticeModal);
@@ -1101,6 +1188,447 @@ function createSectionRecord(label) {
   state.taskSections = [...(state.taskSections ?? []), section];
   persistLocalData();
   return section;
+}
+
+function normalizeWorkflow(workflow) {
+  return {
+    ...workflow,
+    description: workflow.description ?? '',
+    archived: Boolean(workflow.archived)
+  };
+}
+
+function normalizeWorkflowVariant(variant) {
+  return {
+    ...variant,
+    description: variant.description ?? ''
+  };
+}
+
+function normalizeWorkflowPhase(phase) {
+  return {
+    ...phase,
+    description: phase.description ?? ''
+  };
+}
+
+function normalizeWorkflowPhaseTask(task) {
+  return {
+    ...task,
+    description_md: task.description_md ?? '',
+    depends_on_ids: Array.isArray(task.depends_on_ids) ? task.depends_on_ids : []
+  };
+}
+
+function normalizeWorkflowInstance(instance) {
+  return {
+    ...instance,
+    notes: instance.notes ?? ''
+  };
+}
+
+function getWorkflowsForWorkspace() {
+  if (!state.workspace) return [];
+  const workspaceId = state.workspace.id;
+  return (state.workflows ?? [])
+    .filter(workflow => workflow.workspace_id === workspaceId && !workflow.archived)
+    .map(normalizeWorkflow)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getWorkflowById(id) {
+  return (state.workflows ?? []).find(workflow => workflow.id === id) ?? null;
+}
+
+function getWorkflowVariants(workflowId) {
+  return (state.workflowVariants ?? [])
+    .filter(variant => variant.workflow_id === workflowId)
+    .map(normalizeWorkflowVariant)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+}
+
+function getWorkflowPhases(workflowId) {
+  return (state.workflowPhases ?? [])
+    .filter(phase => phase.workflow_id === workflowId)
+    .map(normalizeWorkflowPhase)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+}
+
+function getWorkflowVariantPhases(variantId) {
+  const links = (state.workflowVariantPhases ?? [])
+    .filter(link => link.variant_id === variantId)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  if (!links.length) return [];
+  const phaseById = new Map((state.workflowPhases ?? []).map(phase => [phase.id, normalizeWorkflowPhase(phase)]));
+  return links.map(link => ({
+    ...link,
+    phase: phaseById.get(link.phase_id)
+  })).filter(entry => entry.phase);
+}
+
+function getWorkflowPhaseTasks(phaseId) {
+  return (state.workflowPhaseTasks ?? [])
+    .filter(task => task.phase_id === phaseId)
+    .map(normalizeWorkflowPhaseTask)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+}
+
+function getWorkflowInstances(workflowId) {
+  return (state.workflowInstances ?? [])
+    .filter(instance => instance.workflow_id === workflowId)
+    .map(normalizeWorkflowInstance)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+function getWorkflowInstanceTasks(instanceId) {
+  return (state.workflowInstanceTasks ?? [])
+    .filter(link => link.workflow_instance_id === instanceId);
+}
+
+function setActiveWorkflowId(id) {
+  state.ui = state.ui ?? {};
+  state.ui.activeWorkflowId = id ?? null;
+}
+
+function getActiveWorkflowId() {
+  return state.ui?.activeWorkflowId ?? null;
+}
+
+function setActiveWorkflowVariantId(id) {
+  state.ui = state.ui ?? {};
+  state.ui.activeWorkflowVariantId = id ?? null;
+}
+
+function getActiveWorkflowVariantId() {
+  return state.ui?.activeWorkflowVariantId ?? null;
+}
+
+function getNextWorkflowSortOrder(items) {
+  return Math.max(0, ...items.map(item => item.sort_order ?? 0)) + 10;
+}
+
+function createWorkflowRecord({ name, description }) {
+  if (!state.workspace) return null;
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return null;
+  const now = nowIso();
+  const workflow = normalizeWorkflow({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    name: trimmed,
+    description: description ?? '',
+    archived: 0,
+    created_at: now,
+    updated_at: now
+  });
+  state.workflows = [...(state.workflows ?? []), workflow];
+  persistLocalData();
+  return workflow;
+}
+
+function updateWorkflowRecord(id, patch) {
+  const workflows = state.workflows ?? [];
+  const index = workflows.findIndex(item => item.id === id);
+  if (index < 0) return null;
+  const next = normalizeWorkflow({
+    ...workflows[index],
+    ...patch,
+    updated_at: nowIso()
+  });
+  workflows[index] = next;
+  state.workflows = workflows;
+  persistLocalData();
+  return next;
+}
+
+function deleteWorkflowRecord(id) {
+  state.workflows = (state.workflows ?? []).filter(workflow => workflow.id !== id);
+  const variantsToRemove = new Set((state.workflowVariants ?? [])
+    .filter(variant => variant.workflow_id === id)
+    .map(variant => variant.id));
+  state.workflowVariants = (state.workflowVariants ?? [])
+    .filter(variant => !variantsToRemove.has(variant.id));
+  const phasesToRemove = new Set((state.workflowPhases ?? [])
+    .filter(phase => phase.workflow_id === id)
+    .map(phase => phase.id));
+  state.workflowPhases = (state.workflowPhases ?? [])
+    .filter(phase => !phasesToRemove.has(phase.id));
+  state.workflowVariantPhases = (state.workflowVariantPhases ?? [])
+    .filter(link => !variantsToRemove.has(link.variant_id) && !phasesToRemove.has(link.phase_id));
+  state.workflowPhaseTasks = (state.workflowPhaseTasks ?? [])
+    .filter(task => !phasesToRemove.has(task.phase_id));
+  const instancesToRemove = new Set((state.workflowInstances ?? [])
+    .filter(instance => instance.workflow_id === id)
+    .map(instance => instance.id));
+  state.workflowInstances = (state.workflowInstances ?? [])
+    .filter(instance => !instancesToRemove.has(instance.id));
+  state.workflowInstanceTasks = (state.workflowInstanceTasks ?? [])
+    .filter(link => !instancesToRemove.has(link.workflow_instance_id));
+  persistLocalData();
+}
+
+function createWorkflowVariantRecord(workflowId, name) {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return null;
+  const variants = state.workflowVariants ?? [];
+  const now = nowIso();
+  const variant = normalizeWorkflowVariant({
+    id: createId(),
+    workflow_id: workflowId,
+    name: trimmed,
+    description: '',
+    sort_order: getNextWorkflowSortOrder(variants.filter(item => item.workflow_id === workflowId)),
+    created_at: now,
+    updated_at: now
+  });
+  state.workflowVariants = [...variants, variant];
+  persistLocalData();
+  return variant;
+}
+
+function updateWorkflowVariantRecord(id, patch) {
+  const variants = state.workflowVariants ?? [];
+  const index = variants.findIndex(item => item.id === id);
+  if (index < 0) return null;
+  const next = normalizeWorkflowVariant({
+    ...variants[index],
+    ...patch,
+    updated_at: nowIso()
+  });
+  variants[index] = next;
+  state.workflowVariants = variants;
+  persistLocalData();
+  return next;
+}
+
+function deleteWorkflowVariantRecord(id) {
+  state.workflowVariants = (state.workflowVariants ?? []).filter(variant => variant.id !== id);
+  state.workflowVariantPhases = (state.workflowVariantPhases ?? [])
+    .filter(link => link.variant_id !== id);
+  const instancesToRemove = new Set((state.workflowInstances ?? [])
+    .filter(instance => instance.variant_id === id)
+    .map(instance => instance.id));
+  state.workflowInstances = (state.workflowInstances ?? [])
+    .filter(instance => !instancesToRemove.has(instance.id));
+  state.workflowInstanceTasks = (state.workflowInstanceTasks ?? [])
+    .filter(link => !instancesToRemove.has(link.workflow_instance_id));
+  persistLocalData();
+}
+
+function createWorkflowPhaseRecord(workflowId, name) {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return null;
+  const phases = state.workflowPhases ?? [];
+  const now = nowIso();
+  const phase = normalizeWorkflowPhase({
+    id: createId(),
+    workflow_id: workflowId,
+    name: trimmed,
+    description: '',
+    sort_order: getNextWorkflowSortOrder(phases.filter(item => item.workflow_id === workflowId)),
+    created_at: now,
+    updated_at: now
+  });
+  state.workflowPhases = [...phases, phase];
+  persistLocalData();
+  return phase;
+}
+
+function updateWorkflowPhaseRecord(id, patch) {
+  const phases = state.workflowPhases ?? [];
+  const index = phases.findIndex(item => item.id === id);
+  if (index < 0) return null;
+  const next = normalizeWorkflowPhase({
+    ...phases[index],
+    ...patch,
+    updated_at: nowIso()
+  });
+  phases[index] = next;
+  state.workflowPhases = phases;
+  persistLocalData();
+  return next;
+}
+
+function deleteWorkflowPhaseRecord(id) {
+  state.workflowPhases = (state.workflowPhases ?? []).filter(phase => phase.id !== id);
+  state.workflowVariantPhases = (state.workflowVariantPhases ?? [])
+    .filter(link => link.phase_id !== id);
+  state.workflowPhaseTasks = (state.workflowPhaseTasks ?? [])
+    .filter(task => task.phase_id !== id);
+  persistLocalData();
+}
+
+function linkWorkflowVariantPhase(variantId, phaseId) {
+  const exists = (state.workflowVariantPhases ?? [])
+    .some(link => link.variant_id === variantId && link.phase_id === phaseId);
+  if (exists) return null;
+  const links = state.workflowVariantPhases ?? [];
+  const link = {
+    id: createId(),
+    variant_id: variantId,
+    phase_id: phaseId,
+    sort_order: getNextWorkflowSortOrder(links.filter(item => item.variant_id === variantId))
+  };
+  state.workflowVariantPhases = [...links, link];
+  persistLocalData();
+  return link;
+}
+
+function unlinkWorkflowVariantPhase(variantId, phaseId) {
+  state.workflowVariantPhases = (state.workflowVariantPhases ?? [])
+    .filter(link => !(link.variant_id === variantId && link.phase_id === phaseId));
+  const stillUsed = (state.workflowVariantPhases ?? [])
+    .some(link => link.phase_id === phaseId);
+  if (!stillUsed) {
+    deleteWorkflowPhaseRecord(phaseId);
+  } else {
+    persistLocalData();
+  }
+}
+
+function createWorkflowPhaseTaskRecord(phaseId, title) {
+  const trimmed = String(title ?? '').trim();
+  if (!trimmed) return null;
+  const tasks = state.workflowPhaseTasks ?? [];
+  const now = nowIso();
+  const task = normalizeWorkflowPhaseTask({
+    id: createId(),
+    phase_id: phaseId,
+    title: trimmed,
+    description_md: '',
+    depends_on_ids: [],
+    sort_order: getNextWorkflowSortOrder(tasks.filter(item => item.phase_id === phaseId)),
+    created_at: now,
+    updated_at: now
+  });
+  state.workflowPhaseTasks = [...tasks, task];
+  persistLocalData();
+  return task;
+}
+
+function updateWorkflowPhaseTaskRecord(id, patch) {
+  const tasks = state.workflowPhaseTasks ?? [];
+  const index = tasks.findIndex(item => item.id === id);
+  if (index < 0) return null;
+  const next = normalizeWorkflowPhaseTask({
+    ...tasks[index],
+    ...patch,
+    updated_at: nowIso()
+  });
+  tasks[index] = next;
+  state.workflowPhaseTasks = tasks;
+  persistLocalData();
+  return next;
+}
+
+function deleteWorkflowPhaseTaskRecord(id) {
+  state.workflowPhaseTasks = (state.workflowPhaseTasks ?? []).filter(task => task.id !== id);
+  state.workflowPhaseTasks = (state.workflowPhaseTasks ?? []).map(task => {
+    if (!Array.isArray(task.depends_on_ids)) return task;
+    return {
+      ...task,
+      depends_on_ids: task.depends_on_ids.filter(dep => dep !== id)
+    };
+  });
+  persistLocalData();
+}
+
+function createWorkflowInstanceRecord({ workflowId, variantId, title, notes }) {
+  if (!state.workspace) return null;
+  const trimmed = String(title ?? '').trim();
+  if (!trimmed) return null;
+  const now = nowIso();
+  const instance = normalizeWorkflowInstance({
+    id: createId(),
+    workflow_id: workflowId,
+    variant_id: variantId,
+    workspace_id: state.workspace.id,
+    title: trimmed,
+    notes: notes ?? '',
+    created_at: now,
+    updated_at: now
+  });
+  state.workflowInstances = [...(state.workflowInstances ?? []), instance];
+  persistLocalData();
+  return instance;
+}
+
+function deleteWorkflowInstanceRecord(id) {
+  state.workflowInstances = (state.workflowInstances ?? []).filter(instance => instance.id !== id);
+  state.workflowInstanceTasks = (state.workflowInstanceTasks ?? [])
+    .filter(link => link.workflow_instance_id !== id);
+  persistLocalData();
+}
+
+async function addTaskDependencyRecord(taskId, dependsOnId) {
+  if (!taskId || !dependsOnId) return null;
+  const existing = (state.taskDependencies ?? [])
+    .some(dep => dep.task_id === taskId && dep.depends_on_id === dependsOnId);
+  if (existing) return null;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const created = await api.addTaskDependency(taskId, dependsOnId);
+      if (created) {
+        state.taskDependencies = [...(state.taskDependencies ?? []), created];
+        persistLocalData();
+        return created;
+      }
+    } catch {
+      // fall back to local
+    }
+  }
+  const local = { task_id: taskId, depends_on_id: dependsOnId };
+  state.taskDependencies = [...(state.taskDependencies ?? []), local];
+  persistLocalData();
+  return local;
+}
+
+async function scaffoldWorkflowInstance(instance, variantId) {
+  const variantPhases = getWorkflowVariantPhases(variantId);
+  if (!variantPhases.length) return;
+  const taskMap = new Map();
+  const links = [];
+  const now = nowIso();
+  for (let phaseIndex = 0; phaseIndex < variantPhases.length; phaseIndex += 1) {
+    const phaseEntry = variantPhases[phaseIndex];
+    const phaseTasks = getWorkflowPhaseTasks(phaseEntry.phase.id);
+    for (let taskIndex = 0; taskIndex < phaseTasks.length; taskIndex += 1) {
+      const templateTask = phaseTasks[taskIndex];
+      const created = await createTaskRecord({
+        title: templateTask.title,
+        description_md: templateTask.description_md ?? ''
+      });
+      if (!created) continue;
+      taskMap.set(templateTask.id, created.id);
+      links.push({
+        id: createId(),
+        workflow_instance_id: instance.id,
+        task_id: created.id,
+        phase_id: phaseEntry.phase.id,
+        template_task_id: templateTask.id,
+        sort_order: (phaseIndex + 1) * 1000 + (taskIndex + 1) * 10,
+        created_at: now
+      });
+    }
+  }
+  if (links.length) {
+    state.workflowInstanceTasks = [...(state.workflowInstanceTasks ?? []), ...links];
+    persistLocalData();
+  }
+  for (const phaseEntry of variantPhases) {
+    const phaseTasks = getWorkflowPhaseTasks(phaseEntry.phase.id);
+    for (const templateTask of phaseTasks) {
+      if (!templateTask.depends_on_ids?.length) continue;
+      const taskId = taskMap.get(templateTask.id);
+      if (!taskId) continue;
+      for (const dependsId of templateTask.depends_on_ids) {
+        const dependsTaskId = taskMap.get(dependsId);
+        if (!dependsTaskId) continue;
+        await addTaskDependencyRecord(taskId, dependsTaskId);
+      }
+    }
+  }
 }
 
 async function deleteTaskSection(label) {
@@ -1695,6 +2223,13 @@ function persistLocalData() {
     tasks: state.tasks ?? {},
     taskDependencies: state.taskDependencies ?? [],
     templates: state.templates ?? [],
+    workflows: state.workflows ?? [],
+    workflowVariants: state.workflowVariants ?? [],
+    workflowPhases: state.workflowPhases ?? [],
+    workflowVariantPhases: state.workflowVariantPhases ?? [],
+    workflowPhaseTasks: state.workflowPhaseTasks ?? [],
+    workflowInstances: state.workflowInstances ?? [],
+    workflowInstanceTasks: state.workflowInstanceTasks ?? [],
     notices: state.notices ?? [],
     noticeTypes: state.noticeTypes ?? [],
     storeRules: state.storeRules ?? [],
@@ -1722,6 +2257,13 @@ function snapshotLocalData() {
     tasks: state.tasks ?? {},
     taskDependencies: state.taskDependencies ?? [],
     templates: state.templates ?? [],
+    workflows: state.workflows ?? [],
+    workflowVariants: state.workflowVariants ?? [],
+    workflowPhases: state.workflowPhases ?? [],
+    workflowVariantPhases: state.workflowVariantPhases ?? [],
+    workflowPhaseTasks: state.workflowPhaseTasks ?? [],
+    workflowInstances: state.workflowInstances ?? [],
+    workflowInstanceTasks: state.workflowInstanceTasks ?? [],
     notices: state.notices ?? [],
     noticeTypes: state.noticeTypes ?? [],
     storeRules: state.storeRules ?? [],
@@ -1739,6 +2281,13 @@ function applyLocalDataSnapshot(data) {
   state.tasks = data.tasks ?? {};
   state.taskDependencies = data.taskDependencies ?? [];
   state.templates = data.templates ?? [];
+  state.workflows = data.workflows ?? [];
+  state.workflowVariants = data.workflowVariants ?? [];
+  state.workflowPhases = data.workflowPhases ?? [];
+  state.workflowVariantPhases = data.workflowVariantPhases ?? [];
+  state.workflowPhaseTasks = data.workflowPhaseTasks ?? [];
+  state.workflowInstances = data.workflowInstances ?? [];
+  state.workflowInstanceTasks = data.workflowInstanceTasks ?? [];
   state.notices = data.notices ?? [];
   state.noticeTypes = data.noticeTypes ?? [];
   state.storeRules = data.storeRules ?? [];
@@ -4093,6 +4642,7 @@ function render() {
   renderWorkspaceList();
   renderAccountMenu();
   renderProjectList();
+  renderWorkflowList();
   renderTemplateList();
   renderTaskTypeList();
   renderStoreRuleList();
@@ -4101,6 +4651,7 @@ function render() {
   renderShoppingListList();
   renderNoticeSidebarList();
   renderNoticesPageList();
+  renderWorkflowsPage();
   renderNoticeBellMenu();
   renderTaskFilter();
   renderTaskSort();
@@ -4169,12 +4720,14 @@ function renderView() {
   const showTasks = view === 'tasks';
   const showShopping = view === 'shopping';
   const showNotices = view === 'notices';
+  const showWorkflows = view === 'workflows';
   const showManageWorkspaces = view === 'workspaces-manage';
   const showArchivedWorkspaces = view === 'workspaces-archived';
 
   tasksPanel?.classList.toggle('hidden', !showTasks);
   shoppingPage?.classList.toggle('hidden', !showShopping);
   noticesPage?.classList.toggle('hidden', !showNotices);
+  workflowsPage?.classList.toggle('hidden', !showWorkflows);
   workspaceManagePage?.classList.toggle('hidden', !showManageWorkspaces);
   workspaceArchivedPage?.classList.toggle('hidden', !showArchivedWorkspaces);
 }
@@ -4863,6 +5416,336 @@ function renderNoticeSidebarList() {
     row.appendChild(menuWrapper);
     noticeListEl.appendChild(row);
   });
+}
+
+function renderWorkflowsPage() {
+  if (!workflowDetailEl) return;
+  workflowDetailEl.innerHTML = '';
+  const workflow = getWorkflowById(getActiveWorkflowId());
+  if (!workflow || !state.workspace) {
+    if (workflowPageTitle) workflowPageTitle.textContent = 'Workflows';
+    if (workflowPageSubtitle) workflowPageSubtitle.textContent = 'Select a workflow to view details.';
+    workflowInstanceAddBtn?.classList.add('hidden');
+    workflowMenuButton?.classList.add('hidden');
+    workflowMenu?.classList.add('hidden');
+    return;
+  }
+
+  workflowInstanceAddBtn?.classList.remove('hidden');
+  workflowMenuButton?.classList.remove('hidden');
+  if (workflowPageTitle) workflowPageTitle.textContent = workflow.name;
+  if (workflowPageSubtitle) {
+    workflowPageSubtitle.textContent = workflow.description || 'Build variants, phases, and tasks.';
+  }
+
+  const variants = getWorkflowVariants(workflow.id);
+  if (workflowInstanceAddBtn) {
+    workflowInstanceAddBtn.disabled = !variants.length;
+  }
+  let activeVariantId = getActiveWorkflowVariantId();
+  if (activeVariantId && !variants.some(variant => variant.id === activeVariantId)) {
+    activeVariantId = null;
+  }
+  if (!activeVariantId && variants.length) {
+    activeVariantId = variants[0].id;
+    setActiveWorkflowVariantId(activeVariantId);
+  }
+
+  const builderSection = document.createElement('div');
+  builderSection.className = 'workflow-section';
+  const builderTitle = document.createElement('h3');
+  builderTitle.textContent = 'Builder';
+  builderSection.appendChild(builderTitle);
+
+  const variantControls = document.createElement('div');
+  variantControls.className = 'workflow-variant-controls';
+  const variantSelect = document.createElement('select');
+  variantSelect.className = 'workflow-variant-select';
+  if (!variants.length) {
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'No variants yet';
+    variantSelect.appendChild(placeholder);
+  } else {
+    variants.forEach(variant => {
+      const option = document.createElement('option');
+      option.value = variant.id;
+      option.textContent = variant.name;
+      variantSelect.appendChild(option);
+    });
+  }
+  variantSelect.value = activeVariantId ?? '';
+  variantSelect.addEventListener('change', () => {
+    setActiveWorkflowVariantId(variantSelect.value || null);
+    render();
+  });
+  variantControls.appendChild(variantSelect);
+
+  if (activeVariantId) {
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'subtle-button';
+    renameBtn.textContent = 'Rename';
+    renameBtn.addEventListener('click', () => {
+      const variant = variants.find(item => item.id === activeVariantId);
+      if (!variant) return;
+      const nextName = prompt('Variant name', variant.name);
+      if (!nextName) return;
+      const trimmed = nextName.trim();
+      if (!trimmed || trimmed === variant.name) return;
+      updateWorkflowVariantRecord(variant.id, { name: trimmed });
+      render();
+    });
+    variantControls.appendChild(renameBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'danger-button';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', () => {
+      const variant = variants.find(item => item.id === activeVariantId);
+      if (!variant) return;
+      const confirmed = confirm(`Delete variant "${variant.name}"? Existing instances will lose their template reference.`);
+      if (!confirmed) return;
+      deleteWorkflowVariantRecord(variant.id);
+      setActiveWorkflowVariantId(null);
+      render();
+    });
+    variantControls.appendChild(deleteBtn);
+  }
+
+  builderSection.appendChild(variantControls);
+
+  const addVariantRow = document.createElement('div');
+  addVariantRow.className = 'workflow-add-row';
+  const addVariantInput = document.createElement('input');
+  addVariantInput.type = 'text';
+  addVariantInput.placeholder = 'Add variant...';
+  addVariantInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const name = addVariantInput.value.trim();
+    if (!name) return;
+    const variant = createWorkflowVariantRecord(workflow.id, name);
+    if (variant) {
+      setActiveWorkflowVariantId(variant.id);
+      addVariantInput.value = '';
+      render();
+    }
+  });
+  addVariantRow.appendChild(addVariantInput);
+  builderSection.appendChild(addVariantRow);
+
+  if (!activeVariantId) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'Add a variant to define phases and tasks.';
+    builderSection.appendChild(empty);
+  } else {
+    const phaseList = document.createElement('div');
+    phaseList.className = 'workflow-phase-list';
+    const variantPhases = getWorkflowVariantPhases(activeVariantId);
+    const taskOptions = [];
+    variantPhases.forEach(entry => {
+      const tasks = getWorkflowPhaseTasks(entry.phase.id);
+      tasks.forEach(task => {
+        taskOptions.push({
+          id: task.id,
+          label: `${entry.phase.name} · ${task.title}`
+        });
+      });
+    });
+
+    variantPhases.forEach(entry => {
+      const phase = entry.phase;
+      const phaseCard = document.createElement('div');
+      phaseCard.className = 'workflow-phase';
+
+      const header = document.createElement('div');
+      header.className = 'workflow-phase-header';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = phase.name;
+      nameInput.addEventListener('change', () => {
+        const trimmed = nameInput.value.trim();
+        if (!trimmed || trimmed === phase.name) {
+          nameInput.value = phase.name;
+          return;
+        }
+        updateWorkflowPhaseRecord(phase.id, { name: trimmed });
+        render();
+      });
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'icon-button';
+      removeBtn.textContent = '✕';
+      removeBtn.title = 'Remove phase';
+      removeBtn.addEventListener('click', () => {
+        const confirmed = confirm(`Remove phase "${phase.name}" from this variant?`);
+        if (!confirmed) return;
+        unlinkWorkflowVariantPhase(activeVariantId, phase.id);
+        render();
+      });
+      header.appendChild(nameInput);
+      header.appendChild(removeBtn);
+      phaseCard.appendChild(header);
+
+      const taskList = document.createElement('div');
+      const phaseTasks = getWorkflowPhaseTasks(phase.id);
+      if (!phaseTasks.length) {
+        const empty = document.createElement('div');
+        empty.className = 'sidebar-note';
+        empty.textContent = 'No tasks yet.';
+        taskList.appendChild(empty);
+      }
+      phaseTasks.forEach(task => {
+        const row = document.createElement('div');
+        row.className = 'workflow-task-row';
+        const titleInput = document.createElement('input');
+        titleInput.type = 'text';
+        titleInput.value = task.title;
+        titleInput.addEventListener('change', () => {
+          const trimmed = titleInput.value.trim();
+          if (!trimmed || trimmed === task.title) {
+            titleInput.value = task.title;
+            return;
+          }
+          updateWorkflowPhaseTaskRecord(task.id, { title: trimmed });
+          render();
+        });
+        row.appendChild(titleInput);
+
+        const depSelect = document.createElement('select');
+        depSelect.className = 'workflow-task-dep';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Depends on...';
+        depSelect.appendChild(placeholder);
+        taskOptions.forEach(option => {
+          if (option.id === task.id) return;
+          const opt = document.createElement('option');
+          opt.value = option.id;
+          opt.textContent = option.label;
+          depSelect.appendChild(opt);
+        });
+        depSelect.value = task.depends_on_ids?.[0] ?? '';
+        depSelect.addEventListener('change', () => {
+          const value = depSelect.value;
+          updateWorkflowPhaseTaskRecord(task.id, { depends_on_ids: value ? [value] : [] });
+          render();
+        });
+        row.appendChild(depSelect);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'icon-button';
+        deleteBtn.textContent = '✕';
+        deleteBtn.title = 'Delete task';
+        deleteBtn.addEventListener('click', () => {
+          const confirmed = confirm(`Delete task "${task.title}"?`);
+          if (!confirmed) return;
+          deleteWorkflowPhaseTaskRecord(task.id);
+          render();
+        });
+        row.appendChild(deleteBtn);
+        taskList.appendChild(row);
+      });
+
+      const addTaskRow = document.createElement('div');
+      addTaskRow.className = 'workflow-add-row';
+      const addTaskInput = document.createElement('input');
+      addTaskInput.type = 'text';
+      addTaskInput.placeholder = 'Add task...';
+      addTaskInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const name = addTaskInput.value.trim();
+        if (!name) return;
+        createWorkflowPhaseTaskRecord(phase.id, name);
+        addTaskInput.value = '';
+        render();
+      });
+      addTaskRow.appendChild(addTaskInput);
+      phaseCard.appendChild(taskList);
+      phaseCard.appendChild(addTaskRow);
+      phaseList.appendChild(phaseCard);
+    });
+
+    const addPhaseRow = document.createElement('div');
+    addPhaseRow.className = 'workflow-add-row';
+    const addPhaseInput = document.createElement('input');
+    addPhaseInput.type = 'text';
+    addPhaseInput.placeholder = 'Add phase...';
+    addPhaseInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const name = addPhaseInput.value.trim();
+      if (!name) return;
+      const existing = getWorkflowPhases(workflow.id)
+        .find(phase => phase.name.toLowerCase() === name.toLowerCase());
+      const phase = existing ?? createWorkflowPhaseRecord(workflow.id, name);
+      if (phase) {
+        linkWorkflowVariantPhase(activeVariantId, phase.id);
+        addPhaseInput.value = '';
+        render();
+      }
+    });
+    addPhaseRow.appendChild(addPhaseInput);
+    phaseList.appendChild(addPhaseRow);
+    builderSection.appendChild(phaseList);
+  }
+
+  workflowDetailEl.appendChild(builderSection);
+
+  const instanceSection = document.createElement('div');
+  instanceSection.className = 'workflow-section';
+  const instanceTitle = document.createElement('h3');
+  instanceTitle.textContent = 'Instances';
+  instanceSection.appendChild(instanceTitle);
+  const instances = getWorkflowInstances(workflow.id);
+  if (!instances.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'No workflow instances yet.';
+    instanceSection.appendChild(empty);
+  } else {
+    instances.forEach(instance => {
+      const row = document.createElement('div');
+      row.className = 'workflow-instance-row';
+      const info = document.createElement('div');
+      const title = document.createElement('div');
+      title.textContent = instance.title;
+      const variant = variants.find(item => item.id === instance.variant_id);
+      const links = getWorkflowInstanceTasks(instance.id);
+      const total = links.length;
+      const done = links.filter(link => {
+        const task = state.tasks?.[link.task_id];
+        return task && isDoneStatusKey(task.status);
+      }).length;
+      const meta = document.createElement('div');
+      meta.className = 'workflow-instance-meta';
+      const statusLabel = total > 0 && done === total ? 'Complete' : 'Open';
+      meta.textContent = `${variant?.name ?? 'Variant deleted'} · ${done}/${total} complete · ${statusLabel}`;
+      info.appendChild(title);
+      info.appendChild(meta);
+      row.appendChild(info);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'icon-button';
+      deleteBtn.textContent = '✕';
+      deleteBtn.title = 'Remove instance';
+      deleteBtn.addEventListener('click', () => {
+        const confirmed = confirm(`Remove instance "${instance.title}"? Tasks will remain.`);
+        if (!confirmed) return;
+        deleteWorkflowInstanceRecord(instance.id);
+        render();
+      });
+      row.appendChild(deleteBtn);
+      instanceSection.appendChild(row);
+    });
+  }
+  workflowDetailEl.appendChild(instanceSection);
 }
 
 function renderNoticesPageList() {
@@ -6553,6 +7436,46 @@ function parseTemplateSteps(text) {
     });
 }
 
+function renderWorkflowList() {
+  if (!workflowListEl) return;
+  if (!state.workspace) {
+    workflowListEl.innerHTML = '';
+    return;
+  }
+  workflowListEl.innerHTML = '';
+  const workflows = getWorkflowsForWorkspace();
+  let activeId = getActiveWorkflowId();
+  if (activeId && !workflows.some(workflow => workflow.id === activeId)) {
+    setActiveWorkflowId(null);
+    activeId = null;
+  }
+  if (!workflows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'No workflows yet.';
+    workflowListEl.appendChild(empty);
+    return;
+  }
+
+  workflows.forEach(workflow => {
+    const row = document.createElement('div');
+    row.className = 'workspace-row' + (workflow.id === activeId ? ' active' : '');
+
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'workspace-select';
+    selectBtn.textContent = workflow.name;
+    selectBtn.addEventListener('click', () => {
+      setActiveWorkflowId(workflow.id);
+      setActiveView('workflows');
+      render();
+    });
+
+    row.appendChild(selectBtn);
+    workflowListEl.appendChild(row);
+  });
+}
+
 function formatTemplateSteps(steps = []) {
   return steps
     .map(step => step.offset_days !== null && step.offset_days !== undefined
@@ -6582,6 +7505,59 @@ function closeTemplateModal() {
   templateModal.classList.add('hidden');
   editingTemplateId = null;
   openSettings();
+}
+
+function openWorkflowModal(workflow = null) {
+  if (!workflowModal || !workflowNameInput) return;
+  editingWorkflowId = workflow?.id ?? null;
+  if (workflowModalTitle) {
+    workflowModalTitle.textContent = workflow ? 'Edit Workflow' : 'New Workflow';
+  }
+  workflowNameInput.value = workflow?.name ?? '';
+  if (workflowDescriptionInput) workflowDescriptionInput.value = workflow?.description ?? '';
+  workflowModal.classList.remove('hidden');
+  workflowNameInput.focus();
+}
+
+function closeWorkflowModal() {
+  workflowModal?.classList.add('hidden');
+  editingWorkflowId = null;
+}
+
+function populateWorkflowInstanceVariantSelect(workflowId, selectedId = null) {
+  if (!workflowInstanceVariant) return;
+  workflowInstanceVariant.innerHTML = '';
+  const variants = getWorkflowVariants(workflowId);
+  if (!variants.length) {
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'No variants available';
+    workflowInstanceVariant.appendChild(placeholder);
+    workflowInstanceVariant.value = '';
+    return;
+  }
+  variants.forEach(variant => {
+    const option = document.createElement('option');
+    option.value = variant.id;
+    option.textContent = variant.name;
+    workflowInstanceVariant.appendChild(option);
+  });
+  workflowInstanceVariant.value = selectedId ?? variants[0].id;
+}
+
+function openWorkflowInstanceModal() {
+  if (!workflowInstanceModal || !workflowInstanceTitleInput) return;
+  const workflowId = getActiveWorkflowId();
+  if (!workflowId) return;
+  populateWorkflowInstanceVariantSelect(workflowId, getActiveWorkflowVariantId());
+  workflowInstanceTitleInput.value = '';
+  if (workflowInstanceNotesInput) workflowInstanceNotesInput.value = '';
+  workflowInstanceModal.classList.remove('hidden');
+  workflowInstanceTitleInput.focus();
+}
+
+function closeWorkflowInstanceModal() {
+  workflowInstanceModal?.classList.add('hidden');
 }
 
 function openSettings() {
@@ -7999,6 +8975,52 @@ templateModalForm?.addEventListener('submit', async (event) => {
   }
   if (updated) upsertTemplate(updated);
   closeTemplateModal();
+  render();
+});
+
+workflowCancel?.addEventListener('click', closeWorkflowModal);
+workflowModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeWorkflowModal);
+workflowModalForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!state.workspace) return;
+  const name = workflowNameInput?.value.trim() ?? '';
+  if (!name) return;
+  const description = workflowDescriptionInput?.value?.trim() ?? '';
+  let workflow = null;
+  if (editingWorkflowId) {
+    workflow = updateWorkflowRecord(editingWorkflowId, { name, description });
+  } else {
+    workflow = createWorkflowRecord({ name, description });
+  }
+  if (workflow) {
+    setActiveWorkflowId(workflow.id);
+    setActiveView('workflows');
+  }
+  closeWorkflowModal();
+  render();
+});
+
+workflowInstanceCancel?.addEventListener('click', closeWorkflowInstanceModal);
+workflowInstanceModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeWorkflowInstanceModal);
+workflowInstanceForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const workflowId = getActiveWorkflowId();
+  if (!workflowId) return;
+  const variantId = workflowInstanceVariant?.value ?? '';
+  if (!variantId) return;
+  const title = workflowInstanceTitleInput?.value.trim() ?? '';
+  if (!title) return;
+  const notes = workflowInstanceNotesInput?.value ?? '';
+  const instance = createWorkflowInstanceRecord({
+    workflowId,
+    variantId,
+    title,
+    notes
+  });
+  if (instance) {
+    await scaffoldWorkflowInstance(instance, variantId);
+  }
+  closeWorkflowInstanceModal();
   render();
 });
 

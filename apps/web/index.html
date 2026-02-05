@@ -90,6 +90,12 @@
           <div id="project-list" class="workspace-list"></div>
           <div class="sidebar-divider"></div>
           <div class="sidebar-header-row">
+            <button id="workflows-open" class="sidebar-section-button" type="button">Workflows</button>
+            <button id="new-workflow-btn" class="icon-button menu-icon" type="button" title="New workflow">＋</button>
+          </div>
+          <div id="workflow-list" class="workspace-list"></div>
+          <div class="sidebar-divider"></div>
+          <div class="sidebar-header-row">
             <h2>Shopping Lists</h2>
             <div class="workspace-menu-wrapper">
               <button id="shopping-list-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Shopping list menu">⋯</button>
@@ -209,6 +215,26 @@
               </div>
             </div>
             <div id="notices-list" class="workspace-list"></div>
+          </section>
+          <section id="workflows-page" class="panel hidden">
+            <div class="panel-header workflow-panel-header">
+              <div class="notice-header-left">
+                <button id="workflows-back" class="subtle-button" type="button">← Tasks</button>
+                <div>
+                  <h2 id="workflow-page-title">Workflows</h2>
+                  <div id="workflow-page-subtitle" class="sidebar-note">Select a workflow to view details.</div>
+                </div>
+              </div>
+              <div class="workflow-panel-actions">
+                <button id="workflow-instance-add" class="icon-button" type="button" title="New workflow instance">＋</button>
+                <button id="workflow-menu-button" class="icon-button menu-icon" type="button" title="Workflow actions">⋯</button>
+                <div id="workflow-menu" class="workspace-menu hidden">
+                  <button id="workflow-rename" class="workspace-menu-item" type="button">Rename</button>
+                  <button id="workflow-delete" class="workspace-menu-item" type="button">Delete</button>
+                </div>
+              </div>
+            </div>
+            <div id="workflow-detail" class="workflow-detail"></div>
           </section>
           <section id="workspace-manage-page" class="workspace-panel hidden">
             <div class="panel-header workspace-panel-header">
@@ -465,6 +491,50 @@
           <div class="modal-actions">
             <button type="submit">Save</button>
             <button type="button" id="template-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div id="workflow-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2 id="workflow-modal-title">New Workflow</h2>
+        <form id="workflow-modal-form">
+          <label>
+            Workflow name
+            <input id="workflow-name" type="text" required />
+          </label>
+          <label>
+            Description
+            <textarea id="workflow-description" rows="3" placeholder="Optional notes about this workflow"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Save</button>
+            <button type="button" id="workflow-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div id="workflow-instance-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Create workflow instance</h2>
+        <form id="workflow-instance-form">
+          <label>
+            Workflow type
+            <select id="workflow-instance-variant"></select>
+          </label>
+          <label>
+            Title
+            <input id="workflow-instance-title" type="text" required />
+          </label>
+          <label>
+            Notes
+            <textarea id="workflow-instance-notes" rows="3" placeholder="Optional notes"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Create</button>
+            <button type="button" id="workflow-instance-cancel">Cancel</button>
           </div>
         </form>
       </div>
