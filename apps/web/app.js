@@ -6302,6 +6302,7 @@ function renderWorkflowsPage() {
     manageLayout.appendChild(builderSection);
     workflowDetailEl.appendChild(manageLayout);
     return;
+  }
 
   if (!workflow) {
     const empty = document.createElement('div');
