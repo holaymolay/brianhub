@@ -6288,12 +6288,13 @@ function renderWorkflowsPage() {
     }
 
   const variants = getWorkflowVariants(workflow.id);
+  const variantsByName = [...variants].sort((a, b) => a.name.localeCompare(b.name));
   let activeVariantId = getActiveWorkflowVariantId();
   if (activeVariantId && !variants.some(variant => variant.id === activeVariantId)) {
     activeVariantId = null;
   }
-  if (!activeVariantId && variants.length) {
-    activeVariantId = variants[0].id;
+  if (!activeVariantId && variantsByName.length) {
+    activeVariantId = variantsByName[0].id;
     setActiveWorkflowVariantId(activeVariantId);
   }
 
@@ -6307,13 +6308,13 @@ function renderWorkflowsPage() {
     variantControls.className = 'workflow-variant-controls';
     const variantSelect = document.createElement('select');
     variantSelect.className = 'workflow-variant-select';
-    if (!variants.length) {
+    if (!variantsByName.length) {
       const placeholder = document.createElement('option');
       placeholder.value = '';
       placeholder.textContent = 'No types yet';
       variantSelect.appendChild(placeholder);
     } else {
-      variants.forEach(variant => {
+      variantsByName.forEach(variant => {
         const option = document.createElement('option');
         option.value = variant.id;
         option.textContent = variant.name;
