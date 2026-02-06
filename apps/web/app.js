@@ -245,8 +245,10 @@ const noticeModal = document.getElementById('notice-modal');
 const noticeForm = document.getElementById('notice-form');
 const noticeTitle = document.getElementById('notice-title');
 const noticeType = document.getElementById('notice-type');
-const noticeTypeNewRow = document.getElementById('notice-type-new-row');
-const noticeTypeNewInput = document.getElementById('notice-type-new');
+const noticeTypeModal = document.getElementById('notice-type-modal');
+const noticeTypeForm = document.getElementById('notice-type-form');
+const noticeTypeNameInput = document.getElementById('notice-type-name');
+const noticeTypeCancel = document.getElementById('notice-type-cancel');
 const noticeAt = document.getElementById('notice-at');
 const noticeRepeatInterval = document.getElementById('notice-repeat-interval');
 const noticeRepeatUnit = document.getElementById('notice-repeat-unit');
@@ -364,6 +366,7 @@ let editorRecurrence = { interval: null, unit: 'month' };
 let syncInFlight = false;
 let taskEditorSwapTimer = null;
 let activeNoticeId = null;
+let noticeTypePreviousKey = 'general';
 let activeCheckinTaskId = null;
 let checkinProgressTaskId = null;
 let checkinRescheduleContext = null;
@@ -852,13 +855,25 @@ noticeDismissBtn?.addEventListener('click', async () => {
   closeNoticeModal();
 });
 noticeType?.addEventListener('change', () => {
-  const isAddNew = noticeType.value === '__add_new__';
-  noticeTypeNewRow?.classList.toggle('hidden', !isAddNew);
-  if (isAddNew) {
-    noticeTypeNewInput?.focus();
-  } else if (noticeTypeNewInput) {
-    noticeTypeNewInput.value = '';
+  if (noticeType.value === '__add_new__') {
+    openNoticeTypeModal();
+    return;
   }
+  noticeTypePreviousKey = noticeType.value;
+});
+noticeTypeCancel?.addEventListener('click', () => closeNoticeTypeModal({ restoreSelection: true }));
+noticeTypeModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => closeNoticeTypeModal({ restoreSelection: true }));
+noticeTypeForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const label = noticeTypeNameInput?.value?.trim();
+  if (!label) return;
+  const created = await createNoticeTypeRecord({ label });
+  if (created) {
+    renderNoticeTypeSelect(created.key);
+  } else {
+    renderNoticeTypeSelect(noticeTypePreviousKey);
+  }
+  closeNoticeTypeModal({ restoreSelection: false });
 });
 
 noticeForm?.addEventListener('submit', async (event) => {
@@ -870,12 +885,10 @@ noticeForm?.addEventListener('submit', async (event) => {
   const repeatIntervalValue = noticeRepeatInterval?.value ? Number(noticeRepeatInterval.value) : null;
   const repeatInterval = Number.isFinite(repeatIntervalValue) && repeatIntervalValue > 0 ? repeatIntervalValue : null;
   const repeatUnit = repeatInterval ? (noticeRepeatUnit?.value ?? 'month') : null;
-  let typeValue = noticeType?.value ?? 'general';
+  const typeValue = noticeType?.value ?? 'general';
   if (typeValue === '__add_new__') {
-    const newLabel = noticeTypeNewInput?.value?.trim();
-    if (!newLabel) return;
-    const created = await createNoticeTypeRecord({ label: newLabel });
-    typeValue = created?.key ?? newLabel.toLowerCase().replace(/\s+/g, '-');
+    openNoticeTypeModal();
+    return;
   }
   if (activeNoticeId) {
     await updateNoticeRecord(activeNoticeId, {
@@ -2176,11 +2189,25 @@ function openNoticeModal() {
   openNoticeModalWithNotice(null);
 }
 
+function openNoticeTypeModal() {
+  noticeTypeModal?.classList.remove('hidden');
+  if (noticeTypeNameInput) noticeTypeNameInput.value = '';
+  noticeTypeNameInput?.focus();
+}
+
+function closeNoticeTypeModal(options = {}) {
+  const { restoreSelection = true } = options;
+  noticeTypeModal?.classList.add('hidden');
+  if (noticeTypeNameInput) noticeTypeNameInput.value = '';
+  if (restoreSelection && noticeType?.value === '__add_new__') {
+    renderNoticeTypeSelect(noticeTypePreviousKey);
+  }
+}
+
 function closeNoticeModal() {
   noticeModal?.classList.add('hidden');
+  closeNoticeTypeModal({ restoreSelection: true });
   activeNoticeId = null;
-  noticeTypeNewRow?.classList.add('hidden');
-  if (noticeTypeNewInput) noticeTypeNewInput.value = '';
   if (noticeRepeatInterval) noticeRepeatInterval.value = '';
   if (noticeRepeatUnit) noticeRepeatUnit.value = 'month';
   noticeDismissBtn?.classList.add('hidden');
@@ -2424,26 +2451,30 @@ function renderNoticeTypeSelect(selectedKey = '') {
   const types = ((state.noticeTypes ?? []).length ? state.noticeTypes : DEFAULT_NOTICE_TYPES)
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
+  const knownKeys = new Set(types.map(type => type.key));
   types.forEach(type => {
     const option = document.createElement('option');
     option.value = type.key;
     option.textContent = type.label;
     noticeType.appendChild(option);
   });
+  if (selectedKey && selectedKey !== '__add_new__' && !knownKeys.has(selectedKey)) {
+    const unknownOption = document.createElement('option');
+    unknownOption.value = selectedKey;
+    unknownOption.textContent = selectedKey;
+    noticeType.appendChild(unknownOption);
+  }
   const addOption = document.createElement('option');
   addOption.value = '__add_new__';
   addOption.textContent = 'Add new type…';
   noticeType.appendChild(addOption);
-  if (selectedKey && types.some(type => type.key === selectedKey)) {
+  if (selectedKey) {
     noticeType.value = selectedKey;
-    noticeTypeNewRow?.classList.add('hidden');
-  } else if (selectedKey) {
-    noticeType.value = '__add_new__';
-    noticeTypeNewRow?.classList.remove('hidden');
-    if (noticeTypeNewInput) noticeTypeNewInput.value = selectedKey;
   } else {
     noticeType.value = types[0]?.key ?? 'general';
-    noticeTypeNewRow?.classList.add('hidden');
+  }
+  if (noticeType.value !== '__add_new__') {
+    noticeTypePreviousKey = noticeType.value;
   }
 }
 

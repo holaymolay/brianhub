@@ -702,10 +702,6 @@
             Type
             <select id="notice-type"></select>
           </label>
-          <label id="notice-type-new-row" class="hidden">
-            New type
-            <input id="notice-type-new" type="text" placeholder="Chore notice" />
-          </label>
           <label>
             Notify me at
             <input id="notice-at" type="datetime-local" required />
@@ -726,6 +722,23 @@
             <button type="submit" id="notice-save">Create</button>
             <button type="button" id="notice-dismiss" class="danger-button hidden">Dismiss</button>
             <button type="button" id="notice-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="notice-type-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>New Notice Type</h2>
+        <form id="notice-type-form">
+          <label>
+            Type name
+            <input id="notice-type-name" type="text" placeholder="Chore Notice" required />
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Create</button>
+            <button type="button" id="notice-type-cancel">Cancel</button>
           </div>
         </form>
       </div>
