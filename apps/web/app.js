@@ -6329,21 +6329,31 @@ function renderWorkflowsPage() {
     variantControls.appendChild(variantSelect);
 
     if (activeVariantId) {
-      const renameBtn = document.createElement('button');
-      renameBtn.type = 'button';
-      renameBtn.className = 'subtle-button';
-      renameBtn.textContent = 'Rename type';
-      renameBtn.addEventListener('click', () => {
-        const variant = variants.find(item => item.id === activeVariantId);
-        if (!variant) return;
-        const nextName = prompt('Type name', variant.name);
-        if (!nextName) return;
-        const trimmed = nextName.trim();
-        if (!trimmed || trimmed === variant.name) return;
-        updateWorkflowVariantRecord(variant.id, { name: trimmed });
-        render();
-      });
-      variantControls.appendChild(renameBtn);
+      const activeVariant = variants.find(item => item.id === activeVariantId) ?? null;
+      if (activeVariant) {
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'workflow-variant-name-input';
+        nameInput.value = activeVariant.name;
+        nameInput.placeholder = 'Type name';
+        const commitRename = () => {
+          const trimmed = nameInput.value.trim();
+          if (!trimmed) {
+            nameInput.value = activeVariant.name;
+            return;
+          }
+          if (trimmed === activeVariant.name) return;
+          updateWorkflowVariantRecord(activeVariant.id, { name: trimmed });
+          render();
+        };
+        nameInput.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          commitRename();
+        });
+        nameInput.addEventListener('blur', commitRename);
+        variantControls.appendChild(nameInput);
+      }
 
       const duplicateBtn = document.createElement('button');
       duplicateBtn.type = 'button';

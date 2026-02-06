@@ -1480,6 +1480,11 @@ button:hover { opacity: 0.9; }
   min-width: 220px;
 }
 
+.workflow-variant-name-input {
+  min-width: 220px;
+  flex: 1;
+}
+
 .workflow-phase-list {
   display: flex;
   flex-direction: column;
