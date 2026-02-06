@@ -6550,9 +6550,7 @@ function renderWorkflowsPage() {
         event.preventDefault();
         const name = addPhaseInput.value.trim();
         if (!name) return;
-        const existing = getWorkflowPhases(workflow.id)
-          .find(phase => phase.name.toLowerCase() === name.toLowerCase());
-        const phase = existing ?? createWorkflowPhaseRecord(workflow.id, name);
+        const phase = createWorkflowPhaseRecord(workflow.id, name);
         if (phase) {
           linkWorkflowVariantPhase(activeVariantId, phase.id);
           addPhaseInput.value = '';

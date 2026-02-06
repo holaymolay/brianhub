@@ -2,7 +2,8 @@ const STORAGE_KEY = 'brianhub_ui_v1';
 
 export function createId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `id-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const randomHex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  return `${randomHex()}${randomHex()}-${randomHex()}-4${randomHex().slice(1)}-${((8 + Math.floor(Math.random() * 4)).toString(16))}${randomHex().slice(1)}-${randomHex()}${randomHex()}${randomHex()}`;
 }
 
 function defaultState() {
