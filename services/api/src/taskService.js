@@ -48,6 +48,32 @@ function normalizeNoticeRecurrence(intervalValue, unitValue) {
   return { interval, unit };
 }
 
+function normalizeNoticeRecurrenceRuleJson(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'string') {
+    try {
+      JSON.parse(value);
+      return value;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function normalizeNoticeOccurrenceCount(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.floor(parsed);
+}
+
 function normalizeTemplateRow(row) {
   if (!row) return row;
   const { steps_json, ...rest } = row;
@@ -533,6 +559,8 @@ export async function createNotice(db, data, clientId = null) {
     data.recurrence_interval,
     data.recurrence_unit
   );
+  const recurrenceRuleJson = normalizeNoticeRecurrenceRuleJson(data.recurrence_rule_json ?? data.recurrence_rule);
+  const recurrenceOccurrenceCount = normalizeNoticeOccurrenceCount(data.recurrence_occurrence_count);
   const notice = {
     id,
     workspace_id: data.workspace_id,
@@ -542,6 +570,8 @@ export async function createNotice(db, data, clientId = null) {
     notice_sent_at: data.notice_sent_at ?? null,
     recurrence_interval: recurrenceInterval,
     recurrence_unit: recurrenceUnit,
+    recurrence_rule_json: recurrenceRuleJson,
+    recurrence_occurrence_count: recurrenceOccurrenceCount,
     dismissed_at: data.dismissed_at ?? null,
     created_at: timestamp,
     updated_at: timestamp
@@ -550,8 +580,8 @@ export async function createNotice(db, data, clientId = null) {
     db,
     `INSERT INTO notices (
       id, workspace_id, title, notify_at, notice_type, notice_sent_at, recurrence_interval,
-      recurrence_unit, dismissed_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      recurrence_unit, recurrence_rule_json, recurrence_occurrence_count, dismissed_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       notice.id,
       notice.workspace_id,
@@ -561,6 +591,8 @@ export async function createNotice(db, data, clientId = null) {
       notice.notice_sent_at,
       notice.recurrence_interval,
       notice.recurrence_unit,
+      notice.recurrence_rule_json,
+      notice.recurrence_occurrence_count,
       notice.dismissed_at,
       notice.created_at,
       notice.updated_at
@@ -585,6 +617,12 @@ export async function updateNotice(db, id, patch, clientId = null) {
     notice_sent_at: patch.notice_sent_at ?? existing.notice_sent_at,
     recurrence_interval: recurrenceInterval,
     recurrence_unit: recurrenceUnit,
+    recurrence_rule_json: ('recurrence_rule_json' in patch || 'recurrence_rule' in patch)
+      ? normalizeNoticeRecurrenceRuleJson(patch.recurrence_rule_json ?? patch.recurrence_rule)
+      : existing.recurrence_rule_json,
+    recurrence_occurrence_count: ('recurrence_occurrence_count' in patch)
+      ? normalizeNoticeOccurrenceCount(patch.recurrence_occurrence_count)
+      : normalizeNoticeOccurrenceCount(existing.recurrence_occurrence_count),
     dismissed_at: patch.dismissed_at ?? existing.dismissed_at,
     updated_at: nowIso()
   };
@@ -592,7 +630,8 @@ export async function updateNotice(db, id, patch, clientId = null) {
     db,
     `UPDATE notices SET
       title = ?, notify_at = ?, notice_type = ?, notice_sent_at = ?, recurrence_interval = ?,
-      recurrence_unit = ?, dismissed_at = ?, updated_at = ? WHERE id = ?`,
+      recurrence_unit = ?, recurrence_rule_json = ?, recurrence_occurrence_count = ?,
+      dismissed_at = ?, updated_at = ? WHERE id = ?`,
     [
       next.title,
       next.notify_at,
@@ -600,6 +639,8 @@ export async function updateNotice(db, id, patch, clientId = null) {
       next.notice_sent_at,
       next.recurrence_interval,
       next.recurrence_unit,
+      next.recurrence_rule_json,
+      next.recurrence_occurrence_count,
       next.dismissed_at,
       next.updated_at,
       id

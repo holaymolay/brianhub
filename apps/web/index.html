@@ -703,20 +703,24 @@
             <select id="notice-type"></select>
           </label>
           <label>
-            Notify me at
-            <input id="notice-at" type="datetime-local" required />
+            Date
+            <input id="notice-date" type="date" required />
           </label>
           <label>
-            Repeat every
-            <div class="inline-field">
-              <input id="notice-repeat-interval" type="number" min="1" placeholder="No repeat" />
-              <select id="notice-repeat-unit">
-                <option value="day">Day</option>
-                <option value="week">Week</option>
-                <option value="month">Month</option>
-                <option value="year">Year</option>
-              </select>
-            </div>
+            Time (optional)
+            <input id="notice-time" type="time" />
+          </label>
+          <label>
+            Repeat
+            <select id="notice-repeat-preset">
+              <option value="none">Does not repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Annually</option>
+              <option value="weekday">Every weekday (Monday to Friday)</option>
+              <option value="custom">Custom...</option>
+            </select>
           </label>
           <div class="modal-actions">
             <button type="submit" id="notice-save">Create</button>
@@ -739,6 +743,62 @@
           <div class="modal-actions">
             <button type="submit">Create</button>
             <button type="button" id="notice-type-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="notice-recurrence-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Custom Recurrence</h2>
+        <form id="notice-recurrence-form">
+          <label>
+            Repeat every
+            <div class="inline-field">
+              <input id="notice-custom-interval" type="number" min="1" value="1" required />
+              <select id="notice-custom-unit">
+                <option value="day">day</option>
+                <option value="week">week</option>
+                <option value="month">month</option>
+                <option value="year">year</option>
+              </select>
+            </div>
+          </label>
+          <label id="notice-custom-weekdays-row" class="hidden">
+            Repeat on
+            <div id="notice-custom-weekdays" class="weekday-chips">
+              <button type="button" class="weekday-chip" data-day="0">S</button>
+              <button type="button" class="weekday-chip" data-day="1">M</button>
+              <button type="button" class="weekday-chip" data-day="2">T</button>
+              <button type="button" class="weekday-chip" data-day="3">W</button>
+              <button type="button" class="weekday-chip" data-day="4">T</button>
+              <button type="button" class="weekday-chip" data-day="5">F</button>
+              <button type="button" class="weekday-chip" data-day="6">S</button>
+            </div>
+          </label>
+          <label>
+            Ends
+            <div class="recurrence-ends">
+              <label class="radio-row">
+                <input type="radio" name="notice-custom-end" value="never" checked />
+                <span>Never</span>
+              </label>
+              <label class="radio-row">
+                <input type="radio" name="notice-custom-end" value="on" />
+                <span>On</span>
+                <input id="notice-custom-end-date" type="date" />
+              </label>
+              <label class="radio-row">
+                <input type="radio" name="notice-custom-end" value="after" />
+                <span>After</span>
+                <input id="notice-custom-end-count" type="number" min="1" placeholder="Occurrences" />
+              </label>
+            </div>
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Done</button>
+            <button type="button" id="notice-recurrence-cancel">Cancel</button>
           </div>
         </form>
       </div>

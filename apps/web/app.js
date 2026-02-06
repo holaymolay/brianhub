@@ -249,12 +249,21 @@ const noticeTypeModal = document.getElementById('notice-type-modal');
 const noticeTypeForm = document.getElementById('notice-type-form');
 const noticeTypeNameInput = document.getElementById('notice-type-name');
 const noticeTypeCancel = document.getElementById('notice-type-cancel');
-const noticeAt = document.getElementById('notice-at');
-const noticeRepeatInterval = document.getElementById('notice-repeat-interval');
-const noticeRepeatUnit = document.getElementById('notice-repeat-unit');
+const noticeDate = document.getElementById('notice-date');
+const noticeTime = document.getElementById('notice-time');
+const noticeRepeatPreset = document.getElementById('notice-repeat-preset');
 const noticeSaveBtn = document.getElementById('notice-save');
 const noticeDismissBtn = document.getElementById('notice-dismiss');
 const noticeCancel = document.getElementById('notice-cancel');
+const noticeRecurrenceModal = document.getElementById('notice-recurrence-modal');
+const noticeRecurrenceForm = document.getElementById('notice-recurrence-form');
+const noticeCustomInterval = document.getElementById('notice-custom-interval');
+const noticeCustomUnit = document.getElementById('notice-custom-unit');
+const noticeCustomWeekdaysRow = document.getElementById('notice-custom-weekdays-row');
+const noticeCustomWeekdays = document.getElementById('notice-custom-weekdays');
+const noticeCustomEndDate = document.getElementById('notice-custom-end-date');
+const noticeCustomEndCount = document.getElementById('notice-custom-end-count');
+const noticeRecurrenceCancel = document.getElementById('notice-recurrence-cancel');
 const checkinModal = document.getElementById('checkin-modal');
 const checkinTaskTitle = document.getElementById('checkin-task-title');
 const checkinYes = document.getElementById('checkin-yes');
@@ -367,6 +376,7 @@ let syncInFlight = false;
 let taskEditorSwapTimer = null;
 let activeNoticeId = null;
 let noticeTypePreviousKey = 'general';
+let noticeRecurrenceDraft = null;
 let activeCheckinTaskId = null;
 let checkinProgressTaskId = null;
 let checkinRescheduleContext = null;
@@ -875,16 +885,51 @@ noticeTypeForm?.addEventListener('submit', async (event) => {
   }
   closeNoticeTypeModal({ restoreSelection: false });
 });
+noticeRepeatPreset?.addEventListener('change', () => {
+  if (noticeRepeatPreset.value !== 'custom') return;
+  openNoticeRecurrenceModal();
+});
+noticeCustomUnit?.addEventListener('change', () => {
+  toggleCustomWeekdayRow();
+  if (noticeCustomUnit.value !== 'week') {
+    applyCustomWeekdaySelection([]);
+  }
+});
+noticeCustomWeekdays?.querySelectorAll('.weekday-chip').forEach(button => {
+  button.addEventListener('click', () => {
+    const isActive = button.classList.contains('active');
+    button.classList.toggle('active', !isActive);
+  });
+});
+noticeRecurrenceCancel?.addEventListener('click', () => closeNoticeRecurrenceModal({ restorePreset: true }));
+noticeRecurrenceModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => closeNoticeRecurrenceModal({ restorePreset: true }));
+noticeRecurrenceForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const rule = readCustomRecurrenceForm();
+  if (!rule) return;
+  if (rule.unit === 'week' && !rule.weekdays.length) return;
+  noticeRecurrenceDraft = rule;
+  if (noticeRepeatPreset) noticeRepeatPreset.value = 'custom';
+  closeNoticeRecurrenceModal();
+});
 
 noticeForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const title = noticeTitle.value.trim();
   if (!title) return;
-  const notifyAt = fromDatetimeLocal(noticeAt.value);
+  const noticeDateValue = noticeDate?.value?.trim() ?? '';
+  if (!noticeDateValue) return;
+  const existing = activeNoticeId ? (state.notices ?? []).find(item => item.id === activeNoticeId) : null;
+  const fallbackTimeIso = existing?.created_at ?? nowIso();
+  const notifyAt = combineDateAndTimeToIso(noticeDateValue, noticeTime?.value?.trim() ?? '', fallbackTimeIso);
   if (!notifyAt) return;
-  const repeatIntervalValue = noticeRepeatInterval?.value ? Number(noticeRepeatInterval.value) : null;
-  const repeatInterval = Number.isFinite(repeatIntervalValue) && repeatIntervalValue > 0 ? repeatIntervalValue : null;
-  const repeatUnit = repeatInterval ? (noticeRepeatUnit?.value ?? 'month') : null;
+  const repeatPreset = noticeRepeatPreset?.value ?? 'none';
+  const recurrenceRule = buildNoticeRecurrenceRuleFromPreset(repeatPreset, notifyAt);
+  if (repeatPreset === 'custom' && !recurrenceRule) {
+    openNoticeRecurrenceModal();
+    return;
+  }
+  const legacyRecurrence = ruleToLegacyRecurrence(recurrenceRule);
   const typeValue = noticeType?.value ?? 'general';
   if (typeValue === '__add_new__') {
     openNoticeTypeModal();
@@ -895,16 +940,20 @@ noticeForm?.addEventListener('submit', async (event) => {
       title,
       notify_at: notifyAt,
       notice_type: typeValue,
-      recurrence_interval: repeatInterval,
-      recurrence_unit: repeatUnit
+      recurrence_interval: legacyRecurrence.interval,
+      recurrence_unit: legacyRecurrence.unit,
+      recurrence_rule_json: recurrenceRule ? JSON.stringify(recurrenceRule) : null,
+      recurrence_occurrence_count: existing?.recurrence_occurrence_count ?? 0
     });
   } else {
     await createNoticeRecord({
       title,
       notify_at: notifyAt,
       notice_type: typeValue,
-      recurrence_interval: repeatInterval,
-      recurrence_unit: repeatUnit
+      recurrence_interval: legacyRecurrence.interval,
+      recurrence_unit: legacyRecurrence.unit,
+      recurrence_rule_json: recurrenceRule ? JSON.stringify(recurrenceRule) : null,
+      recurrence_occurrence_count: 0
     });
   }
   closeNoticeModal();
@@ -2120,6 +2169,7 @@ function getStatusColor(key) {
 }
 
 const RECURRENCE_UNITS = new Set(['day', 'week', 'month', 'year']);
+const WEEKDAY_PRESET_DAYS = [1, 2, 3, 4, 5];
 
 function addInterval(date, interval, unit) {
   const next = new Date(date.getTime());
@@ -2132,6 +2182,152 @@ function addInterval(date, interval, unit) {
 
 function normalizeRecurrenceUnit(unit) {
   return RECURRENCE_UNITS.has(unit) ? unit : 'month';
+}
+
+function toLocalDateValue(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function toLocalTimeValue(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(11, 16);
+}
+
+function combineDateAndTimeToIso(dateValue, timeValue, fallbackTimeIso = null) {
+  if (!dateValue) return null;
+  let hour = 0;
+  let minute = 0;
+  if (timeValue) {
+    const [h, m] = timeValue.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    hour = h;
+    minute = m;
+  } else if (fallbackTimeIso) {
+    const fallback = new Date(fallbackTimeIso);
+    if (!Number.isNaN(fallback.getTime())) {
+      hour = fallback.getHours();
+      minute = fallback.getMinutes();
+    }
+  }
+  const [year, month, day] = dateValue.split('-').map(Number);
+  if (![year, month, day].every(Number.isFinite)) return null;
+  const localDate = new Date(year, month - 1, day, hour, minute, 0, 0);
+  if (Number.isNaN(localDate.getTime())) return null;
+  return localDate.toISOString();
+}
+
+function normalizeWeekdays(days = []) {
+  return [...new Set((days ?? [])
+    .map(Number)
+    .filter(Number.isFinite)
+    .filter(day => day >= 0 && day <= 6))]
+    .sort((a, b) => a - b);
+}
+
+function sanitizeNoticeRecurrenceRule(rule) {
+  if (!rule || typeof rule !== 'object') return null;
+  const interval = Number(rule.interval);
+  if (!Number.isFinite(interval) || interval <= 0) return null;
+  const unit = normalizeRecurrenceUnit(rule.unit);
+  const endType = ['never', 'on', 'after'].includes(rule.endType) ? rule.endType : 'never';
+  const endDate = endType === 'on' ? (rule.endDate ?? null) : null;
+  const endCountValue = Number(rule.endCount);
+  const endCount = endType === 'after' && Number.isFinite(endCountValue) && endCountValue > 0
+    ? Math.floor(endCountValue)
+    : null;
+  const weekdays = unit === 'week' ? normalizeWeekdays(rule.weekdays) : [];
+  const anchorDate = (() => {
+    if (!rule.anchorDate) return null;
+    const value = new Date(rule.anchorDate);
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  })();
+  return {
+    interval: Math.floor(interval),
+    unit,
+    weekdays,
+    endType,
+    endDate,
+    endCount,
+    anchorDate
+  };
+}
+
+function getNoticeRecurrenceRule(notice) {
+  if (notice?.recurrence_rule && typeof notice.recurrence_rule === 'object') {
+    return sanitizeNoticeRecurrenceRule(notice.recurrence_rule);
+  }
+  const legacyInterval = Number(notice?.recurrence_interval);
+  if (Number.isFinite(legacyInterval) && legacyInterval > 0 && notice?.recurrence_unit) {
+    return sanitizeNoticeRecurrenceRule({
+      interval: legacyInterval,
+      unit: notice.recurrence_unit,
+      endType: 'never'
+    });
+  }
+  return null;
+}
+
+function getNoticeRepeatPresetFromRule(rule, notifyAtIso) {
+  if (!rule) return 'none';
+  const weekdays = normalizeWeekdays(rule.weekdays);
+  if (rule.interval === 1 && rule.unit === 'day' && !weekdays.length && rule.endType === 'never') return 'daily';
+  if (rule.interval === 1 && rule.unit === 'month' && !weekdays.length && rule.endType === 'never') return 'monthly';
+  if (rule.interval === 1 && rule.unit === 'year' && !weekdays.length && rule.endType === 'never') return 'yearly';
+  if (rule.interval === 1 && rule.unit === 'week' && JSON.stringify(weekdays) === JSON.stringify(WEEKDAY_PRESET_DAYS) && rule.endType === 'never') {
+    return 'weekday';
+  }
+  if (rule.interval === 1 && rule.unit === 'week' && weekdays.length === 1 && rule.endType === 'never') {
+    const notifyDate = notifyAtIso ? new Date(notifyAtIso) : null;
+    if (notifyDate && !Number.isNaN(notifyDate.getTime()) && weekdays[0] === notifyDate.getDay()) {
+      return 'weekly';
+    }
+  }
+  return 'custom';
+}
+
+function buildNoticeRecurrenceRuleFromPreset(preset, notifyAtIso) {
+  if (preset === 'none') return null;
+  if (preset === 'custom') {
+    const rule = sanitizeNoticeRecurrenceRule(noticeRecurrenceDraft);
+    if (!rule) return null;
+    return { ...rule, anchorDate: noticeRecurrenceDraft?.anchorDate ?? notifyAtIso ?? null };
+  }
+  if (preset === 'daily') return { interval: 1, unit: 'day', weekdays: [], endType: 'never', endDate: null, endCount: null, anchorDate: notifyAtIso ?? null };
+  if (preset === 'monthly') return { interval: 1, unit: 'month', weekdays: [], endType: 'never', endDate: null, endCount: null, anchorDate: notifyAtIso ?? null };
+  if (preset === 'yearly') return { interval: 1, unit: 'year', weekdays: [], endType: 'never', endDate: null, endCount: null, anchorDate: notifyAtIso ?? null };
+  if (preset === 'weekday') return { interval: 1, unit: 'week', weekdays: [...WEEKDAY_PRESET_DAYS], endType: 'never', endDate: null, endCount: null, anchorDate: notifyAtIso ?? null };
+  if (preset === 'weekly') {
+    const weekday = (() => {
+      const date = notifyAtIso ? new Date(notifyAtIso) : new Date();
+      return Number.isNaN(date.getTime()) ? new Date().getDay() : date.getDay();
+    })();
+    return { interval: 1, unit: 'week', weekdays: [weekday], endType: 'never', endDate: null, endCount: null, anchorDate: notifyAtIso ?? null };
+  }
+  return null;
+}
+
+function ruleToLegacyRecurrence(rule) {
+  if (!rule) return { interval: null, unit: null };
+  return {
+    interval: rule.interval ?? null,
+    unit: rule.unit ?? null
+  };
+}
+
+function formatNoticeRecurrence(rule) {
+  if (!rule) return '';
+  const unitLabel = `${rule.unit}${rule.interval > 1 ? 's' : ''}`;
+  if (rule.unit === 'week' && normalizeWeekdays(rule.weekdays).length === 5 && JSON.stringify(normalizeWeekdays(rule.weekdays)) === JSON.stringify(WEEKDAY_PRESET_DAYS)) {
+    return 'every weekday';
+  }
+  return `every ${rule.interval} ${unitLabel}`;
 }
 
 function getProjectName(projectId) {
@@ -2204,12 +2400,98 @@ function closeNoticeTypeModal(options = {}) {
   }
 }
 
+function getCustomRecurrenceEndType() {
+  const selected = noticeRecurrenceForm?.querySelector('input[name="notice-custom-end"]:checked');
+  return selected?.value ?? 'never';
+}
+
+function setCustomRecurrenceEndType(value) {
+  const target = ['never', 'on', 'after'].includes(value) ? value : 'never';
+  noticeRecurrenceForm?.querySelectorAll('input[name="notice-custom-end"]').forEach(input => {
+    input.checked = input.value === target;
+  });
+}
+
+function applyCustomWeekdaySelection(days = []) {
+  const normalized = new Set(normalizeWeekdays(days));
+  noticeCustomWeekdays?.querySelectorAll('.weekday-chip').forEach(button => {
+    const day = Number(button.dataset.day);
+    button.classList.toggle('active', normalized.has(day));
+  });
+}
+
+function getSelectedCustomWeekdays() {
+  const selected = [];
+  noticeCustomWeekdays?.querySelectorAll('.weekday-chip.active').forEach(button => {
+    const day = Number(button.dataset.day);
+    if (Number.isFinite(day)) selected.push(day);
+  });
+  return normalizeWeekdays(selected);
+}
+
+function toggleCustomWeekdayRow() {
+  const isWeekly = (noticeCustomUnit?.value ?? 'day') === 'week';
+  noticeCustomWeekdaysRow?.classList.toggle('hidden', !isWeekly);
+}
+
+function fillCustomRecurrenceForm(rule) {
+  const normalized = sanitizeNoticeRecurrenceRule(rule) ?? {
+    interval: 1,
+    unit: 'week',
+    weekdays: [],
+    endType: 'never',
+    endDate: null,
+    endCount: null
+  };
+  if (noticeCustomInterval) noticeCustomInterval.value = String(normalized.interval);
+  if (noticeCustomUnit) noticeCustomUnit.value = normalized.unit;
+  applyCustomWeekdaySelection(normalized.weekdays);
+  setCustomRecurrenceEndType(normalized.endType);
+  if (noticeCustomEndDate) noticeCustomEndDate.value = normalized.endDate ?? '';
+  if (noticeCustomEndCount) noticeCustomEndCount.value = normalized.endCount ? String(normalized.endCount) : '';
+  toggleCustomWeekdayRow();
+}
+
+function readCustomRecurrenceForm() {
+  const interval = Number(noticeCustomInterval?.value ?? 1);
+  const unit = normalizeRecurrenceUnit(noticeCustomUnit?.value ?? 'week');
+  const endType = getCustomRecurrenceEndType();
+  const weekdays = unit === 'week' ? getSelectedCustomWeekdays() : [];
+  const endDate = endType === 'on' ? (noticeCustomEndDate?.value ?? null) : null;
+  const endCount = endType === 'after' ? Number(noticeCustomEndCount?.value ?? 0) : null;
+  return sanitizeNoticeRecurrenceRule({
+    interval,
+    unit,
+    weekdays,
+    endType,
+    endDate,
+    endCount
+  });
+}
+
+function openNoticeRecurrenceModal() {
+  const draft = noticeRecurrenceDraft ?? { interval: 1, unit: 'week', weekdays: [], endType: 'never', endDate: null, endCount: null };
+  fillCustomRecurrenceForm(draft);
+  noticeRecurrenceModal?.classList.remove('hidden');
+  noticeCustomInterval?.focus();
+}
+
+function closeNoticeRecurrenceModal({ restorePreset = false } = {}) {
+  noticeRecurrenceModal?.classList.add('hidden');
+  if (restorePreset && noticeRepeatPreset?.value === 'custom' && !noticeRecurrenceDraft) {
+    noticeRepeatPreset.value = 'none';
+  }
+}
+
 function closeNoticeModal() {
   noticeModal?.classList.add('hidden');
   closeNoticeTypeModal({ restoreSelection: true });
+  closeNoticeRecurrenceModal();
   activeNoticeId = null;
-  if (noticeRepeatInterval) noticeRepeatInterval.value = '';
-  if (noticeRepeatUnit) noticeRepeatUnit.value = 'month';
+  if (noticeDate) noticeDate.value = '';
+  if (noticeTime) noticeTime.value = '';
+  if (noticeRepeatPreset) noticeRepeatPreset.value = 'none';
+  noticeRecurrenceDraft = null;
   noticeDismissBtn?.classList.add('hidden');
 }
 
@@ -2217,12 +2499,12 @@ function openNoticeModalWithNotice(notice) {
   if (!noticeModal) return;
   activeNoticeId = notice?.id ?? null;
   noticeTitle.value = notice?.title ?? '';
-  noticeAt.value = notice?.notify_at ? toDatetimeLocal(notice.notify_at) : '';
-  if (noticeRepeatInterval) {
-    noticeRepeatInterval.value = notice?.recurrence_interval ? String(notice.recurrence_interval) : '';
-  }
-  if (noticeRepeatUnit) {
-    noticeRepeatUnit.value = notice?.recurrence_unit ?? 'month';
+  noticeDate.value = notice?.notify_at ? toLocalDateValue(notice.notify_at) : new Date().toISOString().slice(0, 10);
+  noticeTime.value = notice?.notify_at ? toLocalTimeValue(notice.notify_at) : '';
+  const rule = getNoticeRecurrenceRule(notice);
+  noticeRecurrenceDraft = rule;
+  if (noticeRepeatPreset) {
+    noticeRepeatPreset.value = getNoticeRepeatPresetFromRule(rule, notice?.notify_at ?? null);
   }
   renderNoticeTypeSelect(notice?.notice_type ?? 'general');
   noticeModal.querySelector('h2').textContent = notice ? 'Edit Notice' : 'New Notice';
@@ -2876,13 +3158,24 @@ function normalizeStoreRule(rule) {
 }
 
 function normalizeNotice(notice) {
+  let recurrenceRule = notice.recurrence_rule ?? null;
+  if (!recurrenceRule && notice.recurrence_rule_json) {
+    try {
+      recurrenceRule = JSON.parse(notice.recurrence_rule_json);
+    } catch {
+      recurrenceRule = null;
+    }
+  }
   return {
     ...notice,
     notice_type: notice.notice_type ?? 'general',
     dismissed_at: notice.dismissed_at ?? null,
     notice_sent_at: notice.notice_sent_at ?? null,
     recurrence_interval: notice.recurrence_interval ?? null,
-    recurrence_unit: notice.recurrence_unit ?? null
+    recurrence_unit: notice.recurrence_unit ?? null,
+    recurrence_rule_json: notice.recurrence_rule_json ?? null,
+    recurrence_rule: sanitizeNoticeRecurrenceRule(recurrenceRule),
+    recurrence_occurrence_count: Number(notice.recurrence_occurrence_count ?? 0)
   };
 }
 
@@ -5782,9 +6075,8 @@ function renderNoticeSidebarList() {
     const dateText = Number.isNaN(date.getTime())
       ? notice.notify_at
       : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    const recurrenceText = notice.recurrence_interval && notice.recurrence_unit
-      ? ` · repeats every ${notice.recurrence_interval} ${notice.recurrence_unit}${notice.recurrence_interval > 1 ? 's' : ''}`
-      : '';
+    const recurrenceLabel = formatNoticeRecurrence(getNoticeRecurrenceRule(notice));
+    const recurrenceText = recurrenceLabel ? ` · repeats ${recurrenceLabel}` : '';
     meta.textContent = `${getNoticeTypeLabel(notice.notice_type)} · ${dateText}${recurrenceText}`;
     info.appendChild(title);
     info.appendChild(meta);
@@ -6486,9 +6778,8 @@ function renderNoticesPageList() {
     const dateText = Number.isNaN(date.getTime())
       ? notice.notify_at
       : date.toLocaleString();
-    const recurrenceText = notice.recurrence_interval && notice.recurrence_unit
-      ? ` · repeats every ${notice.recurrence_interval} ${notice.recurrence_unit}${notice.recurrence_interval > 1 ? 's' : ''}`
-      : '';
+    const recurrenceLabel = formatNoticeRecurrence(getNoticeRecurrenceRule(notice));
+    const recurrenceText = recurrenceLabel ? ` · repeats ${recurrenceLabel}` : '';
     meta.textContent = `${getNoticeTypeLabel(notice.notice_type)} · ${dateText}${recurrenceText}`;
     info.appendChild(title);
     info.appendChild(meta);
@@ -9127,20 +9418,66 @@ function shouldNotify(task) {
 }
 
 function getNextNoticeNotifyAt(notice) {
-  const interval = Number(notice?.recurrence_interval);
-  if (!Number.isFinite(interval) || interval <= 0) return null;
-  if (!notice?.notify_at) return null;
+  const rule = getNoticeRecurrenceRule(notice);
+  if (!rule || !notice?.notify_at) return null;
   const base = new Date(notice.notify_at);
   if (Number.isNaN(base.getTime())) return null;
-  const unit = normalizeRecurrenceUnit(notice.recurrence_unit ?? 'month');
-  let next = addInterval(base, interval, unit);
+
+  const getWeekStart = (date) => {
+    const value = new Date(date);
+    value.setHours(0, 0, 0, 0);
+    value.setDate(value.getDate() - value.getDay());
+    return value;
+  };
+
+  const getNextFrom = (current) => {
+    if (rule.unit !== 'week') {
+      return addInterval(current, rule.interval, rule.unit);
+    }
+    const days = normalizeWeekdays(rule.weekdays);
+    if (!days.length) {
+      return addInterval(current, rule.interval, 'week');
+    }
+    const anchor = (() => {
+      const anchorDate = rule.anchorDate ? new Date(rule.anchorDate) : null;
+      return anchorDate && !Number.isNaN(anchorDate.getTime()) ? anchorDate : base;
+    })();
+    const anchorWeekStart = getWeekStart(anchor).getTime();
+    for (let offset = 1; offset <= 3660; offset += 1) {
+      const candidate = new Date(current.getTime());
+      candidate.setDate(candidate.getDate() + offset);
+      if (!days.includes(candidate.getDay())) continue;
+      const weekDiff = Math.floor((getWeekStart(candidate).getTime() - anchorWeekStart) / (7 * 24 * 60 * 60 * 1000));
+      if (weekDiff < 0) continue;
+      if (weekDiff % rule.interval !== 0) continue;
+      return candidate;
+    }
+    return null;
+  };
+
+  const endBoundary = (() => {
+    if (rule.endType !== 'on' || !rule.endDate) return null;
+    const [year, month, day] = rule.endDate.split('-').map(Number);
+    if (![year, month, day].every(Number.isFinite)) return null;
+    return new Date(year, month - 1, day, 23, 59, 59, 999);
+  })();
+
+  const nextCount = Number(notice.recurrence_occurrence_count ?? 0) + 1;
+  if (rule.endType === 'after' && Number(rule.endCount) > 0 && nextCount >= Number(rule.endCount)) {
+    return null;
+  }
+
+  let next = getNextFrom(base);
+  if (!next || Number.isNaN(next.getTime())) return null;
   const now = Date.now();
   let guard = 0;
   while (next.getTime() <= now && guard < 1000) {
-    next = addInterval(next, interval, unit);
+    next = getNextFrom(next);
+    if (!next || Number.isNaN(next.getTime())) return null;
     guard += 1;
   }
-  return next.getTime() > now ? next : null;
+  if (endBoundary && next.getTime() > endBoundary.getTime()) return null;
+  return next;
 }
 
 async function checkNotices() {
@@ -9161,8 +9498,12 @@ async function checkNotices() {
       body: notice.title,
       tag: notice.id
     });
+    const recurrenceRule = getNoticeRecurrenceRule(notice);
     const nextNotifyAt = getNextNoticeNotifyAt(notice);
     const patch = { notice_sent_at: nowIso() };
+    if (recurrenceRule) {
+      patch.recurrence_occurrence_count = Number(notice.recurrence_occurrence_count ?? 0) + 1;
+    }
     if (nextNotifyAt) patch.notify_at = nextNotifyAt.toISOString();
     await updateNoticeRecord(notice.id, patch);
   }

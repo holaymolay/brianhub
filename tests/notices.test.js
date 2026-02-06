@@ -68,10 +68,19 @@ test('notice CRUD works and list is ordered by notify_at', async () => {
     notify_at: '2026-02-03T08:00:00Z',
     notice_type: 'general',
     recurrence_interval: 2,
-    recurrence_unit: 'week'
+    recurrence_unit: 'week',
+    recurrence_rule_json: JSON.stringify({
+      interval: 2,
+      unit: 'week',
+      weekdays: [1, 3, 5],
+      endType: 'never'
+    }),
+    recurrence_occurrence_count: 0
   });
   assert.equal(recurring.recurrence_interval, 2);
   assert.equal(recurring.recurrence_unit, 'week');
+  assert.equal(recurring.recurrence_occurrence_count, 0);
+  assert.ok(recurring.recurrence_rule_json?.includes('"weekdays":[1,3,5]'));
 
   const notices = await listNotices(db, workspace.id);
   assert.equal(notices[0].id, early.id);
@@ -85,6 +94,12 @@ test('notice CRUD works and list is ordered by notify_at', async () => {
   const cleared = await updateNotice(db, recurring.id, { recurrence_interval: null });
   assert.equal(cleared.recurrence_interval, null);
   assert.equal(cleared.recurrence_unit, null);
+  const withCounter = await updateNotice(db, recurring.id, {
+    recurrence_rule_json: JSON.stringify({ interval: 1, unit: 'day', endType: 'after', endCount: 3 }),
+    recurrence_occurrence_count: 2
+  });
+  assert.equal(withCounter.recurrence_occurrence_count, 2);
+  assert.ok(withCounter.recurrence_rule_json?.includes('"endCount":3'));
 
   const deleted = await deleteNotice(db, late.id);
   assert.equal(deleted.deleted, 1);

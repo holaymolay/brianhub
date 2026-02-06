@@ -617,6 +617,47 @@ body {
   flex: 1;
 }
 
+.weekday-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.weekday-chip {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #0f141c;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.weekday-chip.active {
+  border-color: var(--accent);
+  background: rgba(63, 166, 255, 0.2);
+  color: var(--text);
+}
+
+.recurrence-ends {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.radio-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.radio-row input[type='date'],
+.radio-row input[type='number'] {
+  width: 100%;
+}
+
 .workspace-menu-item {
   background: transparent;
   color: var(--text);
