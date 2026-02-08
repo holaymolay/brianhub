@@ -7,6 +7,7 @@
     "dev:api": "node services/api/src/server.js",
     "migrate:data-layer": "node scripts/migrate-data-layer.js",
     "migrate": "node services/api/src/migrate.js",
+    "seed:test-data": "node scripts/seed-test-data.js",
     "test": "node --test"
   },
   "dependencies": {
