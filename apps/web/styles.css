@@ -2886,6 +2886,15 @@ button:hover { opacity: 0.9; }
 }
 
 @media (max-width: 980px) {
+  /* On mobile, disable transform scaling fallback so fixed overlays/nav stay pinned to viewport. */
+  @supports not (zoom: 1) {
+    body {
+      transform: none !important;
+      width: auto !important;
+      min-height: 100% !important;
+    }
+  }
+
   .app-header {
     position: sticky;
     top: 0;
@@ -2971,6 +2980,7 @@ button:hover { opacity: 0.9; }
 
   .mobile-nav {
     display: grid;
+    position: fixed;
   }
 
   .tasks-toolbar {
