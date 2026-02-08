@@ -3734,6 +3734,8 @@ async function selectWorkspace(workspace) {
   state.ui.activeWorkspaceId = workspace.id;
   state.ui.activeProjectId = null;
   state.ui.syncCursor = 0;
+  state.ui.aiSuggestions = [];
+  state.ui.aiSuggestionNotes = '';
   setActiveView('tasks');
   await refreshWorkspace();
   await primeSyncCursor();
@@ -6229,6 +6231,189 @@ function getTaskSortComparator() {
   return compareTasksByPriority;
 }
 
+function getAiSuggestionMinutes() {
+  const raw = Number(state.ui?.aiSuggestionMinutes);
+  if (!Number.isFinite(raw) || raw < 5) return 60;
+  return Math.round(raw);
+}
+
+function setAiSuggestionMinutes(value) {
+  const next = Math.max(5, Math.round(Number(value) || 60));
+  state.ui = state.ui ?? {};
+  state.ui.aiSuggestionMinutes = next;
+}
+
+function getAiSuggestions() {
+  return Array.isArray(state.ui?.aiSuggestions) ? state.ui.aiSuggestions : [];
+}
+
+function setAiSuggestions(suggestions, notes = '') {
+  state.ui = state.ui ?? {};
+  state.ui.aiSuggestions = suggestions;
+  state.ui.aiSuggestionNotes = notes;
+}
+
+function getAiSuggestionNotes() {
+  return String(state.ui?.aiSuggestionNotes ?? '').trim();
+}
+
+function setAiSuggestionDecision(suggestionId, decision) {
+  if (!suggestionId) return;
+  const suggestions = getAiSuggestions().map((item) => {
+    if (item.id !== suggestionId) return item;
+    return {
+      ...item,
+      decision
+    };
+  });
+  setAiSuggestions(suggestions, getAiSuggestionNotes());
+}
+
+async function refreshAiSuggestions(tasks) {
+  state.ui = state.ui ?? {};
+  state.ui.aiSuggestionLoading = true;
+  render();
+  try {
+    const minutes = getAiSuggestionMinutes();
+    const payloadTasks = (tasks ?? []).map(task => ({
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      priority: task.priority,
+      due_at: task.due_at ?? null
+    }));
+    const result = await api.suggestTasks({
+      tasks: payloadTasks,
+      context: {
+        workspace_id: state.workspace?.id ?? null,
+        time_available_minutes: minutes
+      }
+    });
+    const suggestions = (result?.suggestions ?? []).map(item => ({
+      ...item,
+      id: createId(),
+      decision: null
+    }));
+    setAiSuggestions(suggestions, result?.notes ?? '');
+  } catch (err) {
+    alert(err?.message ?? 'Unable to load AI suggestions.');
+  } finally {
+    state.ui.aiSuggestionLoading = false;
+    render();
+  }
+}
+
+function renderAiSuggestionsPanel(tasks) {
+  const panel = document.createElement('section');
+  panel.className = 'ai-suggestions-panel';
+
+  const header = document.createElement('div');
+  header.className = 'ai-suggestions-header';
+  const title = document.createElement('h3');
+  title.textContent = 'AI Suggestions';
+  const controls = document.createElement('div');
+  controls.className = 'ai-suggestions-controls';
+
+  const minutesInput = document.createElement('input');
+  minutesInput.type = 'number';
+  minutesInput.min = '5';
+  minutesInput.step = '5';
+  minutesInput.value = String(getAiSuggestionMinutes());
+  minutesInput.title = 'Minutes available';
+  minutesInput.addEventListener('change', () => {
+    setAiSuggestionMinutes(minutesInput.value);
+  });
+
+  const suggestBtn = document.createElement('button');
+  suggestBtn.type = 'button';
+  suggestBtn.className = 'subtle-button';
+  suggestBtn.textContent = state.ui?.aiSuggestionLoading ? 'Generating…' : 'Suggest next';
+  suggestBtn.disabled = Boolean(state.ui?.aiSuggestionLoading);
+  suggestBtn.addEventListener('click', async () => {
+    await refreshAiSuggestions(tasks);
+  });
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'subtle-button';
+  clearBtn.textContent = 'Clear';
+  clearBtn.disabled = getAiSuggestions().length === 0;
+  clearBtn.addEventListener('click', () => {
+    setAiSuggestions([], '');
+    render();
+  });
+
+  controls.appendChild(minutesInput);
+  controls.appendChild(suggestBtn);
+  controls.appendChild(clearBtn);
+  header.appendChild(title);
+  header.appendChild(controls);
+  panel.appendChild(header);
+
+  const notes = getAiSuggestionNotes();
+  if (notes) {
+    const notesEl = document.createElement('div');
+    notesEl.className = 'ai-suggestions-notes';
+    notesEl.textContent = notes;
+    panel.appendChild(notesEl);
+  }
+
+  const list = document.createElement('div');
+  list.className = 'ai-suggestions-list';
+  const suggestions = getAiSuggestions();
+  if (!suggestions.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'No suggestions yet. Click "Suggest next".';
+    list.appendChild(empty);
+  } else {
+    suggestions.forEach((entry) => {
+      const row = document.createElement('div');
+      row.className = 'ai-suggestion-row';
+
+      const message = document.createElement('div');
+      message.className = 'ai-suggestion-message';
+      message.textContent = entry.message ?? 'Suggestion';
+      row.appendChild(message);
+
+      const actions = document.createElement('div');
+      actions.className = 'ai-suggestion-actions';
+      if (entry.decision) {
+        const badge = document.createElement('span');
+        badge.className = `ai-suggestion-decision ${entry.decision}`;
+        badge.textContent = entry.decision === 'accepted' ? 'Accepted' : 'Rejected';
+        actions.appendChild(badge);
+      } else {
+        const acceptBtn = document.createElement('button');
+        acceptBtn.type = 'button';
+        acceptBtn.className = 'subtle-button';
+        acceptBtn.textContent = 'Accept';
+        acceptBtn.addEventListener('click', () => {
+          setAiSuggestionDecision(entry.id, 'accepted');
+          if (entry.type === 'next-action' && entry.task_id && state.tasks?.[entry.task_id]) {
+            openTaskEditor(entry.task_id);
+          }
+          render();
+        });
+        const rejectBtn = document.createElement('button');
+        rejectBtn.type = 'button';
+        rejectBtn.className = 'subtle-button';
+        rejectBtn.textContent = 'Reject';
+        rejectBtn.addEventListener('click', () => {
+          setAiSuggestionDecision(entry.id, 'rejected');
+          render();
+        });
+        actions.appendChild(acceptBtn);
+        actions.appendChild(rejectBtn);
+      }
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+  panel.appendChild(list);
+  taskTreeEl.appendChild(panel);
+}
+
 function render() {
   const currentSelected = getSelectedTaskIds();
   const validSelected = currentSelected.filter(id => state.tasks?.[id]);
@@ -6285,6 +6470,7 @@ function render() {
     renderCalendarView(tasks);
   } else {
     sortTree(tree, getTaskSortComparator());
+    renderAiSuggestionsPanel(tasks);
     renderTaskList(tree);
   }
   renderShoppingPanel();

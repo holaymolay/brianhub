@@ -231,3 +231,10 @@ export function pullChanges(workspaceId, cursor = 0) {
     body: JSON.stringify({ workspace_id: workspaceId, cursor })
   });
 }
+
+export function suggestTasks(payload) {
+  return request('/ai/suggest', {
+    method: 'POST',
+    body: JSON.stringify(payload ?? {})
+  });
+}
