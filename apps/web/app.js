@@ -20,6 +20,8 @@ const state = {
   workflowPhases: localData.workflowPhases ?? [],
   workflowVariantPhases: localData.workflowVariantPhases ?? [],
   workflowPhaseTasks: localData.workflowPhaseTasks ?? [],
+  workflowPatterns: localData.workflowPatterns ?? localData.workflowFragments ?? [],
+  workflowPatternTasks: localData.workflowPatternTasks ?? localData.workflowFragmentTasks ?? [],
   workflowInstances: localData.workflowInstances ?? [],
   workflowInstanceTasks: localData.workflowInstanceTasks ?? [],
   statuses: localData.statuses ?? [],
@@ -118,7 +120,6 @@ const newNoticeSidebarBtn = document.getElementById('new-notice-sidebar-btn');
 const noticesOpenBtn = document.getElementById('notices-open');
 const noticesPage = document.getElementById('notices-page');
 const workflowsPage = document.getElementById('workflows-page');
-const workflowsBackBtn = document.getElementById('workflows-back');
 const workflowPageTitle = document.getElementById('workflow-page-title');
 const workflowPageSubtitle = document.getElementById('workflow-page-subtitle');
 const workflowMenuButton = document.getElementById('workflow-menu-button');
@@ -127,7 +128,6 @@ const workflowRenameBtn = document.getElementById('workflow-rename');
 const workflowDeleteBtn = document.getElementById('workflow-delete');
 const workflowInstanceAddBtn = document.getElementById('workflow-instance-add');
 const workflowDetailEl = document.getElementById('workflow-detail');
-const noticesBackBtn = document.getElementById('notices-back');
 const noticesListEl = document.getElementById('notices-list');
 const noticesAddBtn = document.getElementById('notices-add-btn');
 const noticeFilterButton = document.getElementById('notice-filter-button');
@@ -145,7 +145,6 @@ const workspaceArchivedBack = document.getElementById('workspace-archived-back')
 const shoppingListTitle = document.getElementById('shopping-list-title');
 const shoppingListSubtitle = document.getElementById('shopping-list-subtitle');
 const shoppingListItemsEl = document.getElementById('shopping-list-items');
-const shoppingBack = document.getElementById('shopping-back');
 const shoppingAddBtn = document.getElementById('shopping-add-item');
 const shoppingListSidebarMenuButton = document.getElementById('shopping-list-sidebar-menu-button');
 const shoppingListSidebarMenu = document.getElementById('shopping-list-sidebar-menu');
@@ -209,6 +208,12 @@ const workflowInstanceVariant = document.getElementById('workflow-instance-varia
 const workflowInstanceTitleInput = document.getElementById('workflow-instance-title');
 const workflowInstanceNotesInput = document.getElementById('workflow-instance-notes');
 const workflowInstanceCancel = document.getElementById('workflow-instance-cancel');
+const workflowApplicabilityModal = document.getElementById('workflow-applicability-modal');
+const workflowApplicabilityForm = document.getElementById('workflow-applicability-form');
+const workflowApplicabilityTitle = document.getElementById('workflow-applicability-title');
+const workflowApplicabilitySubtitle = document.getElementById('workflow-applicability-subtitle');
+const workflowApplicabilityList = document.getElementById('workflow-applicability-list');
+const workflowApplicabilityCancel = document.getElementById('workflow-applicability-cancel');
 const accountButton = document.getElementById('account-button');
 const accountMenu = document.getElementById('account-menu');
 const accountAvatar = document.getElementById('account-avatar');
@@ -366,6 +371,10 @@ let draggingColumnKey = null;
 let draggingColumnEl = null;
 let draggingSectionId = null;
 let draggingSectionEl = null;
+let draggingWorkflowEntryMeta = null;
+let draggingWorkflowEntryEl = null;
+let draggingWorkflowPhaseMeta = null;
+let draggingWorkflowPhaseEl = null;
 let sectionOrderDirty = false;
 let columnOrderDirty = false;
 let suppressTaskClick = false;
@@ -385,6 +394,7 @@ let notesEditorView = null;
 let notesEditorStateCtor = null;
 let notesMarkdownParser = null;
 let notesMarkdownSerializer = null;
+let activeWorkflowApplicabilityInstanceId = null;
 let notesSchema = null;
 let notesEditorPlugins = [];
 let notesMode = notesEditorWrapper?.classList.contains('is-markdown') ? 'markdown' : 'rich';
@@ -796,14 +806,6 @@ workflowsOpenBtn?.addEventListener('click', () => {
   render();
 });
 tasksOpenBtn?.addEventListener('click', () => {
-  setActiveView('tasks');
-  render();
-});
-noticesBackBtn?.addEventListener('click', () => {
-  setActiveView('tasks');
-  render();
-});
-workflowsBackBtn?.addEventListener('click', () => {
   setActiveView('tasks');
   render();
 });
@@ -1308,13 +1310,37 @@ function normalizeWorkflowVariant(variant) {
 function normalizeWorkflowPhase(phase) {
   return {
     ...phase,
-    description: phase.description ?? ''
+    description: phase.description ?? '',
+    locked: Boolean(phase.locked)
   };
 }
 
 function normalizeWorkflowPhaseTask(task) {
   return {
     ...task,
+    item_kind: task.item_kind === 'pattern' ? 'pattern' : 'task',
+    pattern_id: task.pattern_id ?? null,
+    if_applicable: Boolean(task.if_applicable),
+    description_md: task.description_md ?? '',
+    depends_on_ids: Array.isArray(task.depends_on_ids) ? task.depends_on_ids : []
+  };
+}
+
+function normalizeWorkflowPattern(pattern) {
+  return {
+    ...pattern,
+    description: pattern.description ?? '',
+    locked: Boolean(pattern.locked)
+  };
+}
+
+function normalizeWorkflowPatternTask(task) {
+  return {
+    ...task,
+    pattern_id: task.pattern_id ?? task.fragment_id ?? null,
+    item_kind: task.item_kind === 'pattern' ? 'pattern' : 'task',
+    referenced_pattern_id: task.referenced_pattern_id ?? null,
+    if_applicable: Boolean(task.if_applicable),
     description_md: task.description_md ?? '',
     depends_on_ids: Array.isArray(task.depends_on_ids) ? task.depends_on_ids : []
   };
@@ -1323,7 +1349,16 @@ function normalizeWorkflowPhaseTask(task) {
 function normalizeWorkflowInstance(instance) {
   return {
     ...instance,
-    notes: instance.notes ?? ''
+    notes: instance.notes ?? '',
+    applicability_reviewed_at: instance.applicability_reviewed_at ?? null
+  };
+}
+
+function normalizeWorkflowInstanceTaskLink(link) {
+  return {
+    ...link,
+    dismissed_at: link.dismissed_at ?? null,
+    if_applicable: Boolean(link.if_applicable)
   };
 }
 
@@ -1382,11 +1417,51 @@ function makeUniquePhaseName(workflowId, baseName) {
   return name;
 }
 
+function makeUniquePatternName(baseName) {
+  const existing = new Set(getWorkflowPatternsForWorkspace().map(pattern => pattern.name.toLowerCase()));
+  let name = baseName;
+  let attempt = 1;
+  while (existing.has(name.toLowerCase())) {
+    name = `${baseName} (${attempt})`;
+    attempt += 1;
+  }
+  return name;
+}
+
+function patternReferencesPattern(sourcePatternId, targetPatternId, visited = new Set()) {
+  if (!sourcePatternId || !targetPatternId) return false;
+  if (sourcePatternId === targetPatternId) return true;
+  if (visited.has(sourcePatternId)) return false;
+  visited.add(sourcePatternId);
+  const entries = getWorkflowPatternTasks(sourcePatternId);
+  for (const entry of entries) {
+    if (entry.item_kind !== 'pattern' || !entry.referenced_pattern_id) continue;
+    if (entry.referenced_pattern_id === targetPatternId) return true;
+    if (patternReferencesPattern(entry.referenced_pattern_id, targetPatternId, visited)) return true;
+  }
+  return false;
+}
+
+function wouldCreatePatternCycle(parentPatternId, childPatternId) {
+  if (!parentPatternId || !childPatternId) return false;
+  if (parentPatternId === childPatternId) return true;
+  return patternReferencesPattern(childPatternId, parentPatternId);
+}
+
 function getWorkflowPhases(workflowId) {
   return (state.workflowPhases ?? [])
     .filter(phase => phase.workflow_id === workflowId)
     .map(normalizeWorkflowPhase)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+}
+
+function getWorkflowPhaseById(id) {
+  const phase = (state.workflowPhases ?? []).find(item => item.id === id);
+  return phase ? normalizeWorkflowPhase(phase) : null;
+}
+
+function isWorkflowPhaseLocked(phaseId) {
+  return Boolean(getWorkflowPhaseById(phaseId)?.locked);
 }
 
 function getWorkflowVariantPhases(variantId) {
@@ -1408,6 +1483,31 @@ function getWorkflowPhaseTasks(phaseId) {
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 }
 
+function getWorkflowPatternsForWorkspace() {
+  if (!state.workspace) return [];
+  const workspaceId = state.workspace.id;
+  return (state.workflowPatterns ?? [])
+    .filter(pattern => pattern.workspace_id === workspaceId)
+    .map(normalizeWorkflowPattern)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getWorkflowPatternById(id) {
+  return (state.workflowPatterns ?? []).find(pattern => pattern.id === id) ?? null;
+}
+
+function isWorkflowPatternLocked(patternId) {
+  const pattern = getWorkflowPatternById(patternId);
+  return Boolean(pattern?.locked);
+}
+
+function getWorkflowPatternTasks(patternId) {
+  return (state.workflowPatternTasks ?? [])
+    .map(normalizeWorkflowPatternTask)
+    .filter(task => task.pattern_id === patternId)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+}
+
 function getWorkflowInstances(workflowId) {
   return (state.workflowInstances ?? [])
     .filter(instance => instance.workflow_id === workflowId)
@@ -1417,11 +1517,16 @@ function getWorkflowInstances(workflowId) {
 
 function getWorkflowInstanceTasks(instanceId) {
   return (state.workflowInstanceTasks ?? [])
-    .filter(link => link.workflow_instance_id === instanceId);
+    .filter(link => link.workflow_instance_id === instanceId)
+    .map(normalizeWorkflowInstanceTaskLink);
 }
 
 function getWorkflowInstanceLinkByTaskId(taskId) {
-  return (state.workflowInstanceTasks ?? []).find(link => link.task_id === taskId) ?? null;
+  const link = (state.workflowInstanceTasks ?? []).find(item => item.task_id === taskId) ?? null;
+  if (!link) return null;
+  if (link.dismissed_at === undefined) link.dismissed_at = null;
+  if (link.if_applicable === undefined) link.if_applicable = false;
+  return link;
 }
 
 function getWorkflowInstanceProgress(instanceId) {
@@ -1452,7 +1557,7 @@ function getWorkflowInstanceProgress(instanceId) {
 
 function dismissWorkflowTask(taskId) {
   const link = getWorkflowInstanceLinkByTaskId(taskId);
-  if (!link || link.dismissed_at) return;
+  if (!link || link.dismissed_at || !link.if_applicable) return;
   link.dismissed_at = nowIso();
   persistLocalData();
 }
@@ -1461,6 +1566,110 @@ function restoreWorkflowTask(taskId) {
   const link = getWorkflowInstanceLinkByTaskId(taskId);
   if (!link || !link.dismissed_at) return;
   delete link.dismissed_at;
+  persistLocalData();
+}
+
+function getWorkflowApplicabilityEntries(instanceId) {
+  const links = getWorkflowInstanceTasks(instanceId)
+    .filter(link => link.if_applicable || link.dismissed_at);
+  if (!links.length) return [];
+  const instance = (state.workflowInstances ?? []).find(item => item.id === instanceId) ?? null;
+  const phaseNameById = new Map();
+  if (instance?.variant_id) {
+    getWorkflowVariantPhases(instance.variant_id).forEach(entry => {
+      phaseNameById.set(entry.phase.id, entry.phase.name);
+    });
+  }
+  return links
+    .map(link => {
+      const task = state.tasks?.[link.task_id] ?? null;
+      if (!task) return null;
+      return {
+        link,
+        task,
+        phaseName: phaseNameById.get(link.phase_id) ?? 'Phase'
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (a.link.sort_order ?? 0) - (b.link.sort_order ?? 0));
+}
+
+function openWorkflowApplicabilityModal(instanceId) {
+  if (!workflowApplicabilityModal || !workflowApplicabilityList) return;
+  const instance = (state.workflowInstances ?? []).find(item => item.id === instanceId) ?? null;
+  if (!instance) return;
+  activeWorkflowApplicabilityInstanceId = instanceId;
+  if (workflowApplicabilityTitle) {
+    workflowApplicabilityTitle.textContent = `Optional tasks for ${instance.title}`;
+  }
+  if (workflowApplicabilitySubtitle) {
+    workflowApplicabilitySubtitle.textContent = 'Choose which optional tasks should remain active for this workflow.';
+  }
+  workflowApplicabilityList.innerHTML = '';
+  const entries = getWorkflowApplicabilityEntries(instanceId);
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'No optional tasks found for this workflow.';
+    workflowApplicabilityList.appendChild(empty);
+  } else {
+    entries.forEach(entry => {
+      const row = document.createElement('label');
+      row.className = 'workflow-applicability-row';
+      row.dataset.linkId = entry.link.id;
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = !entry.link.dismissed_at;
+      const textWrap = document.createElement('div');
+      textWrap.className = 'workflow-applicability-text';
+      const title = document.createElement('div');
+      title.className = 'workflow-applicability-title';
+      title.textContent = entry.task.title;
+      const meta = document.createElement('div');
+      meta.className = 'workflow-applicability-meta';
+      meta.textContent = entry.phaseName;
+      textWrap.appendChild(title);
+      textWrap.appendChild(meta);
+      row.appendChild(checkbox);
+      row.appendChild(textWrap);
+      workflowApplicabilityList.appendChild(row);
+    });
+  }
+  workflowApplicabilityModal.classList.remove('hidden');
+}
+
+function closeWorkflowApplicabilityModal() {
+  workflowApplicabilityModal?.classList.add('hidden');
+  activeWorkflowApplicabilityInstanceId = null;
+}
+
+function applyWorkflowApplicabilitySelections() {
+  if (!activeWorkflowApplicabilityInstanceId || !workflowApplicabilityList) return;
+  const links = state.workflowInstanceTasks ?? [];
+  const now = nowIso();
+  let changed = false;
+  workflowApplicabilityList.querySelectorAll('.workflow-applicability-row').forEach((row) => {
+    const linkId = row.dataset.linkId;
+    const checkbox = row.querySelector('input[type="checkbox"]');
+    if (!linkId || !checkbox) return;
+    const link = links.find(item => item.id === linkId);
+    if (!link) return;
+    if (checkbox.checked) {
+      if (link.dismissed_at) {
+        delete link.dismissed_at;
+        changed = true;
+      }
+      return;
+    }
+    if (!link.dismissed_at) {
+      link.dismissed_at = now;
+      changed = true;
+    }
+  });
+  updateWorkflowInstanceRecord(activeWorkflowApplicabilityInstanceId, {
+    applicability_reviewed_at: now
+  });
+  if (!changed) return;
   persistLocalData();
 }
 
@@ -1498,6 +1707,40 @@ function getWorkflowViewMode() {
 function setWorkflowViewMode(mode) {
   state.ui = state.ui ?? {};
   state.ui.workflowViewMode = mode;
+}
+
+function getWorkflowPatternCollapsedMap() {
+  state.ui = state.ui ?? {};
+  state.ui.workflowPatternCollapsed = state.ui.workflowPatternCollapsed ?? {};
+  return state.ui.workflowPatternCollapsed;
+}
+
+function isWorkflowPatternCollapsed(patternId) {
+  const collapsedMap = getWorkflowPatternCollapsedMap();
+  if (collapsedMap[patternId] === undefined) return true;
+  return Boolean(collapsedMap[patternId]);
+}
+
+function setWorkflowPatternCollapsed(patternId, collapsed) {
+  const collapsedMap = getWorkflowPatternCollapsedMap();
+  collapsedMap[patternId] = Boolean(collapsed);
+}
+
+function getWorkflowPhaseCollapsedMap() {
+  state.ui = state.ui ?? {};
+  state.ui.workflowPhaseCollapsed = state.ui.workflowPhaseCollapsed ?? {};
+  return state.ui.workflowPhaseCollapsed;
+}
+
+function isWorkflowPhaseCollapsed(phaseId) {
+  const collapsedMap = getWorkflowPhaseCollapsedMap();
+  if (collapsedMap[phaseId] === undefined) return true;
+  return Boolean(collapsedMap[phaseId]);
+}
+
+function setWorkflowPhaseCollapsed(phaseId, collapsed) {
+  const collapsedMap = getWorkflowPhaseCollapsedMap();
+  collapsedMap[phaseId] = Boolean(collapsed);
 }
 
 function getNextWorkflowSortOrder(items) {
@@ -1628,6 +1871,7 @@ function createWorkflowPhaseRecord(workflowId, name) {
     workflow_id: workflowId,
     name: trimmed,
     description: '',
+    locked: false,
     sort_order: getNextWorkflowSortOrder(phases.filter(item => item.workflow_id === workflowId)),
     created_at: now,
     updated_at: now
@@ -1641,11 +1885,20 @@ function updateWorkflowPhaseRecord(id, patch) {
   if (patch.name !== undefined) {
     patch = { ...patch, name: normalizeTitleInput(patch.name) };
   }
+  if (patch.locked !== undefined) {
+    patch = { ...patch, locked: Boolean(patch.locked) };
+  }
   const phases = state.workflowPhases ?? [];
   const index = phases.findIndex(item => item.id === id);
   if (index < 0) return null;
+  const current = normalizeWorkflowPhase(phases[index]);
+  if (current.locked) {
+    const keys = Object.keys(patch);
+    const lockToggleOnly = keys.length === 1 && keys[0] === 'locked';
+    if (!lockToggleOnly) return current;
+  }
   const next = normalizeWorkflowPhase({
-    ...phases[index],
+    ...current,
     ...patch,
     updated_at: nowIso()
   });
@@ -1703,14 +1956,19 @@ function copyWorkflowPhaseToBlueprint({ sourceWorkflowId, phaseId, targetWorkflo
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const taskIdMap = new Map();
   sourceTasks.forEach(task => {
-    const created = createWorkflowPhaseTaskRecord(newPhase.id, task.title);
+    const created = createWorkflowPhaseTaskRecord(newPhase.id, task.title, {
+      item_kind: task.item_kind,
+      pattern_id: task.pattern_id ?? null,
+      if_applicable: Boolean(task.if_applicable)
+    });
     if (!created) return;
     taskIdMap.set(task.id, created.id);
-    if (task.description_md) {
+    if (task.item_kind !== 'pattern' && task.description_md) {
       updateWorkflowPhaseTaskRecord(created.id, { description_md: task.description_md });
     }
   });
   sourceTasks.forEach(task => {
+    if (task.item_kind === 'pattern') return;
     const newId = taskIdMap.get(task.id);
     if (!newId) return;
     const nextDeps = (task.depends_on_ids ?? [])
@@ -1740,6 +1998,7 @@ function linkWorkflowVariantPhase(variantId, phaseId) {
 }
 
 function unlinkWorkflowVariantPhase(variantId, phaseId) {
+  if (isWorkflowPhaseLocked(phaseId)) return;
   state.workflowVariantPhases = (state.workflowVariantPhases ?? [])
     .filter(link => !(link.variant_id === variantId && link.phase_id === phaseId));
   const stillUsed = (state.workflowVariantPhases ?? [])
@@ -1751,17 +2010,23 @@ function unlinkWorkflowVariantPhase(variantId, phaseId) {
   }
 }
 
-function createWorkflowPhaseTaskRecord(phaseId, title) {
+function createWorkflowPhaseTaskRecord(phaseId, title, options = {}) {
+  if (isWorkflowPhaseLocked(phaseId)) return null;
   const trimmed = normalizeTitleInput(title);
   if (!trimmed) return null;
   const tasks = state.workflowPhaseTasks ?? [];
   const now = nowIso();
+  const itemKind = options.item_kind === 'pattern' ? 'pattern' : 'task';
+  const patternId = itemKind === 'pattern' ? (options.pattern_id ?? null) : null;
   const task = normalizeWorkflowPhaseTask({
     id: createId(),
     phase_id: phaseId,
     title: trimmed,
-    description_md: '',
-    depends_on_ids: [],
+    item_kind: itemKind,
+    pattern_id: patternId,
+    if_applicable: Boolean(options.if_applicable),
+    description_md: itemKind === 'pattern' ? '' : '',
+    depends_on_ids: itemKind === 'pattern' ? [] : [],
     sort_order: getNextWorkflowSortOrder(tasks.filter(item => item.phase_id === phaseId)),
     created_at: now,
     updated_at: now
@@ -1775,12 +2040,38 @@ function updateWorkflowPhaseTaskRecord(id, patch) {
   if (patch.title !== undefined) {
     patch = { ...patch, title: normalizeTitleInput(patch.title) };
   }
+  if (patch.item_kind !== undefined) {
+    patch = {
+      ...patch,
+      item_kind: patch.item_kind === 'pattern' ? 'pattern' : 'task'
+    };
+  }
+  if (patch.if_applicable !== undefined) {
+    patch = {
+      ...patch,
+      if_applicable: Boolean(patch.if_applicable)
+    };
+  }
   const tasks = state.workflowPhaseTasks ?? [];
   const index = tasks.findIndex(item => item.id === id);
   if (index < 0) return null;
+  const current = normalizeWorkflowPhaseTask(tasks[index]);
+  if (isWorkflowPhaseLocked(current.phase_id)) return current;
+  const itemKind = patch.item_kind ?? current.item_kind;
+  const normalizedPatch = { ...patch };
+  if (itemKind === 'pattern') {
+    if (normalizedPatch.pattern_id === undefined) {
+      normalizedPatch.pattern_id = current.pattern_id ?? null;
+    }
+    normalizedPatch.description_md = '';
+    normalizedPatch.depends_on_ids = [];
+    normalizedPatch.if_applicable = false;
+  } else if (normalizedPatch.pattern_id === undefined) {
+    normalizedPatch.pattern_id = null;
+  }
   const next = normalizeWorkflowPhaseTask({
     ...tasks[index],
-    ...patch,
+    ...normalizedPatch,
     updated_at: nowIso()
   });
   tasks[index] = next;
@@ -1790,6 +2081,10 @@ function updateWorkflowPhaseTaskRecord(id, patch) {
 }
 
 function deleteWorkflowPhaseTaskRecord(id) {
+  const task = (state.workflowPhaseTasks ?? [])
+    .map(normalizeWorkflowPhaseTask)
+    .find(item => item.id === id);
+  if (task && isWorkflowPhaseLocked(task.phase_id)) return;
   state.workflowPhaseTasks = (state.workflowPhaseTasks ?? []).filter(task => task.id !== id);
   state.workflowPhaseTasks = (state.workflowPhaseTasks ?? []).map(task => {
     if (!Array.isArray(task.depends_on_ids)) return task;
@@ -1799,6 +2094,226 @@ function deleteWorkflowPhaseTaskRecord(id) {
     };
   });
   persistLocalData();
+}
+
+function createWorkflowPatternRecord(name, description = '') {
+  if (!state.workspace) return null;
+  const trimmed = normalizeTitleInput(name);
+  if (!trimmed) return null;
+  const now = nowIso();
+  const pattern = normalizeWorkflowPattern({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    name: trimmed,
+    description,
+    locked: false,
+    sort_order: getNextWorkflowSortOrder(getWorkflowPatternsForWorkspace()),
+    created_at: now,
+    updated_at: now
+  });
+  state.workflowPatterns = [...(state.workflowPatterns ?? []), pattern];
+  persistLocalData();
+  return pattern;
+}
+
+function updateWorkflowPatternRecord(id, patch) {
+  if (patch.name !== undefined) {
+    patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
+  if (patch.locked !== undefined) {
+    patch = { ...patch, locked: Boolean(patch.locked) };
+  }
+  const patterns = state.workflowPatterns ?? [];
+  const index = patterns.findIndex(item => item.id === id);
+  if (index < 0) return null;
+  const current = normalizeWorkflowPattern(patterns[index]);
+  if (current.locked) {
+    const keys = Object.keys(patch);
+    const lockToggleOnly = keys.length === 1 && keys[0] === 'locked';
+    if (!lockToggleOnly) return current;
+  }
+  const next = normalizeWorkflowPattern({
+    ...current,
+    ...patch,
+    updated_at: nowIso()
+  });
+  patterns[index] = next;
+  state.workflowPatterns = patterns;
+  persistLocalData();
+  return next;
+}
+
+function deleteWorkflowPatternRecord(id) {
+  if (isWorkflowPatternLocked(id)) return;
+  const removedTaskIds = new Set(
+    (state.workflowPatternTasks ?? [])
+      .map(normalizeWorkflowPatternTask)
+      .filter(task => task.pattern_id === id)
+      .map(task => task.id)
+  );
+  state.workflowPatterns = (state.workflowPatterns ?? []).filter(pattern => pattern.id !== id);
+  state.workflowPatternTasks = (state.workflowPatternTasks ?? [])
+    .map(normalizeWorkflowPatternTask)
+    .filter(task => task.pattern_id !== id)
+    .map(task => {
+      if (!Array.isArray(task.depends_on_ids)) return task;
+      return {
+        ...task,
+        depends_on_ids: task.depends_on_ids.filter(dep => !removedTaskIds.has(dep))
+      };
+    });
+  persistLocalData();
+}
+
+function createWorkflowPatternTaskRecord(patternId, title, options = {}) {
+  if (isWorkflowPatternLocked(patternId)) return null;
+  const trimmed = normalizeTitleInput(title);
+  if (!trimmed) return null;
+  const tasks = state.workflowPatternTasks ?? [];
+  const now = nowIso();
+  const itemKind = options.item_kind === 'pattern' ? 'pattern' : 'task';
+  const referencedPatternId = itemKind === 'pattern' ? (options.referenced_pattern_id ?? null) : null;
+  const patternTasks = tasks
+    .map(normalizeWorkflowPatternTask)
+    .filter(item => item.pattern_id === patternId);
+  const task = normalizeWorkflowPatternTask({
+    id: createId(),
+    pattern_id: patternId,
+    item_kind: itemKind,
+    referenced_pattern_id: referencedPatternId,
+    title: trimmed,
+    if_applicable: Boolean(options.if_applicable),
+    description_md: itemKind === 'pattern' ? '' : '',
+    depends_on_ids: itemKind === 'pattern' ? [] : [],
+    sort_order: getNextWorkflowSortOrder(patternTasks),
+    created_at: now,
+    updated_at: now
+  });
+  state.workflowPatternTasks = [...tasks, task];
+  persistLocalData();
+  return task;
+}
+
+function updateWorkflowPatternTaskRecord(id, patch) {
+  if (patch.title !== undefined) {
+    patch = { ...patch, title: normalizeTitleInput(patch.title) };
+  }
+  if (patch.item_kind !== undefined) {
+    patch = {
+      ...patch,
+      item_kind: patch.item_kind === 'pattern' ? 'pattern' : 'task'
+    };
+  }
+  if (patch.if_applicable !== undefined) {
+    patch = {
+      ...patch,
+      if_applicable: Boolean(patch.if_applicable)
+    };
+  }
+  const tasks = state.workflowPatternTasks ?? [];
+  const index = tasks.findIndex(item => item.id === id);
+  if (index < 0) return null;
+  const current = normalizeWorkflowPatternTask(tasks[index]);
+  if (isWorkflowPatternLocked(current.pattern_id)) return current;
+  const itemKind = patch.item_kind ?? current.item_kind;
+  const normalizedPatch = { ...patch };
+  if (itemKind === 'pattern') {
+    if (normalizedPatch.referenced_pattern_id === undefined) {
+      normalizedPatch.referenced_pattern_id = current.referenced_pattern_id ?? null;
+    }
+    normalizedPatch.description_md = '';
+    normalizedPatch.depends_on_ids = [];
+    normalizedPatch.if_applicable = false;
+  } else if (normalizedPatch.referenced_pattern_id === undefined) {
+    normalizedPatch.referenced_pattern_id = null;
+  }
+  const next = normalizeWorkflowPatternTask({
+    ...tasks[index],
+    ...normalizedPatch,
+    updated_at: nowIso()
+  });
+  tasks[index] = next;
+  state.workflowPatternTasks = tasks;
+  persistLocalData();
+  return next;
+}
+
+function deleteWorkflowPatternTaskRecord(id) {
+  const task = (state.workflowPatternTasks ?? [])
+    .map(normalizeWorkflowPatternTask)
+    .find(item => item.id === id);
+  if (task && isWorkflowPatternLocked(task.pattern_id)) return;
+  state.workflowPatternTasks = (state.workflowPatternTasks ?? []).filter(task => task.id !== id);
+  state.workflowPatternTasks = (state.workflowPatternTasks ?? []).map(task => {
+    if (!Array.isArray(task.depends_on_ids)) return task;
+    return {
+      ...task,
+      depends_on_ids: task.depends_on_ids.filter(dep => dep !== id)
+    };
+  });
+  persistLocalData();
+}
+
+function createPatternFromPhase(workflowId, phaseId, preferredName = null) {
+  const phase = getWorkflowPhases(workflowId).find(item => item.id === phaseId);
+  if (!phase) return null;
+  const phaseTasks = getWorkflowPhaseTasks(phaseId);
+  if (!phaseTasks.length) return null;
+  const patternName = makeUniquePatternName(normalizeTitleInput(preferredName ?? phase.name));
+  const pattern = createWorkflowPatternRecord(patternName);
+  if (!pattern) return null;
+  const idMap = new Map();
+  phaseTasks.forEach(task => {
+    const created = createWorkflowPatternTaskRecord(pattern.id, task.title, {
+      item_kind: task.item_kind,
+      referenced_pattern_id: task.pattern_id ?? null,
+      if_applicable: Boolean(task.if_applicable)
+    });
+    if (!created) return;
+    idMap.set(task.id, created.id);
+    if (task.item_kind !== 'pattern' && task.description_md) {
+      updateWorkflowPatternTaskRecord(created.id, { description_md: task.description_md });
+    }
+  });
+  phaseTasks.forEach(task => {
+    if (task.item_kind === 'pattern') return;
+    const nextTaskId = idMap.get(task.id);
+    if (!nextTaskId) return;
+    const deps = (task.depends_on_ids ?? [])
+      .map(depId => idMap.get(depId))
+      .filter(Boolean);
+    if (deps.length) {
+      updateWorkflowPatternTaskRecord(nextTaskId, { depends_on_ids: deps });
+    }
+  });
+  return pattern;
+}
+
+function insertPatternIntoPhase({ phaseId, patternId }) {
+  if (isWorkflowPhaseLocked(phaseId)) return null;
+  const phase = (state.workflowPhases ?? []).find(item => item.id === phaseId);
+  if (!phase) return null;
+  const pattern = getWorkflowPatternById(patternId);
+  if (!pattern) return null;
+  const created = createWorkflowPhaseTaskRecord(phaseId, pattern.name, {
+    item_kind: 'pattern',
+    pattern_id: pattern.id
+  });
+  return created ? 1 : null;
+}
+
+function insertPatternIntoPattern({ targetPatternId, childPatternId }) {
+  if (isWorkflowPatternLocked(targetPatternId)) return null;
+  const targetPattern = getWorkflowPatternById(targetPatternId);
+  if (!targetPattern) return null;
+  const childPattern = getWorkflowPatternById(childPatternId);
+  if (!childPattern) return null;
+  if (wouldCreatePatternCycle(targetPatternId, childPatternId)) return null;
+  const created = createWorkflowPatternTaskRecord(targetPatternId, childPattern.name, {
+    item_kind: 'pattern',
+    referenced_pattern_id: childPattern.id
+  });
+  return created ? 1 : null;
 }
 
 function createWorkflowInstanceRecord({ workflowId, variantId, title, notes }) {
@@ -1813,12 +2328,28 @@ function createWorkflowInstanceRecord({ workflowId, variantId, title, notes }) {
     workspace_id: state.workspace.id,
     title: trimmed,
     notes: notes ?? '',
+    applicability_reviewed_at: null,
     created_at: now,
     updated_at: now
   });
   state.workflowInstances = [...(state.workflowInstances ?? []), instance];
   persistLocalData();
   return instance;
+}
+
+function updateWorkflowInstanceRecord(id, patch) {
+  const instances = state.workflowInstances ?? [];
+  const index = instances.findIndex(item => item.id === id);
+  if (index < 0) return null;
+  const next = normalizeWorkflowInstance({
+    ...instances[index],
+    ...patch,
+    updated_at: nowIso()
+  });
+  instances[index] = next;
+  state.workflowInstances = instances;
+  persistLocalData();
+  return next;
 }
 
 function deleteWorkflowInstanceRecord(id) {
@@ -1858,36 +2389,122 @@ async function scaffoldWorkflowInstance(instance, variantId) {
   const taskMap = new Map();
   const links = [];
   const now = nowIso();
+
+  const createInstanceTaskFromTemplate = async ({
+    title,
+    description_md,
+    phaseId,
+    templateTaskId,
+    sortOrder,
+    ifApplicable = false
+  }) => {
+    const created = await createTaskRecord({
+      title,
+      description_md: description_md ?? ''
+    });
+    if (!created) return null;
+    links.push({
+      id: createId(),
+      workflow_instance_id: instance.id,
+      task_id: created.id,
+      phase_id: phaseId,
+      template_task_id: templateTaskId,
+      sort_order: sortOrder,
+      created_at: now,
+      dismissed_at: null,
+      if_applicable: Boolean(ifApplicable)
+    });
+    return created.id;
+  };
+
+  const expandPatternEntries = async ({ patternId, phaseId, templateTaskId, phaseSortCounter, activeChain = new Set() }) => {
+    if (!patternId) return;
+    if (activeChain.has(patternId)) return;
+    const nextChain = new Set(activeChain);
+    nextChain.add(patternId);
+    const patternEntries = getWorkflowPatternTasks(patternId);
+    if (!patternEntries.length) return;
+
+    const localTaskMap = new Map();
+    for (const entry of patternEntries) {
+      if (entry.item_kind === 'pattern' && entry.referenced_pattern_id) {
+        await expandPatternEntries({
+          patternId: entry.referenced_pattern_id,
+          phaseId,
+          templateTaskId,
+          phaseSortCounter,
+          activeChain: nextChain
+        });
+        continue;
+      }
+      const createdTaskId = await createInstanceTaskFromTemplate({
+        title: entry.title,
+        description_md: entry.description_md ?? '',
+        phaseId,
+        templateTaskId,
+        sortOrder: phaseSortCounter.next(),
+        ifApplicable: Boolean(entry.if_applicable)
+      });
+      if (createdTaskId) {
+        localTaskMap.set(entry.id, createdTaskId);
+      }
+    }
+
+    for (const entry of patternEntries) {
+      if (entry.item_kind === 'pattern') continue;
+      if (!entry.depends_on_ids?.length) continue;
+      const taskId = localTaskMap.get(entry.id);
+      if (!taskId) continue;
+      for (const dependsId of entry.depends_on_ids) {
+        const dependsTaskId = localTaskMap.get(dependsId);
+        if (!dependsTaskId) continue;
+        await addTaskDependencyRecord(taskId, dependsTaskId);
+      }
+    }
+  };
+
   for (let phaseIndex = 0; phaseIndex < variantPhases.length; phaseIndex += 1) {
     const phaseEntry = variantPhases[phaseIndex];
     const phaseTasks = getWorkflowPhaseTasks(phaseEntry.phase.id);
-    for (let taskIndex = 0; taskIndex < phaseTasks.length; taskIndex += 1) {
-      const templateTask = phaseTasks[taskIndex];
-      const created = await createTaskRecord({
-        title: templateTask.title,
-        description_md: templateTask.description_md ?? ''
+    let phaseSortOrdinal = 0;
+    const phaseSortCounter = {
+      next() {
+        phaseSortOrdinal += 1;
+        return (phaseIndex + 1) * 100000 + phaseSortOrdinal * 10;
+      }
+    };
+    for (const templateEntry of phaseTasks) {
+      if (templateEntry.item_kind === 'pattern' && templateEntry.pattern_id) {
+        await expandPatternEntries({
+          patternId: templateEntry.pattern_id,
+          phaseId: phaseEntry.phase.id,
+          templateTaskId: templateEntry.id,
+          phaseSortCounter
+        });
+        continue;
+      }
+      const createdTaskId = await createInstanceTaskFromTemplate({
+        title: templateEntry.title,
+        description_md: templateEntry.description_md ?? '',
+        phaseId: phaseEntry.phase.id,
+        templateTaskId: templateEntry.id,
+        sortOrder: phaseSortCounter.next(),
+        ifApplicable: Boolean(templateEntry.if_applicable)
       });
-      if (!created) continue;
-      taskMap.set(templateTask.id, created.id);
-      links.push({
-        id: createId(),
-        workflow_instance_id: instance.id,
-        task_id: created.id,
-        phase_id: phaseEntry.phase.id,
-        template_task_id: templateTask.id,
-        sort_order: (phaseIndex + 1) * 1000 + (taskIndex + 1) * 10,
-        created_at: now,
-        dismissed_at: null
-      });
+      if (!createdTaskId) continue;
+      taskMap.set(templateEntry.id, createdTaskId);
     }
   }
+
   if (links.length) {
     state.workflowInstanceTasks = [...(state.workflowInstanceTasks ?? []), ...links];
     persistLocalData();
   }
+
   for (const phaseEntry of variantPhases) {
     const phaseTasks = getWorkflowPhaseTasks(phaseEntry.phase.id);
     for (const templateTask of phaseTasks) {
+      if (templateTask.item_kind === 'pattern') continue;
       if (!templateTask.depends_on_ids?.length) continue;
       const taskId = taskMap.get(templateTask.id);
       if (!taskId) continue;
@@ -2810,6 +3427,8 @@ function persistLocalData() {
     workflowPhases: state.workflowPhases ?? [],
     workflowVariantPhases: state.workflowVariantPhases ?? [],
     workflowPhaseTasks: state.workflowPhaseTasks ?? [],
+    workflowPatterns: state.workflowPatterns ?? [],
+    workflowPatternTasks: state.workflowPatternTasks ?? [],
     workflowInstances: state.workflowInstances ?? [],
     workflowInstanceTasks: state.workflowInstanceTasks ?? [],
     notices: state.notices ?? [],
@@ -2844,6 +3463,8 @@ function snapshotLocalData() {
     workflowPhases: state.workflowPhases ?? [],
     workflowVariantPhases: state.workflowVariantPhases ?? [],
     workflowPhaseTasks: state.workflowPhaseTasks ?? [],
+    workflowPatterns: state.workflowPatterns ?? [],
+    workflowPatternTasks: state.workflowPatternTasks ?? [],
     workflowInstances: state.workflowInstances ?? [],
     workflowInstanceTasks: state.workflowInstanceTasks ?? [],
     notices: state.notices ?? [],
@@ -2868,6 +3489,8 @@ function applyLocalDataSnapshot(data) {
   state.workflowPhases = data.workflowPhases ?? [];
   state.workflowVariantPhases = data.workflowVariantPhases ?? [];
   state.workflowPhaseTasks = data.workflowPhaseTasks ?? [];
+  state.workflowPatterns = data.workflowPatterns ?? data.workflowFragments ?? [];
+  state.workflowPatternTasks = data.workflowPatternTasks ?? data.workflowFragmentTasks ?? [];
   state.workflowInstances = data.workflowInstances ?? [];
   state.workflowInstanceTasks = data.workflowInstanceTasks ?? [];
   state.notices = data.notices ?? [];
@@ -5310,6 +5933,261 @@ function persistSectionOrder(listEl) {
   render();
 }
 
+function persistWorkflowEntryOrder(scope, parentId, orderedIds) {
+  if (!parentId || !orderedIds.length) return;
+  const now = nowIso();
+  const sortById = new Map(orderedIds.map((id, index) => [id, (index + 1) * 10]));
+  if (scope === 'phase') {
+    const entries = state.workflowPhaseTasks ?? [];
+    let changed = false;
+    entries.forEach(entry => {
+      if (entry.phase_id !== parentId) return;
+      const nextSort = sortById.get(entry.id);
+      if (!Number.isFinite(nextSort)) return;
+      if ((entry.sort_order ?? 0) === nextSort) return;
+      entry.sort_order = nextSort;
+      entry.updated_at = now;
+      changed = true;
+    });
+    if (changed) {
+      state.workflowPhaseTasks = [...entries];
+      persistLocalData();
+    }
+    return;
+  }
+  if (scope === 'pattern') {
+    const entries = state.workflowPatternTasks ?? [];
+    let changed = false;
+    entries.forEach(entry => {
+      const normalized = normalizeWorkflowPatternTask(entry);
+      if (normalized.pattern_id !== parentId) return;
+      const nextSort = sortById.get(normalized.id);
+      if (!Number.isFinite(nextSort)) return;
+      if ((normalized.sort_order ?? 0) === nextSort) return;
+      entry.sort_order = nextSort;
+      entry.updated_at = now;
+      changed = true;
+    });
+    if (changed) {
+      state.workflowPatternTasks = [...entries];
+      persistLocalData();
+    }
+  }
+}
+
+function canDropWorkflowEntry(scope, parentId, entryId = null) {
+  if (!draggingWorkflowEntryMeta || !draggingWorkflowEntryEl) return false;
+  if (draggingWorkflowEntryMeta.scope !== scope) return false;
+  if (draggingWorkflowEntryMeta.parentId !== parentId) return false;
+  if (entryId && draggingWorkflowEntryMeta.entryId === entryId) return false;
+  return true;
+}
+
+function clearWorkflowEntryDragStyles() {
+  document.querySelectorAll('.workflow-task-row.drag-over').forEach(row => row.classList.remove('drag-over'));
+  document.querySelectorAll('.workflow-entry-dropzone.drag-over').forEach(zone => zone.classList.remove('drag-over'));
+}
+
+function beginWorkflowEntryDrag(event, meta, row) {
+  draggingWorkflowEntryMeta = meta;
+  draggingWorkflowEntryEl = row;
+  row.classList.add('dragging-workflow-entry');
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', meta.entryId);
+  }
+}
+
+function endWorkflowEntryDrag() {
+  if (draggingWorkflowEntryEl) {
+    draggingWorkflowEntryEl.classList.remove('dragging-workflow-entry');
+  }
+  clearWorkflowEntryDragStyles();
+  draggingWorkflowEntryMeta = null;
+  draggingWorkflowEntryEl = null;
+}
+
+function attachWorkflowEntryDropzone(container, scope, parentId) {
+  if (!container || !parentId) return;
+  container.classList.add('workflow-entry-dropzone');
+  container.dataset.workflowScope = scope;
+  container.dataset.workflowParentId = parentId;
+  container.addEventListener('dragover', (event) => {
+    if (!canDropWorkflowEntry(scope, parentId)) return;
+    event.preventDefault();
+    container.classList.add('drag-over');
+  });
+  container.addEventListener('dragleave', (event) => {
+    if (!container.contains(event.relatedTarget)) {
+      container.classList.remove('drag-over');
+    }
+  });
+  container.addEventListener('drop', (event) => {
+    if (!canDropWorkflowEntry(scope, parentId)) return;
+    event.preventDefault();
+    container.classList.remove('drag-over');
+    const onRow = event.target.closest('.workflow-task-row');
+    if (onRow && onRow.parentElement === container) return;
+    if (!draggingWorkflowEntryEl) return;
+    container.appendChild(draggingWorkflowEntryEl);
+    const orderedIds = Array.from(container.querySelectorAll('.workflow-task-row[data-entry-id]'))
+      .map(row => row.dataset.entryId)
+      .filter(Boolean);
+    persistWorkflowEntryOrder(scope, parentId, orderedIds);
+    render();
+  });
+}
+
+function attachWorkflowEntryDragHandlers(row, handle, scope, parentId, entryId) {
+  if (!row || !handle || !scope || !parentId || !entryId) return;
+  const meta = { scope, parentId, entryId };
+  handle.draggable = true;
+  handle.addEventListener('dragstart', (event) => beginWorkflowEntryDrag(event, meta, row));
+  handle.addEventListener('dragend', endWorkflowEntryDrag);
+  row.addEventListener('dragover', (event) => {
+    if (!canDropWorkflowEntry(scope, parentId, entryId)) return;
+    event.preventDefault();
+    row.classList.add('drag-over');
+  });
+  row.addEventListener('dragleave', () => {
+    row.classList.remove('drag-over');
+  });
+  row.addEventListener('drop', (event) => {
+    if (!canDropWorkflowEntry(scope, parentId, entryId)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    row.classList.remove('drag-over');
+    if (!draggingWorkflowEntryEl || draggingWorkflowEntryEl === row) return;
+    const container = row.parentElement;
+    if (!container) return;
+    const rect = row.getBoundingClientRect();
+    const insertAfter = event.clientY > rect.top + rect.height / 2;
+    container.insertBefore(draggingWorkflowEntryEl, insertAfter ? row.nextSibling : row);
+    const orderedIds = Array.from(container.querySelectorAll('.workflow-task-row[data-entry-id]'))
+      .map(item => item.dataset.entryId)
+      .filter(Boolean);
+    persistWorkflowEntryOrder(scope, parentId, orderedIds);
+    render();
+  });
+}
+
+function persistWorkflowPhaseOrder(variantId, orderedPhaseIds) {
+  if (!variantId || !orderedPhaseIds.length) return;
+  const orderMap = new Map(orderedPhaseIds.map((phaseId, index) => [phaseId, (index + 1) * 10]));
+  const links = state.workflowVariantPhases ?? [];
+  let changed = false;
+  links.forEach(link => {
+    if (link.variant_id !== variantId) return;
+    const nextSort = orderMap.get(link.phase_id);
+    if (!Number.isFinite(nextSort)) return;
+    if ((link.sort_order ?? 0) === nextSort) return;
+    link.sort_order = nextSort;
+    changed = true;
+  });
+  if (changed) {
+    state.workflowVariantPhases = [...links];
+    persistLocalData();
+  }
+}
+
+function clearWorkflowPhaseDragStyles() {
+  document.querySelectorAll('.workflow-phase.drag-over').forEach(card => card.classList.remove('drag-over'));
+  document.querySelectorAll('.workflow-phase-list.drag-over').forEach(list => list.classList.remove('drag-over'));
+}
+
+function canDropWorkflowPhase(variantId, phaseId = null) {
+  if (!draggingWorkflowPhaseMeta || !draggingWorkflowPhaseEl) return false;
+  if (draggingWorkflowPhaseMeta.variantId !== variantId) return false;
+  if (phaseId && draggingWorkflowPhaseMeta.phaseId === phaseId) return false;
+  return true;
+}
+
+function beginWorkflowPhaseDrag(event, variantId, phaseId, phaseEl) {
+  draggingWorkflowPhaseMeta = { variantId, phaseId };
+  draggingWorkflowPhaseEl = phaseEl;
+  phaseEl.classList.add('dragging-workflow-phase');
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', phaseId);
+  }
+}
+
+function endWorkflowPhaseDrag() {
+  if (draggingWorkflowPhaseEl) {
+    draggingWorkflowPhaseEl.classList.remove('dragging-workflow-phase');
+  }
+  clearWorkflowPhaseDragStyles();
+  draggingWorkflowPhaseMeta = null;
+  draggingWorkflowPhaseEl = null;
+}
+
+function attachWorkflowPhaseDropzone(phaseList, variantId) {
+  if (!phaseList || !variantId) return;
+  phaseList.addEventListener('dragover', (event) => {
+    if (!canDropWorkflowPhase(variantId)) return;
+    event.preventDefault();
+    phaseList.classList.add('drag-over');
+  });
+  phaseList.addEventListener('dragleave', (event) => {
+    if (!phaseList.contains(event.relatedTarget)) {
+      phaseList.classList.remove('drag-over');
+    }
+  });
+  phaseList.addEventListener('drop', (event) => {
+    if (!canDropWorkflowPhase(variantId)) return;
+    event.preventDefault();
+    phaseList.classList.remove('drag-over');
+    const onCard = event.target.closest('.workflow-phase');
+    if (onCard && onCard.parentElement === phaseList) return;
+    if (!draggingWorkflowPhaseEl) return;
+    const firstNonPhase = Array.from(phaseList.children).find(child => !child.classList.contains('workflow-phase'));
+    if (firstNonPhase) {
+      phaseList.insertBefore(draggingWorkflowPhaseEl, firstNonPhase);
+    } else {
+      phaseList.appendChild(draggingWorkflowPhaseEl);
+    }
+    const orderedPhaseIds = Array.from(phaseList.children)
+      .filter(child => child.classList.contains('workflow-phase'))
+      .map(child => child.dataset.phaseId)
+      .filter(Boolean);
+    persistWorkflowPhaseOrder(variantId, orderedPhaseIds);
+    render();
+  });
+}
+
+function attachWorkflowPhaseDragHandlers(phaseCard, handle, variantId, phaseId) {
+  if (!phaseCard || !handle || !variantId || !phaseId) return;
+  handle.draggable = true;
+  handle.addEventListener('dragstart', (event) => beginWorkflowPhaseDrag(event, variantId, phaseId, phaseCard));
+  handle.addEventListener('dragend', endWorkflowPhaseDrag);
+  phaseCard.addEventListener('dragover', (event) => {
+    if (!canDropWorkflowPhase(variantId, phaseId)) return;
+    event.preventDefault();
+    phaseCard.classList.add('drag-over');
+  });
+  phaseCard.addEventListener('dragleave', () => {
+    phaseCard.classList.remove('drag-over');
+  });
+  phaseCard.addEventListener('drop', (event) => {
+    if (!canDropWorkflowPhase(variantId, phaseId)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    phaseCard.classList.remove('drag-over');
+    if (!draggingWorkflowPhaseEl || draggingWorkflowPhaseEl === phaseCard) return;
+    const container = phaseCard.parentElement;
+    if (!container) return;
+    const rect = phaseCard.getBoundingClientRect();
+    const insertAfter = event.clientY > rect.top + rect.height / 2;
+    container.insertBefore(draggingWorkflowPhaseEl, insertAfter ? phaseCard.nextSibling : phaseCard);
+    const orderedPhaseIds = Array.from(container.children)
+      .filter(child => child.classList.contains('workflow-phase'))
+      .map(child => child.dataset.phaseId)
+      .filter(Boolean);
+    persistWorkflowPhaseOrder(variantId, orderedPhaseIds);
+    render();
+  });
+}
+
 function buildTree(tasks) {
   const map = new Map();
   tasks.forEach(task => {
@@ -6159,6 +7037,7 @@ function renderWorkflowsPage() {
     setActiveWorkflowId(workflows[0].id);
     workflow = workflows[0];
   }
+  const variants = workflow ? getWorkflowVariants(workflow.id) : [];
 
   workflowInstanceAddBtn?.classList.toggle('hidden', !isManageView);
   workflowMenuButton?.classList.add('hidden');
@@ -6174,24 +7053,30 @@ function renderWorkflowsPage() {
 
   if (isManageView) {
     const manageLayout = document.createElement('div');
-    manageLayout.className = 'workflow-manage-layout';
+    manageLayout.className = 'workflow-manage-3pane';
 
-    const listSection = document.createElement('div');
-    listSection.className = 'workflow-section workflow-blueprints';
-    const listHeader = document.createElement('div');
-    listHeader.className = 'workflow-section-header';
-    const listTitle = document.createElement('h3');
-    listTitle.textContent = 'Blueprints';
-    listHeader.appendChild(listTitle);
-    listSection.appendChild(listHeader);
+    const blueprintPane = document.createElement('section');
+    blueprintPane.className = 'workflow-section workflow-pane workflow-pane-blueprints';
+    const blueprintHeader = document.createElement('div');
+    blueprintHeader.className = 'workflow-section-header';
+    const blueprintTitle = document.createElement('h3');
+    blueprintTitle.textContent = 'Blueprints';
+    const addBlueprintBtn = document.createElement('button');
+    addBlueprintBtn.type = 'button';
+    addBlueprintBtn.className = 'subtle-button';
+    addBlueprintBtn.textContent = 'New blueprint';
+    addBlueprintBtn.addEventListener('click', () => openWorkflowModal());
+    blueprintHeader.appendChild(blueprintTitle);
+    blueprintHeader.appendChild(addBlueprintBtn);
+    blueprintPane.appendChild(blueprintHeader);
 
-    const listBody = document.createElement('div');
-    listBody.className = 'workflow-blueprint-list';
+    const blueprintList = document.createElement('div');
+    blueprintList.className = 'workflow-blueprint-list';
     if (!workflows.length) {
       const empty = document.createElement('div');
       empty.className = 'sidebar-note';
       empty.textContent = 'No blueprints yet.';
-      listBody.appendChild(empty);
+      blueprintList.appendChild(empty);
     } else {
       workflows.forEach(item => {
         const row = document.createElement('div');
@@ -6252,9 +7137,7 @@ function renderWorkflowsPage() {
 
         menuButton.addEventListener('click', (event) => {
           event.stopPropagation();
-          if (openMenu && openMenu !== menu) {
-            openMenu.classList.add('hidden');
-          }
+          if (openMenu && openMenu !== menu) openMenu.classList.add('hidden');
           if (menu.classList.contains('hidden')) {
             menu.classList.remove('hidden');
             openMenu = menu;
@@ -6268,41 +7151,56 @@ function renderWorkflowsPage() {
         menuWrapper.appendChild(menuButton);
         menuWrapper.appendChild(menu);
         row.appendChild(menuWrapper);
-        listBody.appendChild(row);
+        blueprintList.appendChild(row);
       });
     }
+    blueprintPane.appendChild(blueprintList);
+    manageLayout.appendChild(blueprintPane);
 
-    listSection.appendChild(listBody);
-    manageLayout.appendChild(listSection);
+    const builderPane = document.createElement('section');
+    builderPane.className = 'workflow-section workflow-pane workflow-pane-builder';
+    const builderHeader = document.createElement('div');
+    builderHeader.className = 'workflow-section-header';
+    const builderTitle = document.createElement('h3');
+    builderTitle.textContent = 'Blueprint Builder';
+    builderHeader.appendChild(builderTitle);
+    builderPane.appendChild(builderHeader);
+
+    const libraryPane = document.createElement('section');
+    libraryPane.className = 'workflow-section workflow-pane workflow-pane-library';
+    const libraryHeader = document.createElement('div');
+    libraryHeader.className = 'workflow-section-header';
+    const libraryTitle = document.createElement('h3');
+    libraryTitle.textContent = 'Parts Library';
+    libraryHeader.appendChild(libraryTitle);
+    libraryPane.appendChild(libraryHeader);
 
     if (!workflow) {
-      const empty = document.createElement('div');
-      empty.className = 'workflow-section';
-      const note = document.createElement('div');
-      note.className = 'sidebar-note';
-      note.textContent = 'Create a blueprint to start building.';
-      empty.appendChild(note);
-      manageLayout.appendChild(empty);
+      const builderNote = document.createElement('div');
+      builderNote.className = 'sidebar-note';
+      builderNote.textContent = 'Create a blueprint to start building.';
+      builderPane.appendChild(builderNote);
+
+      const libraryNote = document.createElement('div');
+      libraryNote.className = 'sidebar-note';
+      libraryNote.textContent = 'Patterns appear here after saving phases.';
+      libraryPane.appendChild(libraryNote);
+
+      manageLayout.appendChild(builderPane);
+      manageLayout.appendChild(libraryPane);
       workflowDetailEl.appendChild(manageLayout);
       return;
     }
 
-  const variants = getWorkflowVariants(workflow.id);
-  const variantsByName = [...variants].sort((a, b) => a.name.localeCompare(b.name));
-  let activeVariantId = getActiveWorkflowVariantId();
-  if (activeVariantId && !variants.some(variant => variant.id === activeVariantId)) {
-    activeVariantId = null;
-  }
-  if (!activeVariantId && variantsByName.length) {
-    activeVariantId = variantsByName[0].id;
-    setActiveWorkflowVariantId(activeVariantId);
-  }
-
-    const builderSection = document.createElement('div');
-    builderSection.className = 'workflow-section';
-    const builderTitle = document.createElement('h3');
-    builderTitle.textContent = 'Blueprint Builder';
-    builderSection.appendChild(builderTitle);
+    const variantsByName = [...variants].sort((a, b) => a.name.localeCompare(b.name));
+    let activeVariantId = getActiveWorkflowVariantId();
+    if (activeVariantId && !variants.some(variant => variant.id === activeVariantId)) {
+      activeVariantId = null;
+    }
+    if (!activeVariantId && variantsByName.length) {
+      activeVariantId = variantsByName[0].id;
+      setActiveWorkflowVariantId(activeVariantId);
+    }
 
     const variantControls = document.createElement('div');
     variantControls.className = 'workflow-variant-controls';
@@ -6382,8 +7280,7 @@ function renderWorkflowsPage() {
       });
       variantControls.appendChild(deleteBtn);
     }
-
-    builderSection.appendChild(variantControls);
+    builderPane.appendChild(variantControls);
 
     const addVariantRow = document.createElement('div');
     addVariantRow.className = 'workflow-add-row';
@@ -6403,21 +7300,25 @@ function renderWorkflowsPage() {
       }
     });
     addVariantRow.appendChild(addVariantInput);
-    builderSection.appendChild(addVariantRow);
+    builderPane.appendChild(addVariantRow);
 
+    const patterns = getWorkflowPatternsForWorkspace();
+    let variantPhases = [];
     if (!activeVariantId) {
       const empty = document.createElement('div');
       empty.className = 'sidebar-note';
       empty.textContent = 'Add a type to define phases and tasks.';
-      builderSection.appendChild(empty);
+      builderPane.appendChild(empty);
     } else {
       const phaseList = document.createElement('div');
       phaseList.className = 'workflow-phase-list';
-      const variantPhases = getWorkflowVariantPhases(activeVariantId);
+      attachWorkflowPhaseDropzone(phaseList, activeVariantId);
+      variantPhases = getWorkflowVariantPhases(activeVariantId);
       const taskOptions = [];
       variantPhases.forEach(entry => {
         const tasks = getWorkflowPhaseTasks(entry.phase.id);
         tasks.forEach(task => {
+          if (task.item_kind === 'pattern') return;
           taskOptions.push({
             id: task.id,
             label: `${entry.phase.name} · ${task.title}`
@@ -6427,89 +7328,185 @@ function renderWorkflowsPage() {
 
       variantPhases.forEach(entry => {
         const phase = entry.phase;
+        const locked = Boolean(phase.locked);
+        const collapsed = isWorkflowPhaseCollapsed(phase.id);
         const phaseCard = document.createElement('div');
         phaseCard.className = 'workflow-phase';
+        phaseCard.dataset.phaseId = phase.id;
 
         const header = document.createElement('div');
         header.className = 'workflow-phase-header';
-        const nameInput = document.createElement('input');
-        nameInput.type = 'text';
-        nameInput.value = phase.name;
-        nameInput.addEventListener('change', () => {
-          const trimmed = nameInput.value.trim();
-          if (!trimmed || trimmed === phase.name) {
-            nameInput.value = phase.name;
-            return;
-          }
-          updateWorkflowPhaseRecord(phase.id, { name: trimmed });
+        const phaseDragHandle = document.createElement('span');
+        phaseDragHandle.className = 'workflow-phase-drag-handle';
+        phaseDragHandle.textContent = '⋮⋮';
+        phaseDragHandle.title = locked ? 'Phase is locked' : 'Drag phase to reorder';
+        header.appendChild(phaseDragHandle);
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'icon-button workflow-pattern-toggle';
+        toggleBtn.textContent = collapsed ? '▸' : '▾';
+        toggleBtn.title = collapsed ? 'Show phase tasks' : 'Hide phase tasks';
+        toggleBtn.addEventListener('click', () => {
+          setWorkflowPhaseCollapsed(phase.id, !collapsed);
           render();
         });
+        header.appendChild(toggleBtn);
+        if (collapsed) {
+          const phaseName = document.createElement('strong');
+          phaseName.className = 'workflow-pattern-name-label';
+          phaseName.textContent = phase.name;
+          header.appendChild(phaseName);
+        } else {
+          const nameInput = document.createElement('input');
+          nameInput.type = 'text';
+          nameInput.value = phase.name;
+          nameInput.disabled = locked;
+          nameInput.addEventListener('change', () => {
+            const trimmed = nameInput.value.trim();
+            if (!trimmed || trimmed === phase.name) {
+              nameInput.value = phase.name;
+              return;
+            }
+            updateWorkflowPhaseRecord(phase.id, { name: trimmed });
+            render();
+          });
+          header.appendChild(nameInput);
+        }
+        const savePatternBtn = document.createElement('button');
+        savePatternBtn.type = 'button';
+        savePatternBtn.className = 'subtle-button';
+        savePatternBtn.textContent = 'Save pattern';
+        savePatternBtn.title = 'Extract this phase as a reusable pattern';
+        savePatternBtn.addEventListener('click', () => {
+          createPatternFromPhase(workflow.id, phase.id, phase.name);
+          render();
+        });
+        if (!collapsed) {
+          header.appendChild(savePatternBtn);
+          const lockBtn = document.createElement('button');
+          lockBtn.type = 'button';
+          lockBtn.className = 'icon-button workflow-pattern-lock';
+          lockBtn.textContent = locked ? '🔒' : '🔓';
+          lockBtn.title = locked ? 'Unlock phase' : 'Lock phase';
+          lockBtn.addEventListener('click', () => {
+            updateWorkflowPhaseRecord(phase.id, { locked: !locked });
+            render();
+          });
+          header.appendChild(lockBtn);
+        }
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'icon-button';
         removeBtn.textContent = '✕';
-        removeBtn.title = 'Remove phase';
+        removeBtn.title = locked ? 'Unlock phase to remove it' : 'Remove phase';
+        removeBtn.disabled = locked;
         removeBtn.addEventListener('click', () => {
           const confirmed = confirm(`Remove phase "${phase.name}" from this type?`);
           if (!confirmed) return;
           unlinkWorkflowVariantPhase(activeVariantId, phase.id);
           render();
         });
-        header.appendChild(nameInput);
         header.appendChild(removeBtn);
         phaseCard.appendChild(header);
+        if (collapsed) {
+          if (!locked) {
+            attachWorkflowPhaseDragHandlers(phaseCard, phaseDragHandle, activeVariantId, phase.id);
+          }
+          phaseList.appendChild(phaseCard);
+          return;
+        }
 
         const taskList = document.createElement('div');
+        if (!locked) {
+          attachWorkflowEntryDropzone(taskList, 'phase', phase.id);
+        }
         const phaseTasks = getWorkflowPhaseTasks(phase.id);
         if (!phaseTasks.length) {
           const empty = document.createElement('div');
           empty.className = 'sidebar-note';
-          empty.textContent = 'No tasks yet.';
+          empty.textContent = 'No entries yet.';
           taskList.appendChild(empty);
         }
         phaseTasks.forEach(task => {
           const row = document.createElement('div');
           row.className = 'workflow-task-row';
-          const titleInput = document.createElement('input');
-          titleInput.type = 'text';
-          titleInput.value = task.title;
-          titleInput.addEventListener('change', () => {
-            const trimmed = titleInput.value.trim();
-            if (!trimmed || trimmed === task.title) {
-              titleInput.value = task.title;
-              return;
-            }
-            updateWorkflowPhaseTaskRecord(task.id, { title: trimmed });
-            render();
-          });
-          row.appendChild(titleInput);
+          row.dataset.entryId = task.id;
+          const dragHandle = document.createElement('span');
+          dragHandle.className = 'workflow-drag-handle';
+          dragHandle.textContent = '⋮⋮';
+          dragHandle.title = locked ? 'Phase is locked' : 'Drag to reorder';
+          row.appendChild(dragHandle);
+          if (task.item_kind === 'pattern') {
+            row.classList.add('workflow-task-row-pattern');
+            const kindBadge = document.createElement('span');
+            kindBadge.className = 'workflow-pattern-badge';
+            kindBadge.textContent = 'Pattern';
+            const patternLabel = document.createElement('strong');
+            patternLabel.textContent = task.title;
+            row.appendChild(kindBadge);
+            row.appendChild(patternLabel);
+          } else {
+            const titleInput = document.createElement('input');
+            titleInput.type = 'text';
+            titleInput.value = task.title;
+            titleInput.disabled = locked;
+            titleInput.addEventListener('change', () => {
+              const trimmed = titleInput.value.trim();
+              if (!trimmed || trimmed === task.title) {
+                titleInput.value = task.title;
+                return;
+              }
+              updateWorkflowPhaseTaskRecord(task.id, { title: trimmed });
+              render();
+            });
+            row.appendChild(titleInput);
 
-          const depSelect = document.createElement('select');
-          depSelect.className = 'workflow-task-dep';
-          const placeholder = document.createElement('option');
-          placeholder.value = '';
-          placeholder.textContent = 'Depends on...';
-          depSelect.appendChild(placeholder);
-          taskOptions.forEach(option => {
-            if (option.id === task.id) return;
-            const opt = document.createElement('option');
-            opt.value = option.id;
-            opt.textContent = option.label;
-            depSelect.appendChild(opt);
-          });
-          depSelect.value = task.depends_on_ids?.[0] ?? '';
-          depSelect.addEventListener('change', () => {
-            const value = depSelect.value;
-            updateWorkflowPhaseTaskRecord(task.id, { depends_on_ids: value ? [value] : [] });
-            render();
-          });
-          row.appendChild(depSelect);
+            const depSelect = document.createElement('select');
+            depSelect.className = 'workflow-task-dep';
+            depSelect.disabled = locked;
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Depends on...';
+            depSelect.appendChild(placeholder);
+            taskOptions.forEach(option => {
+              if (option.id === task.id) return;
+              const opt = document.createElement('option');
+              opt.value = option.id;
+              opt.textContent = option.label;
+              depSelect.appendChild(opt);
+            });
+            depSelect.value = task.depends_on_ids?.[0] ?? '';
+            depSelect.addEventListener('change', () => {
+              const value = depSelect.value;
+              updateWorkflowPhaseTaskRecord(task.id, { depends_on_ids: value ? [value] : [] });
+              render();
+            });
+            row.appendChild(depSelect);
+
+            const optionalLabel = document.createElement('label');
+            optionalLabel.className = 'workflow-optional-toggle';
+            optionalLabel.dataset.tooltip = 'If applicable';
+            const optionalInput = document.createElement('input');
+            optionalInput.type = 'checkbox';
+            optionalInput.checked = Boolean(task.if_applicable);
+            optionalInput.disabled = locked;
+            optionalInput.addEventListener('change', () => {
+              updateWorkflowPhaseTaskRecord(task.id, { if_applicable: optionalInput.checked });
+            });
+            const optionalText = document.createElement('span');
+            optionalText.className = 'workflow-optional-badge';
+            optionalText.textContent = 'IA';
+            optionalLabel.appendChild(optionalInput);
+            optionalLabel.appendChild(optionalText);
+            row.appendChild(optionalLabel);
+          }
 
           const deleteBtn = document.createElement('button');
           deleteBtn.type = 'button';
           deleteBtn.className = 'icon-button';
           deleteBtn.textContent = '✕';
-          deleteBtn.title = 'Delete task';
+          deleteBtn.title = locked ? 'Phase is locked' : 'Delete task';
+          deleteBtn.disabled = locked;
           deleteBtn.addEventListener('click', () => {
             const confirmed = confirm(`Delete task "${task.title}"?`);
             if (!confirmed) return;
@@ -6517,6 +7514,9 @@ function renderWorkflowsPage() {
             render();
           });
           row.appendChild(deleteBtn);
+          if (!locked) {
+            attachWorkflowEntryDragHandlers(row, dragHandle, 'phase', phase.id, task.id);
+          }
           taskList.appendChild(row);
         });
 
@@ -6524,7 +7524,8 @@ function renderWorkflowsPage() {
         addTaskRow.className = 'workflow-add-row';
         const addTaskInput = document.createElement('input');
         addTaskInput.type = 'text';
-        addTaskInput.placeholder = 'Add task...';
+        addTaskInput.placeholder = locked ? 'Phase locked' : 'Add task...';
+        addTaskInput.disabled = locked;
         addTaskInput.addEventListener('keydown', (event) => {
           if (event.key !== 'Enter') return;
           event.preventDefault();
@@ -6537,6 +7538,37 @@ function renderWorkflowsPage() {
         addTaskRow.appendChild(addTaskInput);
         phaseCard.appendChild(taskList);
         phaseCard.appendChild(addTaskRow);
+
+        if (patterns.length) {
+          const addPatternRow = document.createElement('div');
+          addPatternRow.className = 'workflow-copy-row';
+          const patternSelect = document.createElement('select');
+          patternSelect.className = 'workflow-copy-select';
+          patternSelect.disabled = locked;
+          patterns.forEach(pattern => {
+            const option = document.createElement('option');
+            option.value = pattern.id;
+            option.textContent = pattern.name;
+            patternSelect.appendChild(option);
+          });
+          const addPatternBtn = document.createElement('button');
+          addPatternBtn.type = 'button';
+          addPatternBtn.className = 'subtle-button';
+          addPatternBtn.textContent = 'Add pattern';
+          addPatternBtn.disabled = locked;
+          addPatternBtn.addEventListener('click', () => {
+            const patternId = patternSelect.value;
+            if (!patternId) return;
+            insertPatternIntoPhase({ phaseId: phase.id, patternId });
+            render();
+          });
+          addPatternRow.appendChild(patternSelect);
+          addPatternRow.appendChild(addPatternBtn);
+          phaseCard.appendChild(addPatternRow);
+        }
+        if (!locked) {
+          attachWorkflowPhaseDragHandlers(phaseCard, phaseDragHandle, activeVariantId, phase.id);
+        }
         phaseList.appendChild(phaseCard);
       });
 
@@ -6559,17 +7591,86 @@ function renderWorkflowsPage() {
       });
       addPhaseRow.appendChild(addPhaseInput);
       phaseList.appendChild(addPhaseRow);
+      builderPane.appendChild(phaseList);
+    }
 
-      const copyPhaseRow = document.createElement('div');
-      copyPhaseRow.className = 'workflow-copy-row';
-      const sourceBlueprints = getWorkflowsForWorkspace()
-        .filter(item => item.id !== workflow.id);
+    const insertSection = document.createElement('div');
+    insertSection.className = 'workflow-pane-block';
+    const insertTitle = document.createElement('h4');
+    insertTitle.textContent = 'Build from parts';
+    insertSection.appendChild(insertTitle);
+    if (!activeVariantId) {
+      const note = document.createElement('div');
+      note.className = 'sidebar-note';
+      note.textContent = 'Select a type to insert patterns.';
+      insertSection.appendChild(note);
+    } else if (!variantPhases.length) {
+      const note = document.createElement('div');
+      note.className = 'sidebar-note';
+      note.textContent = 'Add at least one phase to insert patterns.';
+      insertSection.appendChild(note);
+    } else if (!patterns.length) {
+      const note = document.createElement('div');
+      note.className = 'sidebar-note';
+      note.textContent = 'No patterns yet. Save a phase as a pattern first.';
+      insertSection.appendChild(note);
+    } else {
+      const row = document.createElement('div');
+      row.className = 'workflow-copy-row';
+      const phaseSelect = document.createElement('select');
+      phaseSelect.className = 'workflow-copy-select';
+      variantPhases.forEach(entry => {
+        const option = document.createElement('option');
+        option.value = entry.phase.id;
+        option.textContent = entry.phase.name;
+        phaseSelect.appendChild(option);
+      });
+      const patternSelect = document.createElement('select');
+      patternSelect.className = 'workflow-copy-select';
+      patterns.forEach(pattern => {
+        const option = document.createElement('option');
+        option.value = pattern.id;
+        option.textContent = pattern.name;
+        patternSelect.appendChild(option);
+      });
+      const insertBtn = document.createElement('button');
+      insertBtn.type = 'button';
+      insertBtn.className = 'subtle-button';
+      insertBtn.textContent = 'Insert pattern';
+      insertBtn.addEventListener('click', () => {
+        const phaseId = phaseSelect.value;
+        const patternId = patternSelect.value;
+        if (!phaseId || !patternId) return;
+        insertPatternIntoPhase({ phaseId, patternId });
+        render();
+      });
+      row.appendChild(phaseSelect);
+      row.appendChild(patternSelect);
+      row.appendChild(insertBtn);
+      insertSection.appendChild(row);
+    }
+    libraryPane.appendChild(insertSection);
+
+    const copySection = document.createElement('div');
+    copySection.className = 'workflow-pane-block';
+    const copyTitle = document.createElement('h4');
+    copyTitle.textContent = 'Copy from blueprint';
+    copySection.appendChild(copyTitle);
+    if (!activeVariantId) {
+      const note = document.createElement('div');
+      note.className = 'sidebar-note';
+      note.textContent = 'Select a type to copy phases into.';
+      copySection.appendChild(note);
+    } else {
+      const sourceBlueprints = getWorkflowsForWorkspace().filter(item => item.id !== workflow.id);
       if (!sourceBlueprints.length) {
         const note = document.createElement('div');
         note.className = 'sidebar-note';
-        note.textContent = 'No other blueprints to copy phases from.';
-        copyPhaseRow.appendChild(note);
+        note.textContent = 'No other blueprints available.';
+        copySection.appendChild(note);
       } else {
+        const row = document.createElement('div');
+        row.className = 'workflow-copy-row';
         const sourceSelect = document.createElement('select');
         sourceSelect.className = 'workflow-copy-select';
         sourceBlueprints.forEach(item => {
@@ -6578,10 +7679,8 @@ function renderWorkflowsPage() {
           option.textContent = item.name;
           sourceSelect.appendChild(option);
         });
-
         const phaseSelect = document.createElement('select');
         phaseSelect.className = 'workflow-copy-select';
-
         const populatePhaseOptions = (sourceId) => {
           phaseSelect.innerHTML = '';
           const phases = getWorkflowPhases(sourceId);
@@ -6599,12 +7698,8 @@ function renderWorkflowsPage() {
             phaseSelect.appendChild(option);
           });
         };
-
         populatePhaseOptions(sourceSelect.value);
-        sourceSelect.addEventListener('change', () => {
-          populatePhaseOptions(sourceSelect.value);
-        });
-
+        sourceSelect.addEventListener('change', () => populatePhaseOptions(sourceSelect.value));
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
         copyBtn.className = 'subtle-button';
@@ -6621,17 +7716,293 @@ function renderWorkflowsPage() {
           });
           render();
         });
-
-        copyPhaseRow.appendChild(sourceSelect);
-        copyPhaseRow.appendChild(phaseSelect);
-        copyPhaseRow.appendChild(copyBtn);
+        row.appendChild(sourceSelect);
+        row.appendChild(phaseSelect);
+        row.appendChild(copyBtn);
+        copySection.appendChild(row);
       }
+    }
+    libraryPane.appendChild(copySection);
 
-      phaseList.appendChild(copyPhaseRow);
-      builderSection.appendChild(phaseList);
+    const patternLibrarySection = document.createElement('div');
+    patternLibrarySection.className = 'workflow-pane-block';
+    const patternLibraryTitle = document.createElement('h4');
+    patternLibraryTitle.textContent = 'Pattern library';
+    patternLibrarySection.appendChild(patternLibraryTitle);
+
+    const addPatternRow = document.createElement('div');
+    addPatternRow.className = 'workflow-add-row';
+    const addPatternInput = document.createElement('input');
+    addPatternInput.type = 'text';
+    addPatternInput.placeholder = 'Add pattern...';
+    addPatternInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const raw = addPatternInput.value.trim();
+      if (!raw) return;
+      const name = makeUniquePatternName(normalizeTitleInput(raw));
+      createWorkflowPatternRecord(name);
+      addPatternInput.value = '';
+      render();
+    });
+    addPatternRow.appendChild(addPatternInput);
+    patternLibrarySection.appendChild(addPatternRow);
+
+    if (!patterns.length) {
+      const note = document.createElement('div');
+      note.className = 'sidebar-note';
+      note.textContent = 'No patterns yet.';
+      patternLibrarySection.appendChild(note);
+    } else {
+      patterns.forEach(pattern => {
+        const patternCard = document.createElement('div');
+        patternCard.className = 'workflow-phase';
+        const collapsed = isWorkflowPatternCollapsed(pattern.id);
+        const locked = Boolean(pattern.locked);
+
+        const patternHeader = document.createElement('div');
+        patternHeader.className = 'workflow-phase-header';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'icon-button workflow-pattern-toggle';
+        toggleBtn.textContent = collapsed ? '▸' : '▾';
+        toggleBtn.title = collapsed ? 'Show pattern tasks' : 'Hide pattern tasks';
+        toggleBtn.addEventListener('click', () => {
+          setWorkflowPatternCollapsed(pattern.id, !collapsed);
+          render();
+        });
+        patternHeader.appendChild(toggleBtn);
+
+        if (collapsed) {
+          const patternName = document.createElement('strong');
+          patternName.className = 'workflow-pattern-name-label';
+          patternName.textContent = pattern.name;
+          patternHeader.appendChild(patternName);
+        } else {
+          const patternNameInput = document.createElement('input');
+          patternNameInput.type = 'text';
+          patternNameInput.value = pattern.name;
+          patternNameInput.disabled = locked;
+          const commitRename = () => {
+            if (locked) return;
+            const trimmed = patternNameInput.value.trim();
+            if (!trimmed) {
+              patternNameInput.value = pattern.name;
+              return;
+            }
+            if (trimmed === pattern.name) return;
+            updateWorkflowPatternRecord(pattern.id, { name: trimmed });
+            render();
+          };
+          patternNameInput.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            commitRename();
+          });
+          patternNameInput.addEventListener('blur', commitRename);
+          patternHeader.appendChild(patternNameInput);
+
+          const lockBtn = document.createElement('button');
+          lockBtn.type = 'button';
+          lockBtn.className = 'icon-button workflow-pattern-lock';
+          lockBtn.textContent = locked ? '🔒' : '🔓';
+          lockBtn.title = locked ? 'Unlock pattern' : 'Lock pattern';
+          lockBtn.addEventListener('click', () => {
+            updateWorkflowPatternRecord(pattern.id, { locked: !locked });
+            render();
+          });
+          patternHeader.appendChild(lockBtn);
+        }
+
+        const deletePatternBtn = document.createElement('button');
+        deletePatternBtn.type = 'button';
+        deletePatternBtn.className = 'icon-button';
+        deletePatternBtn.textContent = '✕';
+        deletePatternBtn.title = locked ? 'Unlock pattern to delete it' : 'Delete pattern';
+        deletePatternBtn.disabled = locked;
+        deletePatternBtn.addEventListener('click', () => {
+          const confirmed = confirm(`Delete pattern "${pattern.name}"?`);
+          if (!confirmed) return;
+          deleteWorkflowPatternRecord(pattern.id);
+          render();
+        });
+        patternHeader.appendChild(deletePatternBtn);
+        patternCard.appendChild(patternHeader);
+
+        if (collapsed) {
+          patternLibrarySection.appendChild(patternCard);
+          return;
+        }
+
+        const patternTasks = getWorkflowPatternTasks(pattern.id);
+        const patternTaskOptions = patternTasks.filter(task => task.item_kind !== 'pattern').map(task => ({
+          id: task.id,
+          label: task.title
+        }));
+        const patternTaskList = document.createElement('div');
+        if (!locked) {
+          attachWorkflowEntryDropzone(patternTaskList, 'pattern', pattern.id);
+        }
+        if (!patternTasks.length) {
+          const empty = document.createElement('div');
+          empty.className = 'sidebar-note';
+          empty.textContent = 'No tasks yet.';
+          patternTaskList.appendChild(empty);
+        }
+        patternTasks.forEach(task => {
+          const row = document.createElement('div');
+          row.className = 'workflow-task-row';
+          row.dataset.entryId = task.id;
+          const dragHandle = document.createElement('span');
+          dragHandle.className = 'workflow-drag-handle';
+          dragHandle.textContent = '⋮⋮';
+          dragHandle.title = locked ? 'Pattern is locked' : 'Drag to reorder';
+          row.appendChild(dragHandle);
+          if (task.item_kind === 'pattern') {
+            row.classList.add('workflow-task-row-pattern');
+            const kindBadge = document.createElement('span');
+            kindBadge.className = 'workflow-pattern-badge';
+            kindBadge.textContent = 'Pattern';
+            const label = document.createElement('strong');
+            const referenced = task.referenced_pattern_id ? getWorkflowPatternById(task.referenced_pattern_id) : null;
+            label.textContent = referenced?.name ?? task.title;
+            row.appendChild(kindBadge);
+            row.appendChild(label);
+          } else {
+            const titleInput = document.createElement('input');
+            titleInput.type = 'text';
+            titleInput.value = task.title;
+            titleInput.disabled = locked;
+            titleInput.addEventListener('change', () => {
+              const trimmed = titleInput.value.trim();
+              if (!trimmed || trimmed === task.title) {
+                titleInput.value = task.title;
+                return;
+              }
+              updateWorkflowPatternTaskRecord(task.id, { title: trimmed });
+              render();
+            });
+            row.appendChild(titleInput);
+
+            const depSelect = document.createElement('select');
+            depSelect.className = 'workflow-task-dep';
+            depSelect.disabled = locked;
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Depends on...';
+            depSelect.appendChild(placeholder);
+            patternTaskOptions.forEach(option => {
+              if (option.id === task.id) return;
+              const opt = document.createElement('option');
+              opt.value = option.id;
+              opt.textContent = option.label;
+              depSelect.appendChild(opt);
+            });
+            depSelect.value = task.depends_on_ids?.[0] ?? '';
+            depSelect.addEventListener('change', () => {
+              const value = depSelect.value;
+              updateWorkflowPatternTaskRecord(task.id, { depends_on_ids: value ? [value] : [] });
+              render();
+            });
+            row.appendChild(depSelect);
+
+            const optionalLabel = document.createElement('label');
+            optionalLabel.className = 'workflow-optional-toggle';
+            optionalLabel.dataset.tooltip = 'If applicable';
+            const optionalInput = document.createElement('input');
+            optionalInput.type = 'checkbox';
+            optionalInput.checked = Boolean(task.if_applicable);
+            optionalInput.disabled = locked;
+            optionalInput.addEventListener('change', () => {
+              updateWorkflowPatternTaskRecord(task.id, { if_applicable: optionalInput.checked });
+            });
+            const optionalText = document.createElement('span');
+            optionalText.className = 'workflow-optional-badge';
+            optionalText.textContent = 'IA';
+            optionalLabel.appendChild(optionalInput);
+            optionalLabel.appendChild(optionalText);
+            row.appendChild(optionalLabel);
+          }
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'icon-button';
+          deleteBtn.textContent = '✕';
+          deleteBtn.title = locked ? 'Pattern is locked' : 'Delete task';
+          deleteBtn.disabled = locked;
+          deleteBtn.addEventListener('click', () => {
+            deleteWorkflowPatternTaskRecord(task.id);
+            render();
+          });
+          row.appendChild(deleteBtn);
+          if (!locked) {
+            attachWorkflowEntryDragHandlers(row, dragHandle, 'pattern', pattern.id, task.id);
+          }
+          patternTaskList.appendChild(row);
+        });
+
+        const addTaskRow = document.createElement('div');
+        addTaskRow.className = 'workflow-add-row';
+        const addTaskInput = document.createElement('input');
+        addTaskInput.type = 'text';
+        addTaskInput.placeholder = locked ? 'Pattern locked' : 'Add task...';
+        addTaskInput.disabled = locked;
+        addTaskInput.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          const name = addTaskInput.value.trim();
+          if (!name) return;
+          createWorkflowPatternTaskRecord(pattern.id, name);
+          addTaskInput.value = '';
+          render();
+        });
+        addTaskRow.appendChild(addTaskInput);
+        patternCard.appendChild(patternTaskList);
+        patternCard.appendChild(addTaskRow);
+
+        const candidatePatterns = patterns.filter(candidate => candidate.id !== pattern.id);
+        if (candidatePatterns.length) {
+          const addPatternRow = document.createElement('div');
+          addPatternRow.className = 'workflow-copy-row';
+          const nestedPatternSelect = document.createElement('select');
+          nestedPatternSelect.className = 'workflow-copy-select';
+          nestedPatternSelect.disabled = locked;
+          candidatePatterns.forEach(candidate => {
+            const option = document.createElement('option');
+            option.value = candidate.id;
+            option.textContent = candidate.name;
+            nestedPatternSelect.appendChild(option);
+          });
+          const addNestedPatternBtn = document.createElement('button');
+          addNestedPatternBtn.type = 'button';
+          addNestedPatternBtn.className = 'subtle-button';
+          addNestedPatternBtn.textContent = 'Add pattern';
+          addNestedPatternBtn.disabled = locked;
+          addNestedPatternBtn.addEventListener('click', () => {
+            const childPatternId = nestedPatternSelect.value;
+            if (!childPatternId) return;
+            const inserted = insertPatternIntoPattern({
+              targetPatternId: pattern.id,
+              childPatternId
+            });
+            if (!inserted) {
+              alert('Pattern cycle detected. Choose a different pattern.');
+              return;
+            }
+            render();
+          });
+          addPatternRow.appendChild(nestedPatternSelect);
+          addPatternRow.appendChild(addNestedPatternBtn);
+          patternCard.appendChild(addPatternRow);
+        }
+        patternLibrarySection.appendChild(patternCard);
+      });
     }
 
-    manageLayout.appendChild(builderSection);
+    libraryPane.appendChild(patternLibrarySection);
+    manageLayout.appendChild(builderPane);
+    manageLayout.appendChild(libraryPane);
     workflowDetailEl.appendChild(manageLayout);
     return;
   }
@@ -6714,6 +8085,23 @@ function renderWorkflowsPage() {
       info.appendChild(meta);
       row.appendChild(info);
 
+      const actionRow = document.createElement('div');
+      actionRow.className = 'workflow-instance-actions';
+      const hasOptionalEntries = links.some(link => link.if_applicable || link.dismissed_at);
+      const manageApplicabilityBtn = document.createElement('button');
+      manageApplicabilityBtn.type = 'button';
+      manageApplicabilityBtn.className = 'subtle-button';
+      manageApplicabilityBtn.textContent = 'Manage optional';
+      manageApplicabilityBtn.disabled = !hasOptionalEntries;
+      manageApplicabilityBtn.title = hasOptionalEntries
+        ? 'Review optional tasks'
+        : 'No optional tasks in this workflow';
+      manageApplicabilityBtn.addEventListener('click', () => {
+        if (!hasOptionalEntries) return;
+        openWorkflowApplicabilityModal(instance.id);
+      });
+      actionRow.appendChild(manageApplicabilityBtn);
+
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.className = 'icon-button';
@@ -6725,7 +8113,8 @@ function renderWorkflowsPage() {
         deleteWorkflowInstanceRecord(instance.id);
         render();
       });
-      row.appendChild(deleteBtn);
+      actionRow.appendChild(deleteBtn);
+      row.appendChild(actionRow);
       instanceSection.appendChild(row);
     });
   }
@@ -8843,7 +10232,7 @@ function showTaskContextMenu(taskId, x, y) {
   taskContextMenu.appendChild(selectItem);
 
   const workflowLink = getWorkflowInstanceLinkByTaskId(taskId);
-  if (workflowLink) {
+  if (workflowLink && (workflowLink.if_applicable || workflowLink.dismissed_at)) {
     const dismissItem = document.createElement('button');
     dismissItem.type = 'button';
     dismissItem.className = 'workspace-menu-item';
@@ -9577,10 +10966,6 @@ taskModal.querySelector('.modal-backdrop').addEventListener('click', closeTaskMo
 newShoppingListBtn?.addEventListener('click', openShoppingListModal);
 shoppingListCancel?.addEventListener('click', closeShoppingListModal);
 shoppingListModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeShoppingListModal);
-shoppingBack?.addEventListener('click', () => {
-  setActiveView('tasks');
-  render();
-});
 workspaceManageBack?.addEventListener('click', () => {
   setActiveView('tasks');
   render();
@@ -10128,6 +11513,18 @@ workflowInstanceForm?.addEventListener('submit', async (event) => {
     await scaffoldWorkflowInstance(instance, variantId);
   }
   closeWorkflowInstanceModal();
+  render();
+  if (instance && getWorkflowApplicabilityEntries(instance.id).length) {
+    openWorkflowApplicabilityModal(instance.id);
+  }
+});
+
+workflowApplicabilityCancel?.addEventListener('click', closeWorkflowApplicabilityModal);
+workflowApplicabilityModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeWorkflowApplicabilityModal);
+workflowApplicabilityForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  applyWorkflowApplicabilitySelections();
+  closeWorkflowApplicabilityModal();
   render();
 });
 

@@ -175,7 +175,6 @@
           <section id="shopping-page" class="shopping-panel hidden">
             <div class="panel-header shopping-panel-header">
               <div class="shopping-header-left">
-                <button id="shopping-back" class="subtle-button" type="button">← Tasks</button>
                 <div>
                   <h2 id="shopping-list-title">Shopping Lists</h2>
                   <div id="shopping-list-subtitle" class="sidebar-note">Select a shopping list to view items.</div>
@@ -198,7 +197,6 @@
           <section id="notices-page" class="panel hidden">
             <div class="panel-header">
               <div class="notice-header-left">
-                <button id="notices-back" class="subtle-button" type="button">← Tasks</button>
                 <h2>Notices</h2>
               </div>
               <button id="notices-add-btn" class="icon-button" type="button" title="New notice">＋</button>
@@ -227,7 +225,6 @@
           <section id="workflows-page" class="panel hidden">
             <div class="panel-header workflow-panel-header">
               <div class="notice-header-left">
-                <button id="workflows-back" class="subtle-button" type="button">← Tasks</button>
                 <div>
                   <h2 id="workflow-page-title">Manage Workflows</h2>
                   <div id="workflow-page-subtitle" class="sidebar-note">Select a blueprint to manage.</div>
@@ -543,6 +540,20 @@
           <div class="modal-actions">
             <button type="submit">Start</button>
             <button type="button" id="workflow-instance-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div id="workflow-applicability-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2 id="workflow-applicability-title">Optional tasks</h2>
+        <div id="workflow-applicability-subtitle" class="sidebar-note">Select which optional tasks should remain active.</div>
+        <form id="workflow-applicability-form">
+          <div id="workflow-applicability-list" class="workflow-applicability-list"></div>
+          <div class="modal-actions">
+            <button type="submit">Save</button>
+            <button type="button" id="workflow-applicability-cancel">Cancel</button>
           </div>
         </form>
       </div>

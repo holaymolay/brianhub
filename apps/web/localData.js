@@ -17,6 +17,10 @@ function defaultData() {
     workflowPhases: [],
     workflowVariantPhases: [],
     workflowPhaseTasks: [],
+    workflowPatterns: [],
+    workflowPatternTasks: [],
+    workflowFragments: [],
+    workflowFragmentTasks: [],
     workflowInstances: [],
     workflowInstanceTasks: [],
     notices: [],
@@ -41,6 +45,10 @@ function normalizeData(data) {
   if (!Array.isArray(next.workflowPhases)) next.workflowPhases = [];
   if (!Array.isArray(next.workflowVariantPhases)) next.workflowVariantPhases = [];
   if (!Array.isArray(next.workflowPhaseTasks)) next.workflowPhaseTasks = [];
+  if (!Array.isArray(next.workflowPatterns)) next.workflowPatterns = Array.isArray(next.workflowFragments) ? [...next.workflowFragments] : [];
+  if (!Array.isArray(next.workflowPatternTasks)) next.workflowPatternTasks = Array.isArray(next.workflowFragmentTasks) ? [...next.workflowFragmentTasks] : [];
+  if (!Array.isArray(next.workflowFragments)) next.workflowFragments = [];
+  if (!Array.isArray(next.workflowFragmentTasks)) next.workflowFragmentTasks = [];
   if (!Array.isArray(next.workflowInstances)) next.workflowInstances = [];
   if (!Array.isArray(next.workflowInstanceTasks)) next.workflowInstanceTasks = [];
   if (!Array.isArray(next.notices)) next.notices = [];
