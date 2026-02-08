@@ -2886,6 +2886,11 @@ button:hover { opacity: 0.9; }
 }
 
 @media (max-width: 980px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
   /* On mobile, disable transform scaling fallback so fixed overlays/nav stay pinned to viewport. */
   @supports not (zoom: 1) {
     body {
@@ -2942,6 +2947,7 @@ button:hover { opacity: 0.9; }
   .app-layout {
     grid-template-columns: 1fr;
     gap: 0.75rem;
+    min-width: 0;
   }
 
   .sidebar {
@@ -2986,12 +2992,25 @@ button:hover { opacity: 0.9; }
   .tasks-toolbar {
     align-items: flex-start;
     gap: 0.6rem;
+    min-width: 0;
   }
 
   .task-view-toggle {
     width: 100%;
     flex-wrap: wrap;
     justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .tasks-toolbar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .task-view-select {
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 150px;
   }
 
   .task-bulk-bar {
@@ -3026,6 +3045,17 @@ button:hover { opacity: 0.9; }
 
   .panel {
     padding: 1rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .content-panel,
+  #tasks-panel,
+  #task-tree,
+  .task-list {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .task-editor {
@@ -3058,6 +3088,7 @@ button:hover { opacity: 0.9; }
   .task-main {
     min-width: 0;
     gap: 0.35rem;
+    flex: 1 1 auto;
   }
 
   .task-title-row {
@@ -3074,6 +3105,9 @@ button:hover { opacity: 0.9; }
 
   .task-meta {
     font-size: 0.66rem;
+    max-width: 34vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .task-actions .icon-button {
@@ -3093,6 +3127,7 @@ button:hover { opacity: 0.9; }
 
   .task-actions {
     margin-left: auto;
+    flex: 0 0 auto;
   }
 
   .account-menu-grid {
