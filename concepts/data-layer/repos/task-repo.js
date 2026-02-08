@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { assertTenantCtx, buildTenantWhere } from '../types/tenant.js';
+import { assertTenantCtx, assertUuid, buildTenantWhere } from '../types/tenant.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -15,13 +15,14 @@ export class TaskRepository {
     if (!ctx.workspaceId) {
       throw new Error('TenantCtx.workspaceId required for tasks');
     }
-    const id = input.id ?? randomUUID();
+    const id = input.id ? assertUuid(input.id, 'task.id') : randomUUID();
+    const parentId = input.parent_id ? assertUuid(input.parent_id, 'task.parent_id') : null;
     const timestamp = nowIso();
     const task = {
       id,
       org_id: ctx.orgId,
       workspace_id: ctx.workspaceId,
-      parent_id: input.parent_id ?? null,
+      parent_id: parentId,
       title: input.title,
       status: input.status ?? 'inbox',
       description_md: input.description_md ?? '',

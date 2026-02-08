@@ -3,7 +3,11 @@ import { applyCheckIn, applyWaitingFollowup, TaskStatus } from '../../../package
 import { compareTasksByPriority } from '../../../packages/core/priority.js';
 import { buildAdjacency } from '../../../packages/core/tree.js';
 
-const DEFAULT_ORG_ID = process.env.BRIANHUB_ORG_ID ?? 'org-default';
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const FALLBACK_DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000001';
+const DEFAULT_ORG_ID = UUID_V4_RE.test(String(process.env.BRIANHUB_ORG_ID ?? ''))
+  ? process.env.BRIANHUB_ORG_ID
+  : FALLBACK_DEFAULT_ORG_ID;
 
 const DEFAULT_WAITING_DAYS = 3;
 const DEFAULT_STATUSES = [
@@ -29,6 +33,23 @@ const NOTICE_RECURRENCE_UNITS = new Set(['day', 'week', 'month', 'year']);
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function assertUuid(value, fieldName = 'id') {
+  if (!UUID_V4_RE.test(String(value ?? ''))) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return String(value);
+}
+
+function ensureUuid(value, fieldName = 'id') {
+  if (value === undefined || value === null || value === '') return randomUUID();
+  return assertUuid(value, fieldName);
+}
+
+function optionalUuid(value, fieldName = 'id') {
+  if (value === undefined || value === null || value === '') return null;
+  return assertUuid(value, fieldName);
 }
 
 function slugify(text) {
@@ -111,39 +132,84 @@ async function getRows(db, sql, params = []) {
   return db.query(sql, params);
 }
 
+async function assertWorkspaceExists(db, workspaceId) {
+  const id = assertUuid(workspaceId, 'workspace_id');
+  const row = await getRow(db, 'SELECT id FROM workspaces WHERE id = ?', [id]);
+  if (!row) throw new Error('Workspace not found');
+  return id;
+}
+
+async function assertTaskBelongsToWorkspace(db, taskId, workspaceId, fieldName = 'task_id') {
+  const id = assertUuid(taskId, fieldName);
+  const task = await getRow(db, 'SELECT id, workspace_id FROM tasks WHERE id = ?', [id]);
+  if (!task) throw new Error('Task not found');
+  if (task.workspace_id !== workspaceId) {
+    throw new Error(`${fieldName} must belong to the same workspace`);
+  }
+  return id;
+}
+
+async function assertProjectBelongsToWorkspace(db, projectId, workspaceId, fieldName = 'project_id') {
+  const id = assertUuid(projectId, fieldName);
+  const project = await getRow(db, 'SELECT id, workspace_id FROM projects WHERE id = ?', [id]);
+  if (!project) throw new Error('Project not found');
+  if (project.workspace_id !== workspaceId) {
+    throw new Error(`${fieldName} must belong to the same workspace`);
+  }
+  return id;
+}
+
+async function assertTemplateBelongsToWorkspace(db, templateId, workspaceId, fieldName = 'template_id') {
+  const id = assertUuid(templateId, fieldName);
+  const template = await getRow(db, 'SELECT id, workspace_id FROM templates WHERE id = ?', [id]);
+  if (!template) throw new Error('Template not found');
+  if (template.workspace_id !== workspaceId) {
+    throw new Error(`${fieldName} must belong to the same workspace`);
+  }
+  return id;
+}
+
 export async function recordChange(db, workspaceId, entityType, entityId, action, payload, clientId = null) {
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
   await run(
     db,
     'INSERT INTO change_log (workspace_id, entity_type, entity_id, action, payload, client_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [workspaceId, entityType, entityId, action, JSON.stringify(payload ?? {}), clientId, nowIso()]
+    [safeWorkspaceId, entityType, entityId, action, JSON.stringify(payload ?? {}), clientId, nowIso()]
   );
 }
 
-export async function getWorkspace(db, id, orgId = DEFAULT_ORG_ID) {
-  return getRow(db, 'SELECT * FROM workspaces WHERE id = ? AND org_id = ?', [id, orgId]);
+export async function getWorkspace(db, id, orgId = null) {
+  const workspaceId = assertUuid(id, 'workspace id');
+  if (orgId) {
+    const safeOrgId = assertUuid(orgId, 'org_id');
+    return getRow(db, 'SELECT * FROM workspaces WHERE id = ? AND org_id = ?', [workspaceId, safeOrgId]);
+  }
+  return getRow(db, 'SELECT * FROM workspaces WHERE id = ?', [workspaceId]);
 }
 
 export async function createWorkspace(db, { id: providedId, name, type, org_id: orgId = DEFAULT_ORG_ID, org_name }) {
+  const safeOrgId = assertUuid(orgId ?? DEFAULT_ORG_ID, 'org_id');
   if (providedId) {
-    const existing = await getWorkspace(db, providedId, orgId);
+    const existing = await getWorkspace(db, assertUuid(providedId, 'workspace id'), safeOrgId);
     if (existing) return existing;
   }
-  const id = providedId ?? randomUUID();
+  const id = ensureUuid(providedId, 'workspace id');
   const timestamp = nowIso();
-  await ensureOrg(db, orgId, org_name ?? (orgId === DEFAULT_ORG_ID ? 'Default' : orgId));
+  await ensureOrg(db, safeOrgId, org_name ?? (safeOrgId === DEFAULT_ORG_ID ? 'Default' : safeOrgId));
   await run(
     db,
     'INSERT INTO workspaces (id, org_id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, orgId, name, type, 0, timestamp, timestamp]
+    [id, safeOrgId, name, type, 0, timestamp, timestamp]
   );
   await seedWorkspaceStatuses(db, id);
   await seedWorkspaceTaskTypes(db, id);
   await seedWorkspaceNoticeTypes(db, id);
-  return getWorkspace(db, id, orgId);
+  return getWorkspace(db, id, safeOrgId);
 }
 
 export async function listWorkspaces(db, orgId = DEFAULT_ORG_ID) {
-  return getRows(db, 'SELECT * FROM workspaces WHERE org_id = ?', [orgId]);
+  const safeOrgId = assertUuid(orgId ?? DEFAULT_ORG_ID, 'org_id');
+  return getRows(db, 'SELECT * FROM workspaces WHERE org_id = ?', [safeOrgId]);
 }
 
 export async function updateWorkspace(db, id, patch, clientId = null) {
@@ -174,24 +240,27 @@ export async function deleteWorkspace(db, id, clientId = null) {
 }
 
 export async function getProject(db, id) {
-  return getRow(db, 'SELECT * FROM projects WHERE id = ?', [id]);
+  const projectId = assertUuid(id, 'project id');
+  return getRow(db, 'SELECT * FROM projects WHERE id = ?', [projectId]);
 }
 
 export async function listProjects(db, workspaceId) {
   if (!workspaceId) return [];
-  return getRows(db, 'SELECT * FROM projects WHERE workspace_id = ?', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(db, 'SELECT * FROM projects WHERE workspace_id = ?', [safeWorkspaceId]);
 }
 
 export async function createProject(db, data, clientId = null) {
   if (data?.id) {
-    const existing = await getProject(db, data.id);
+    const existing = await getProject(db, assertUuid(data.id, 'project id'));
     if (existing) return existing;
   }
-  const id = data?.id ?? randomUUID();
+  const id = ensureUuid(data?.id, 'project id');
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const timestamp = nowIso();
   const project = {
     id,
-    workspace_id: data.workspace_id,
+    workspace_id: workspaceId,
     name: data.name,
     kind: data.kind ?? 'project',
     archived: data.archived ? 1 : 0,
@@ -216,7 +285,8 @@ export async function createProject(db, data, clientId = null) {
 }
 
 export async function updateProject(db, id, patch, clientId = null) {
-  const existing = await getProject(db, id);
+  const projectId = assertUuid(id, 'project id');
+  const existing = await getProject(db, projectId);
   if (!existing) return null;
   const next = {
     ...existing,
@@ -228,41 +298,53 @@ export async function updateProject(db, id, patch, clientId = null) {
   await run(
     db,
     'UPDATE projects SET name = ?, kind = ?, archived = ?, updated_at = ? WHERE id = ?',
-    [next.name, next.kind, next.archived, next.updated_at, id]
+    [next.name, next.kind, next.archived, next.updated_at, projectId]
   );
-  await recordChange(db, existing.workspace_id, 'project', id, 'update', patch, clientId);
-  return getProject(db, id);
+  await recordChange(db, existing.workspace_id, 'project', projectId, 'update', patch, clientId);
+  return getProject(db, projectId);
 }
 
 export async function deleteProject(db, id, clientId = null) {
-  const existing = await getProject(db, id);
+  const projectId = assertUuid(id, 'project id');
+  const existing = await getProject(db, projectId);
   if (!existing) return { deleted: 0 };
   await db.transaction(async (tx) => {
-    await run(tx, 'UPDATE tasks SET project_id = NULL WHERE project_id = ?', [id]);
-    await run(tx, 'DELETE FROM projects WHERE id = ?', [id]);
+    await run(tx, 'UPDATE tasks SET project_id = NULL WHERE project_id = ?', [projectId]);
+    await run(tx, 'DELETE FROM projects WHERE id = ?', [projectId]);
   });
-  await recordChange(db, existing.workspace_id, 'project', id, 'delete', {}, clientId);
+  await recordChange(db, existing.workspace_id, 'project', projectId, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
 export async function getTemplate(db, id) {
-  const row = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [id]);
+  const templateId = assertUuid(id, 'template id');
+  const row = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [templateId]);
   return normalizeTemplateRow(row);
 }
 
 export async function listTemplates(db, workspaceId) {
   if (!workspaceId) return [];
-  const rows = await getRows(db, 'SELECT * FROM templates WHERE workspace_id = ?', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  const rows = await getRows(db, 'SELECT * FROM templates WHERE workspace_id = ?', [safeWorkspaceId]);
   return rows.map(normalizeTemplateRow);
 }
 
 export async function createTemplate(db, data, clientId = null) {
-  const id = randomUUID();
+  if (data?.id) {
+    const existing = await getTemplate(db, assertUuid(data.id, 'template id'));
+    if (existing) return existing;
+  }
+  const id = ensureUuid(data?.id, 'template id');
   const timestamp = nowIso();
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
+  const projectId = optionalUuid(data.project_id, 'project_id');
+  if (projectId) {
+    await assertProjectBelongsToWorkspace(db, projectId, workspaceId, 'project_id');
+  }
   const template = {
     id,
-    workspace_id: data.workspace_id,
-    project_id: data.project_id ?? null,
+    workspace_id: workspaceId,
+    project_id: projectId,
     name: data.name,
     steps_json: JSON.stringify(data.steps ?? []),
     lead_days: data.lead_days ?? 0,
@@ -299,12 +381,19 @@ export async function createTemplate(db, data, clientId = null) {
 }
 
 export async function updateTemplate(db, id, patch, clientId = null) {
-  const existing = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [id]);
+  const templateId = assertUuid(id, 'template id');
+  const existing = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [templateId]);
   if (!existing) return null;
+  const nextProjectId = patch.project_id !== undefined
+    ? optionalUuid(patch.project_id, 'project_id')
+    : existing.project_id;
+  if (nextProjectId) {
+    await assertProjectBelongsToWorkspace(db, nextProjectId, existing.workspace_id, 'project_id');
+  }
   const next = {
     ...existing,
     name: patch.name ?? existing.name,
-    project_id: patch.project_id !== undefined ? (patch.project_id || null) : existing.project_id,
+    project_id: nextProjectId,
     steps_json: patch.steps ? JSON.stringify(patch.steps) : existing.steps_json,
     lead_days: patch.lead_days ?? existing.lead_days,
     next_event_date: patch.next_event_date !== undefined ? patch.next_event_date : existing.next_event_date,
@@ -329,39 +418,47 @@ export async function updateTemplate(db, id, patch, clientId = null) {
       next.recurrence_unit,
       next.archived,
       next.updated_at,
-      id
+      templateId
     ]
   );
-  await recordChange(db, existing.workspace_id, 'template', id, 'update', patch, clientId);
-  return getTemplate(db, id);
+  await recordChange(db, existing.workspace_id, 'template', templateId, 'update', patch, clientId);
+  return getTemplate(db, templateId);
 }
 
 export async function deleteTemplate(db, id, clientId = null) {
-  const existing = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [id]);
+  const templateId = assertUuid(id, 'template id');
+  const existing = await getRow(db, 'SELECT * FROM templates WHERE id = ?', [templateId]);
   if (!existing) return { deleted: 0 };
   await db.transaction(async (tx) => {
-    await run(tx, 'UPDATE tasks SET template_id = NULL WHERE template_id = ?', [id]);
-    await run(tx, 'DELETE FROM templates WHERE id = ?', [id]);
+    await run(tx, 'UPDATE tasks SET template_id = NULL WHERE template_id = ?', [templateId]);
+    await run(tx, 'DELETE FROM templates WHERE id = ?', [templateId]);
   });
-  await recordChange(db, existing.workspace_id, 'template', id, 'delete', {}, clientId);
+  await recordChange(db, existing.workspace_id, 'template', templateId, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
 export async function getShoppingList(db, id) {
-  return getRow(db, 'SELECT * FROM shopping_lists WHERE id = ?', [id]);
+  const listId = assertUuid(id, 'shopping_list id');
+  return getRow(db, 'SELECT * FROM shopping_lists WHERE id = ?', [listId]);
 }
 
 export async function listShoppingLists(db, workspaceId) {
   if (!workspaceId) return [];
-  return getRows(db, 'SELECT * FROM shopping_lists WHERE workspace_id = ?', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(db, 'SELECT * FROM shopping_lists WHERE workspace_id = ?', [safeWorkspaceId]);
 }
 
 export async function createShoppingList(db, data, clientId = null) {
-  const id = randomUUID();
+  if (data?.id) {
+    const existing = await getShoppingList(db, assertUuid(data.id, 'shopping_list id'));
+    if (existing) return existing;
+  }
+  const id = ensureUuid(data?.id, 'shopping_list id');
   const timestamp = nowIso();
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const list = {
     id,
-    workspace_id: data.workspace_id,
+    workspace_id: workspaceId,
     name: data.name,
     archived: data.archived ? 1 : 0,
     created_at: timestamp,
@@ -377,7 +474,8 @@ export async function createShoppingList(db, data, clientId = null) {
 }
 
 export async function updateShoppingList(db, id, patch, clientId = null) {
-  const existing = await getShoppingList(db, id);
+  const listId = assertUuid(id, 'shopping_list id');
+  const existing = await getShoppingList(db, listId);
   if (!existing) return null;
   const next = {
     ...existing,
@@ -388,61 +486,66 @@ export async function updateShoppingList(db, id, patch, clientId = null) {
   await run(
     db,
     'UPDATE shopping_lists SET name = ?, archived = ?, updated_at = ? WHERE id = ?',
-    [next.name, next.archived, next.updated_at, id]
+    [next.name, next.archived, next.updated_at, listId]
   );
-  await recordChange(db, existing.workspace_id, 'shopping_list', id, 'update', patch, clientId);
-  return getShoppingList(db, id);
+  await recordChange(db, existing.workspace_id, 'shopping_list', listId, 'update', patch, clientId);
+  return getShoppingList(db, listId);
 }
 
 export async function deleteShoppingList(db, id, clientId = null) {
-  const existing = await getShoppingList(db, id);
+  const listId = assertUuid(id, 'shopping_list id');
+  const existing = await getShoppingList(db, listId);
   if (!existing) return { deleted: 0 };
-  await run(db, 'DELETE FROM shopping_lists WHERE id = ?', [id]);
-  await recordChange(db, existing.workspace_id, 'shopping_list', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM shopping_lists WHERE id = ?', [listId]);
+  await recordChange(db, existing.workspace_id, 'shopping_list', listId, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
 export async function getShoppingItem(db, id) {
-  return getRow(db, 'SELECT * FROM shopping_list_items WHERE id = ?', [id]);
+  const itemId = assertUuid(id, 'shopping_item id');
+  return getRow(db, 'SELECT * FROM shopping_list_items WHERE id = ?', [itemId]);
 }
 
 export async function listShoppingItems(db, workspaceId, listId = null) {
   if (listId) {
+    const safeListId = assertUuid(listId, 'list_id');
     return getRows(
       db,
       'SELECT * FROM shopping_list_items WHERE list_id = ? ORDER BY sort_order ASC, created_at ASC',
-      [listId]
+      [safeListId]
     );
   }
   if (!workspaceId) return [];
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
   return getRows(
     db,
     `SELECT items.* FROM shopping_list_items items
      JOIN shopping_lists lists ON lists.id = items.list_id
      WHERE lists.workspace_id = ?
      ORDER BY items.sort_order ASC, items.created_at ASC`,
-    [workspaceId]
+    [safeWorkspaceId]
   );
 }
 
 export async function createShoppingItems(db, listId, items, clientId = null) {
-  const list = await getShoppingList(db, listId);
+  const safeListId = assertUuid(listId, 'list_id');
+  const list = await getShoppingList(db, safeListId);
   if (!list) return [];
   const timestamp = nowIso();
   const maxRow = await getRow(
     db,
     'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
-    [listId]
+    [safeListId]
   );
   let sortOrder = Number(maxRow?.max_sort ?? 0);
   const created = [];
   await db.transaction(async (tx) => {
     for (const item of items) {
-      const id = randomUUID();
+      const id = ensureUuid(item?.id, 'shopping_item id');
       sortOrder += 1;
       const record = {
         id,
-        list_id: listId,
+        list_id: safeListId,
         name: item.name ?? item,
         is_checked: item.is_checked ? 1 : 0,
         sort_order: Number.isFinite(item.sort_order) ? item.sort_order : sortOrder,
@@ -470,18 +573,19 @@ export async function createShoppingItems(db, listId, items, clientId = null) {
 }
 
 export async function createShoppingItem(db, data, clientId = null) {
-  const list = await getShoppingList(db, data.list_id);
+  const listId = assertUuid(data.list_id, 'list_id');
+  const list = await getShoppingList(db, listId);
   if (!list) return null;
   const timestamp = nowIso();
   const maxRow = await getRow(
     db,
     'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
-    [data.list_id]
+    [listId]
   );
   const nextSort = Number(maxRow?.max_sort ?? 0) + 1;
   const item = {
-    id: randomUUID(),
-    list_id: data.list_id,
+    id: ensureUuid(data?.id, 'shopping_item id'),
+    list_id: listId,
     name: data.name,
     is_checked: data.is_checked ? 1 : 0,
     sort_order: Number.isFinite(data.sort_order) ? data.sort_order : nextSort,
@@ -506,7 +610,8 @@ export async function createShoppingItem(db, data, clientId = null) {
 }
 
 export async function updateShoppingItem(db, id, patch, clientId = null) {
-  const existing = await getShoppingItem(db, id);
+  const itemId = assertUuid(id, 'shopping_item id');
+  const existing = await getShoppingItem(db, itemId);
   if (!existing) return null;
   const list = await getShoppingList(db, existing.list_id);
   const next = {
@@ -519,36 +624,43 @@ export async function updateShoppingItem(db, id, patch, clientId = null) {
   await run(
     db,
     'UPDATE shopping_list_items SET name = ?, is_checked = ?, sort_order = ?, updated_at = ? WHERE id = ?',
-    [next.name, next.is_checked, next.sort_order, next.updated_at, id]
+    [next.name, next.is_checked, next.sort_order, next.updated_at, itemId]
   );
   if (list) {
-    await recordChange(db, list.workspace_id, 'shopping_item', id, 'update', patch, clientId);
+    await recordChange(db, list.workspace_id, 'shopping_item', itemId, 'update', patch, clientId);
   }
-  return getShoppingItem(db, id);
+  return getShoppingItem(db, itemId);
 }
 
 export async function deleteShoppingItem(db, id, clientId = null) {
-  const existing = await getShoppingItem(db, id);
+  const itemId = assertUuid(id, 'shopping_item id');
+  const existing = await getShoppingItem(db, itemId);
   if (!existing) return { deleted: 0 };
   const list = await getShoppingList(db, existing.list_id);
-  await run(db, 'DELETE FROM shopping_list_items WHERE id = ?', [id]);
+  await run(db, 'DELETE FROM shopping_list_items WHERE id = ?', [itemId]);
   if (list) {
-    await recordChange(db, list.workspace_id, 'shopping_item', id, 'delete', {}, clientId);
+    await recordChange(db, list.workspace_id, 'shopping_item', itemId, 'delete', {}, clientId);
   }
   return { deleted: 1 };
 }
 
 export async function listNotices(db, workspaceId) {
   if (!workspaceId) return [];
-  return getRows(db, 'SELECT * FROM notices WHERE workspace_id = ? ORDER BY notify_at ASC', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(db, 'SELECT * FROM notices WHERE workspace_id = ? ORDER BY notify_at ASC', [safeWorkspaceId]);
 }
 
 async function getNotice(db, id) {
-  return getRow(db, 'SELECT * FROM notices WHERE id = ?', [id]);
+  const noticeId = assertUuid(id, 'notice id');
+  return getRow(db, 'SELECT * FROM notices WHERE id = ?', [noticeId]);
 }
 
 export async function createNotice(db, data, clientId = null) {
-  const id = randomUUID();
+  if (data?.id) {
+    const existing = await getNotice(db, assertUuid(data.id, 'notice id'));
+    if (existing) return existing;
+  }
+  const id = ensureUuid(data?.id, 'notice id');
   const timestamp = nowIso();
   const title = (data.title ?? '').trim();
   const notifyAt = data.notify_at ?? null;
@@ -561,9 +673,10 @@ export async function createNotice(db, data, clientId = null) {
   );
   const recurrenceRuleJson = normalizeNoticeRecurrenceRuleJson(data.recurrence_rule_json ?? data.recurrence_rule);
   const recurrenceOccurrenceCount = normalizeNoticeOccurrenceCount(data.recurrence_occurrence_count);
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const notice = {
     id,
-    workspace_id: data.workspace_id,
+    workspace_id: workspaceId,
     title,
     notify_at: notifyAt,
     notice_type: data.notice_type ?? 'general',
@@ -603,7 +716,8 @@ export async function createNotice(db, data, clientId = null) {
 }
 
 export async function updateNotice(db, id, patch, clientId = null) {
-  const existing = await getNotice(db, id);
+  const noticeId = assertUuid(id, 'notice id');
+  const existing = await getNotice(db, noticeId);
   if (!existing) return null;
   const { interval: recurrenceInterval, unit: recurrenceUnit } = normalizeNoticeRecurrence(
     'recurrence_interval' in patch ? patch.recurrence_interval : existing.recurrence_interval,
@@ -643,28 +757,31 @@ export async function updateNotice(db, id, patch, clientId = null) {
       next.recurrence_occurrence_count,
       next.dismissed_at,
       next.updated_at,
-      id
+      noticeId
     ]
   );
-  await recordChange(db, existing.workspace_id, 'notice', id, 'update', patch, clientId);
-  return getNotice(db, id);
+  await recordChange(db, existing.workspace_id, 'notice', noticeId, 'update', patch, clientId);
+  return getNotice(db, noticeId);
 }
 
 export async function deleteNotice(db, id, clientId = null) {
-  const existing = await getNotice(db, id);
+  const noticeId = assertUuid(id, 'notice id');
+  const existing = await getNotice(db, noticeId);
   if (!existing) return { deleted: 0 };
-  await run(db, 'DELETE FROM notices WHERE id = ?', [id]);
-  await recordChange(db, existing.workspace_id, 'notice', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM notices WHERE id = ?', [noticeId]);
+  await recordChange(db, existing.workspace_id, 'notice', noticeId, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
 export async function listNoticeTypes(db, workspaceId) {
   if (!workspaceId) return [];
-  return getRows(db, 'SELECT * FROM notice_types WHERE workspace_id = ? ORDER BY label ASC', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(db, 'SELECT * FROM notice_types WHERE workspace_id = ? ORDER BY label ASC', [safeWorkspaceId]);
 }
 
 async function getNoticeType(db, id) {
-  return getRow(db, 'SELECT * FROM notice_types WHERE id = ?', [id]);
+  const noticeTypeId = assertUuid(id, 'notice_type id');
+  return getRow(db, 'SELECT * FROM notice_types WHERE id = ?', [noticeTypeId]);
 }
 
 async function getNoticeTypeByKey(db, workspaceId, key) {
@@ -689,22 +806,24 @@ async function generateNoticeTypeKey(db, workspaceId, label) {
 export async function createNoticeType(db, data, clientId = null) {
   const label = String(data.label ?? '').trim();
   if (!label) throw new Error('Label required');
-  const existing = await getNoticeTypeByLabel(db, data.workspace_id, label);
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
+  const existing = await getNoticeTypeByLabel(db, workspaceId, label);
   if (existing) return existing;
-  const id = randomUUID();
+  const id = ensureUuid(data?.id, 'notice_type id');
   const timestamp = nowIso();
-  const key = await generateNoticeTypeKey(db, data.workspace_id, label);
+  const key = await generateNoticeTypeKey(db, workspaceId, label);
   await run(
     db,
     'INSERT INTO notice_types (id, workspace_id, key, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, data.workspace_id, key, label, timestamp, timestamp]
+    [id, workspaceId, key, label, timestamp, timestamp]
   );
-  await recordChange(db, data.workspace_id, 'notice_type', id, 'create', { key, label }, clientId);
+  await recordChange(db, workspaceId, 'notice_type', id, 'create', { key, label }, clientId);
   return getNoticeType(db, id);
 }
 
 export async function updateNoticeType(db, id, patch, clientId = null) {
-  const existing = await getNoticeType(db, id);
+  const noticeTypeId = assertUuid(id, 'notice_type id');
+  const existing = await getNoticeType(db, noticeTypeId);
   if (!existing) return null;
   const nextLabel = patch.label !== undefined ? String(patch.label).trim() : existing.label;
   const next = {
@@ -715,36 +834,44 @@ export async function updateNoticeType(db, id, patch, clientId = null) {
   await run(
     db,
     'UPDATE notice_types SET label = ?, updated_at = ? WHERE id = ?',
-    [next.label, next.updated_at, id]
+    [next.label, next.updated_at, noticeTypeId]
   );
-  await recordChange(db, existing.workspace_id, 'notice_type', id, 'update', patch, clientId);
-  return getNoticeType(db, id);
+  await recordChange(db, existing.workspace_id, 'notice_type', noticeTypeId, 'update', patch, clientId);
+  return getNoticeType(db, noticeTypeId);
 }
 
 export async function deleteNoticeType(db, id, clientId = null) {
-  const existing = await getNoticeType(db, id);
+  const noticeTypeId = assertUuid(id, 'notice_type id');
+  const existing = await getNoticeType(db, noticeTypeId);
   if (!existing) return { deleted: 0 };
-  await run(db, 'DELETE FROM notice_types WHERE id = ?', [id]);
-  await recordChange(db, existing.workspace_id, 'notice_type', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM notice_types WHERE id = ?', [noticeTypeId]);
+  await recordChange(db, existing.workspace_id, 'notice_type', noticeTypeId, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
 export async function listStoreRules(db, workspaceId) {
   if (!workspaceId) return [];
-  return getRows(db, 'SELECT * FROM store_rules WHERE workspace_id = ? ORDER BY store_name ASC', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(db, 'SELECT * FROM store_rules WHERE workspace_id = ? ORDER BY store_name ASC', [safeWorkspaceId]);
 }
 
 async function getStoreRule(db, id) {
-  return getRow(db, 'SELECT * FROM store_rules WHERE id = ?', [id]);
+  const storeRuleId = assertUuid(id, 'store_rule id');
+  return getRow(db, 'SELECT * FROM store_rules WHERE id = ?', [storeRuleId]);
 }
 
 export async function createStoreRule(db, data, clientId = null) {
-  const id = randomUUID();
+  if (data?.id) {
+    const existing = await getStoreRule(db, assertUuid(data.id, 'store_rule id'));
+    if (existing) return existing;
+  }
+  const id = ensureUuid(data?.id, 'store_rule id');
   const timestamp = nowIso();
   const keywords = Array.isArray(data.keywords) ? data.keywords : [];
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const rule = {
     id,
-    workspace_id: data.workspace_id,
+    workspace_id: workspaceId,
     store_name: data.store_name,
     keywords_json: JSON.stringify(keywords),
     archived: data.archived ? 1 : 0,
@@ -769,7 +896,8 @@ export async function createStoreRule(db, data, clientId = null) {
 }
 
 export async function updateStoreRule(db, id, patch, clientId = null) {
-  const existing = await getStoreRule(db, id);
+  const storeRuleId = assertUuid(id, 'store_rule id');
+  const existing = await getStoreRule(db, storeRuleId);
   if (!existing) return null;
   const nextKeywords = Array.isArray(patch.keywords)
     ? JSON.stringify(patch.keywords)
@@ -784,27 +912,30 @@ export async function updateStoreRule(db, id, patch, clientId = null) {
   await run(
     db,
     'UPDATE store_rules SET store_name = ?, keywords_json = ?, archived = ?, updated_at = ? WHERE id = ?',
-    [next.store_name, next.keywords_json, next.archived, next.updated_at, id]
+    [next.store_name, next.keywords_json, next.archived, next.updated_at, storeRuleId]
   );
-  await recordChange(db, existing.workspace_id, 'store_rule', id, 'update', patch, clientId);
-  return getStoreRule(db, id);
+  await recordChange(db, existing.workspace_id, 'store_rule', storeRuleId, 'update', patch, clientId);
+  return getStoreRule(db, storeRuleId);
 }
 
 export async function deleteStoreRule(db, id, clientId = null) {
-  const existing = await getStoreRule(db, id);
+  const storeRuleId = assertUuid(id, 'store_rule id');
+  const existing = await getStoreRule(db, storeRuleId);
   if (!existing) return { deleted: 0 };
-  await run(db, 'DELETE FROM store_rules WHERE id = ?', [id]);
-  await recordChange(db, existing.workspace_id, 'store_rule', id, 'delete', {}, clientId);
+  await run(db, 'DELETE FROM store_rules WHERE id = ?', [storeRuleId]);
+  await recordChange(db, existing.workspace_id, 'store_rule', storeRuleId, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
 export async function listTaskTypes(db, workspaceId) {
   if (!workspaceId) return [];
-  return getRows(db, 'SELECT * FROM task_types WHERE workspace_id = ? ORDER BY is_default DESC, name ASC', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(db, 'SELECT * FROM task_types WHERE workspace_id = ? ORDER BY is_default DESC, name ASC', [safeWorkspaceId]);
 }
 
 async function getTaskType(db, id) {
-  return getRow(db, 'SELECT * FROM task_types WHERE id = ?', [id]);
+  const taskTypeId = assertUuid(id, 'task_type id');
+  return getRow(db, 'SELECT * FROM task_types WHERE id = ?', [taskTypeId]);
 }
 
 async function getTaskTypeByName(db, workspaceId, name) {
@@ -823,19 +954,20 @@ async function getDefaultTaskType(db, workspaceId) {
 
 export async function createTaskType(db, data, clientId = null) {
   if (data?.id) {
-    const existing = await getTaskType(db, data.id);
+    const existing = await getTaskType(db, assertUuid(data.id, 'task_type id'));
     if (existing) return existing;
   }
-  const id = data?.id ?? randomUUID();
+  const id = ensureUuid(data?.id, 'task_type id');
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const timestamp = nowIso();
   const name = (data.name ?? '').trim();
   if (!name) throw new Error('Invalid task type name');
-  if (await getTaskTypeByName(db, data.workspace_id, name)) {
+  if (await getTaskTypeByName(db, workspaceId, name)) {
     throw new Error('Task type already exists');
   }
   const type = {
     id,
-    workspace_id: data.workspace_id,
+    workspace_id: workspaceId,
     name,
     is_default: data.is_default ? 1 : 0,
     archived: data.archived ? 1 : 0,
@@ -852,7 +984,8 @@ export async function createTaskType(db, data, clientId = null) {
 }
 
 export async function updateTaskType(db, id, patch, clientId = null) {
-  const existing = await getTaskType(db, id);
+  const taskTypeId = assertUuid(id, 'task_type id');
+  const existing = await getTaskType(db, taskTypeId);
   if (!existing) return null;
   const nextName = patch.name !== undefined ? String(patch.name).trim() : existing.name;
   if (!nextName) throw new Error('Invalid task type name');
@@ -869,7 +1002,7 @@ export async function updateTaskType(db, id, patch, clientId = null) {
     await run(
       tx,
       'UPDATE task_types SET name = ?, archived = ?, updated_at = ? WHERE id = ?',
-      [next.name, next.archived, next.updated_at, id]
+      [next.name, next.archived, next.updated_at, taskTypeId]
     );
     if (next.name !== existing.name) {
       await run(
@@ -879,12 +1012,13 @@ export async function updateTaskType(db, id, patch, clientId = null) {
       );
     }
   });
-  await recordChange(db, existing.workspace_id, 'task_type', id, 'update', patch, clientId);
-  return getTaskType(db, id);
+  await recordChange(db, existing.workspace_id, 'task_type', taskTypeId, 'update', patch, clientId);
+  return getTaskType(db, taskTypeId);
 }
 
 export async function deleteTaskType(db, id, clientId = null) {
-  const existing = await getTaskType(db, id);
+  const taskTypeId = assertUuid(id, 'task_type id');
+  const existing = await getTaskType(db, taskTypeId);
   if (!existing) return { deleted: 0 };
   if (existing.is_default) {
     return { deleted: 0, error: 'protected' };
@@ -895,18 +1029,19 @@ export async function deleteTaskType(db, id, clientId = null) {
       'UPDATE tasks SET type_label = NULL, updated_at = ? WHERE workspace_id = ? AND type_label = ?',
       [nowIso(), existing.workspace_id, existing.name]
     );
-    await run(tx, 'DELETE FROM task_types WHERE id = ?', [id]);
+    await run(tx, 'DELETE FROM task_types WHERE id = ?', [taskTypeId]);
   });
-  await recordChange(db, existing.workspace_id, 'task_type', id, 'delete', {}, clientId);
+  await recordChange(db, existing.workspace_id, 'task_type', taskTypeId, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
 export async function listStatuses(db, workspaceId) {
   if (!workspaceId) return [];
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
   return getRows(
     db,
     'SELECT * FROM workspace_statuses WHERE workspace_id = ? ORDER BY sort_order ASC, created_at ASC',
-    [workspaceId]
+    [safeWorkspaceId]
   );
 }
 
@@ -917,7 +1052,8 @@ export async function getStatusByKey(db, workspaceId, key) {
 
 async function getStatusById(db, id) {
   if (!id) return null;
-  return getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [id]);
+  const statusId = assertUuid(id, 'status id');
+  return getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [statusId]);
 }
 
 async function getFallbackStatus(db, workspaceId) {
@@ -947,24 +1083,25 @@ async function ensureStatusKeyUnique(db, workspaceId, baseKey) {
 
 export async function createStatus(db, data, clientId = null) {
   if (data?.id) {
-    const existing = await getStatusById(db, data.id);
+    const existing = await getStatusById(db, assertUuid(data.id, 'status id'));
     if (existing) return existing;
   }
-  const id = data?.id ?? randomUUID();
+  const id = ensureUuid(data?.id, 'status id');
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const timestamp = nowIso();
   const label = (data.label ?? '').trim();
   const keyBase = data.key ? slugify(data.key) : slugify(label);
   if (!keyBase) throw new Error('Invalid status key');
-  const key = await ensureStatusKeyUnique(db, data.workspace_id, keyBase);
+  const key = await ensureStatusKeyUnique(db, workspaceId, keyBase);
   const maxRow = await getRow(
     db,
     'SELECT MAX(sort_order) AS max_sort FROM workspace_statuses WHERE workspace_id = ?',
-    [data.workspace_id]
+    [workspaceId]
   );
   const nextSort = Number(maxRow?.max_sort ?? 0) + 10;
   const status = {
     id,
-    workspace_id: data.workspace_id,
+    workspace_id: workspaceId,
     key,
     label: label || key,
     kind: data.kind ?? 'custom',
@@ -995,7 +1132,8 @@ export async function createStatus(db, data, clientId = null) {
 }
 
 export async function updateStatus(db, id, patch, clientId = null) {
-  const existing = await getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [id]);
+  const statusId = assertUuid(id, 'status id');
+  const existing = await getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [statusId]);
   if (!existing) return null;
   const nextLabel = patch.label !== undefined ? String(patch.label).trim() : existing.label;
   const next = {
@@ -1008,14 +1146,15 @@ export async function updateStatus(db, id, patch, clientId = null) {
   await run(
     db,
     'UPDATE workspace_statuses SET label = ?, sort_order = ?, kanban_visible = ?, updated_at = ? WHERE id = ?',
-    [next.label, next.sort_order, next.kanban_visible, next.updated_at, id]
+    [next.label, next.sort_order, next.kanban_visible, next.updated_at, statusId]
   );
-  await recordChange(db, existing.workspace_id, 'status', id, 'update', patch, clientId);
-  return getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [id]);
+  await recordChange(db, existing.workspace_id, 'status', statusId, 'update', patch, clientId);
+  return getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [statusId]);
 }
 
 export async function deleteStatus(db, id, clientId = null) {
-  const existing = await getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [id]);
+  const statusId = assertUuid(id, 'status id');
+  const existing = await getRow(db, 'SELECT * FROM workspace_statuses WHERE id = ?', [statusId]);
   if (!existing) return { deleted: 0 };
   if (existing.kind !== 'custom') {
     return { deleted: 0, error: 'protected' };
@@ -1028,16 +1167,17 @@ export async function deleteStatus(db, id, clientId = null) {
       'UPDATE tasks SET status = ?, updated_at = ? WHERE workspace_id = ? AND status = ?',
       [fallbackKey, nowIso(), existing.workspace_id, existing.key]
     );
-    await run(tx, 'DELETE FROM workspace_statuses WHERE id = ?', [id]);
+    await run(tx, 'DELETE FROM workspace_statuses WHERE id = ?', [statusId]);
   });
-  await recordChange(db, existing.workspace_id, 'status', id, 'delete', {}, clientId);
+  await recordChange(db, existing.workspace_id, 'status', statusId, 'delete', {}, clientId);
   return { deleted: 1 };
 }
 
 export async function seedWorkspaceStatuses(db, workspaceId) {
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
   const timestamp = nowIso();
   for (const status of DEFAULT_STATUSES) {
-    const existing = await getStatusByKey(db, workspaceId, status.key);
+    const existing = await getStatusByKey(db, safeWorkspaceId, status.key);
     if (existing) continue;
     await run(
       db,
@@ -1046,7 +1186,7 @@ export async function seedWorkspaceStatuses(db, workspaceId) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         randomUUID(),
-        workspaceId,
+        safeWorkspaceId,
         status.key,
         status.label,
         status.kind,
@@ -1060,16 +1200,17 @@ export async function seedWorkspaceStatuses(db, workspaceId) {
 }
 
 export async function seedWorkspaceTaskTypes(db, workspaceId) {
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
   const timestamp = nowIso();
   for (const type of DEFAULT_TASK_TYPES) {
-    const existing = await getTaskTypeByName(db, workspaceId, type.name);
+    const existing = await getTaskTypeByName(db, safeWorkspaceId, type.name);
     if (existing) continue;
     await run(
       db,
       'INSERT INTO task_types (id, workspace_id, name, is_default, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [
         randomUUID(),
-        workspaceId,
+        safeWorkspaceId,
         type.name,
         type.is_default ? 1 : 0,
         0,
@@ -1081,44 +1222,63 @@ export async function seedWorkspaceTaskTypes(db, workspaceId) {
 }
 
 export async function seedWorkspaceNoticeTypes(db, workspaceId) {
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
   const timestamp = nowIso();
   for (const type of DEFAULT_NOTICE_TYPES) {
     const existing = await getRow(
       db,
       'SELECT 1 FROM notice_types WHERE workspace_id = ? AND key = ?',
-      [workspaceId, type.key]
+      [safeWorkspaceId, type.key]
     );
     if (existing) continue;
     await run(
       db,
       'INSERT INTO notice_types (id, workspace_id, key, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [randomUUID(), workspaceId, type.key, type.label, timestamp, timestamp]
+      [randomUUID(), safeWorkspaceId, type.key, type.label, timestamp, timestamp]
     );
   }
 }
 
 export async function createTask(db, data, clientId = null) {
   if (data?.id) {
-    const existing = await getTask(db, data.id);
+    const existing = await getTask(db, assertUuid(data.id, 'task id'));
     if (existing) return existing;
   }
-  const id = data?.id ?? randomUUID();
+  const id = ensureUuid(data?.id, 'task id');
+  const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const timestamp = nowIso();
-  const fallbackStatus = await getFallbackStatus(db, data.workspace_id);
+  const fallbackStatus = await getFallbackStatus(db, workspaceId);
   const statusKey = data.status ?? fallbackStatus?.key ?? TaskStatus.INBOX;
-  const statusRow = await getStatusByKey(db, data.workspace_id, statusKey);
+  const statusRow = await getStatusByKey(db, workspaceId, statusKey);
   if (!statusRow) {
     throw new Error('Invalid status');
   }
   const status = statusRow.key;
   const priority = data.priority ?? 'medium';
   const urgency = data.urgency ? 1 : 0;
+  const parentId = optionalUuid(data.parent_id, 'parent_id');
+  const projectId = optionalUuid(data.project_id, 'project_id');
+  const recurrenceParentId = optionalUuid(data.recurrence_parent_id, 'recurrence_parent_id');
+  const templateId = optionalUuid(data.template_id, 'template_id');
+
+  if (parentId) {
+    await assertTaskBelongsToWorkspace(db, parentId, workspaceId, 'parent_id');
+  }
+  if (projectId) {
+    await assertProjectBelongsToWorkspace(db, projectId, workspaceId, 'project_id');
+  }
+  if (recurrenceParentId) {
+    await assertTaskBelongsToWorkspace(db, recurrenceParentId, workspaceId, 'recurrence_parent_id');
+  }
+  if (templateId) {
+    await assertTemplateBelongsToWorkspace(db, templateId, workspaceId, 'template_id');
+  }
 
   const task = {
     id,
-    workspace_id: data.workspace_id,
-    parent_id: data.parent_id ?? null,
-    project_id: data.project_id ?? null,
+    workspace_id: workspaceId,
+    parent_id: parentId,
+    project_id: projectId,
     group_label: data.group_label ?? null,
     title: data.title,
     description_md: data.description_md ?? '',
@@ -1128,9 +1288,9 @@ export async function createTask(db, data, clientId = null) {
     reminder_offset_days: data.reminder_offset_days ?? null,
     auto_debit: data.auto_debit ? 1 : 0,
     reminder_sent_at: data.reminder_sent_at ?? null,
-    recurrence_parent_id: data.recurrence_parent_id ?? null,
+    recurrence_parent_id: recurrenceParentId,
     recurrence_generated_at: data.recurrence_generated_at ?? null,
-    template_id: data.template_id ?? null,
+    template_id: templateId,
     template_state: data.template_state ?? null,
     template_event_date: data.template_event_date ?? null,
     template_lead_days: data.template_lead_days ?? null,
@@ -1257,13 +1417,42 @@ export async function createTask(db, data, clientId = null) {
 }
 
 export async function getTask(db, id) {
-  return getRow(db, 'SELECT * FROM tasks WHERE id = ?', [id]);
+  const taskId = assertUuid(id, 'task id');
+  return getRow(db, 'SELECT * FROM tasks WHERE id = ?', [taskId]);
 }
 
 export async function updateTask(db, id, patch, clientId = null) {
-  const existing = await getTask(db, id);
+  const taskId = assertUuid(id, 'task id');
+  const existing = await getTask(db, taskId);
   if (!existing) return null;
-  const next = { ...existing, ...patch, updated_at: nowIso() };
+  const next = {
+    ...existing,
+    ...patch,
+    id: existing.id,
+    workspace_id: existing.workspace_id,
+    parent_id: existing.parent_id,
+    updated_at: nowIso()
+  };
+
+  if ('project_id' in patch) {
+    next.project_id = optionalUuid(patch.project_id, 'project_id');
+    if (next.project_id) {
+      await assertProjectBelongsToWorkspace(db, next.project_id, existing.workspace_id, 'project_id');
+    }
+  }
+  if ('template_id' in patch) {
+    next.template_id = optionalUuid(patch.template_id, 'template_id');
+    if (next.template_id) {
+      await assertTemplateBelongsToWorkspace(db, next.template_id, existing.workspace_id, 'template_id');
+    }
+  }
+  if ('recurrence_parent_id' in patch) {
+    next.recurrence_parent_id = optionalUuid(patch.recurrence_parent_id, 'recurrence_parent_id');
+    if (next.recurrence_parent_id) {
+      await assertTaskBelongsToWorkspace(db, next.recurrence_parent_id, existing.workspace_id, 'recurrence_parent_id');
+    }
+  }
+
   if ('urgency' in patch) next.urgency = patch.urgency ? 1 : 0;
   if ('auto_debit' in patch) next.auto_debit = patch.auto_debit ? 1 : 0;
   if ('template_prompt_pending' in patch) next.template_prompt_pending = patch.template_prompt_pending ? 1 : 0;
@@ -1301,19 +1490,20 @@ export async function updateTask(db, id, patch, clientId = null) {
   await run(
     db,
     `UPDATE tasks SET ${fields.map(field => `${field} = ?`).join(', ')}, updated_at = ? WHERE id = ?`,
-    [...values, next.updated_at, id]
+    [...values, next.updated_at, taskId]
   );
-  await recordChange(db, next.workspace_id, 'task', id, 'update', patch, clientId);
-  return getTask(db, id);
+  await recordChange(db, next.workspace_id, 'task', taskId, 'update', patch, clientId);
+  return getTask(db, taskId);
 }
 
 export async function deleteTask(db, id, clientId = null) {
-  const existing = await getTask(db, id);
+  const taskId = assertUuid(id, 'task id');
+  const existing = await getTask(db, taskId);
   if (!existing) return { deleted: 0 };
   const descendants = await getRows(
     db,
     'SELECT descendant_id FROM task_edges WHERE ancestor_id = ?',
-    [id]
+    [taskId]
   );
   const ids = descendants.map(row => row.descendant_id);
   if (ids.length === 0) return { deleted: 0 };
@@ -1323,25 +1513,28 @@ export async function deleteTask(db, id, clientId = null) {
     await run(tx, `DELETE FROM tasks WHERE id IN (${placeholders})`, ids);
   });
 
-  await recordChange(db, existing.workspace_id, 'task', id, 'delete', { ids }, clientId);
+  await recordChange(db, existing.workspace_id, 'task', taskId, 'delete', { ids }, clientId);
   return { deleted: ids.length, ids };
 }
 
 export async function listTasks(db, workspaceId) {
   if (!workspaceId) return [];
-  return getRows(db, 'SELECT * FROM tasks WHERE workspace_id = ?', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(db, 'SELECT * FROM tasks WHERE workspace_id = ?', [safeWorkspaceId]);
 }
 
 export async function listTaskDependencies(db, workspaceId) {
   if (!workspaceId) return [];
-  return getRows(db, 'SELECT * FROM task_dependencies WHERE workspace_id = ?', [workspaceId]);
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(db, 'SELECT * FROM task_dependencies WHERE workspace_id = ?', [safeWorkspaceId]);
 }
 
 export async function addTaskDependency(db, taskId, dependsOnId, clientId = null) {
-  if (!taskId || !dependsOnId) throw new Error('Task ids required');
-  if (taskId === dependsOnId) throw new Error('Task cannot depend on itself');
-  const task = await getTask(db, taskId);
-  const dependency = await getTask(db, dependsOnId);
+  const safeTaskId = assertUuid(taskId, 'task_id');
+  const safeDependsOnId = assertUuid(dependsOnId, 'depends_on_id');
+  if (safeTaskId === safeDependsOnId) throw new Error('Task cannot depend on itself');
+  const task = await getTask(db, safeTaskId);
+  const dependency = await getTask(db, safeDependsOnId);
   if (!task || !dependency) throw new Error('Task not found');
   if (task.workspace_id !== dependency.workspace_id) {
     throw new Error('Tasks must be in the same workspace');
@@ -1349,45 +1542,46 @@ export async function addTaskDependency(db, taskId, dependsOnId, clientId = null
   const existing = await getRow(
     db,
     'SELECT 1 FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?',
-    [taskId, dependsOnId]
+    [safeTaskId, safeDependsOnId]
   );
-  if (existing) return { task_id: taskId, depends_on_id: dependsOnId, workspace_id: task.workspace_id };
+  if (existing) return { task_id: safeTaskId, depends_on_id: safeDependsOnId, workspace_id: task.workspace_id };
   const created_at = nowIso();
   await run(
     db,
     'INSERT INTO task_dependencies (task_id, depends_on_id, workspace_id, created_at) VALUES (?, ?, ?, ?)',
-    [taskId, dependsOnId, task.workspace_id, created_at]
+    [safeTaskId, safeDependsOnId, task.workspace_id, created_at]
   );
   await recordChange(
     db,
     task.workspace_id,
     'task_dependency',
-    `${taskId}:${dependsOnId}`,
+    `${safeTaskId}:${safeDependsOnId}`,
     'create',
-    { task_id: taskId, depends_on_id: dependsOnId },
+    { task_id: safeTaskId, depends_on_id: safeDependsOnId },
     clientId
   );
-  return { task_id: taskId, depends_on_id: dependsOnId, workspace_id: task.workspace_id, created_at };
+  return { task_id: safeTaskId, depends_on_id: safeDependsOnId, workspace_id: task.workspace_id, created_at };
 }
 
 export async function removeTaskDependency(db, taskId, dependsOnId, clientId = null) {
-  if (!taskId || !dependsOnId) throw new Error('Task ids required');
-  const task = await getTask(db, taskId);
+  const safeTaskId = assertUuid(taskId, 'task_id');
+  const safeDependsOnId = assertUuid(dependsOnId, 'depends_on_id');
+  const task = await getTask(db, safeTaskId);
   if (!task) throw new Error('Task not found');
   const existing = await getRow(
     db,
     'SELECT 1 FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?',
-    [taskId, dependsOnId]
+    [safeTaskId, safeDependsOnId]
   );
   if (!existing) return { deleted: 0 };
-  await run(db, 'DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?', [taskId, dependsOnId]);
+  await run(db, 'DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?', [safeTaskId, safeDependsOnId]);
   await recordChange(
     db,
     task.workspace_id,
     'task_dependency',
-    `${taskId}:${dependsOnId}`,
+    `${safeTaskId}:${safeDependsOnId}`,
     'delete',
-    { task_id: taskId, depends_on_id: dependsOnId },
+    { task_id: safeTaskId, depends_on_id: safeDependsOnId },
     clientId
   );
   return { deleted: 1 };
@@ -1396,15 +1590,20 @@ export async function removeTaskDependency(db, taskId, dependsOnId, clientId = n
 export async function getTaskTree(db, workspaceId, rootId = null) {
   let tasks;
   if (rootId) {
+    const safeRootId = assertUuid(rootId, 'root_id');
     const descendants = await getRows(
       db,
       'SELECT descendant_id FROM task_edges WHERE ancestor_id = ?',
-      [rootId]
+      [safeRootId]
     );
     const ids = descendants.map(row => row.descendant_id);
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
     tasks = await getRows(db, `SELECT * FROM tasks WHERE id IN (${placeholders})`, ids);
+    if (workspaceId) {
+      const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+      tasks = tasks.filter(task => task.workspace_id === safeWorkspaceId);
+    }
   } else {
     tasks = await listTasks(db, workspaceId);
   }
@@ -1420,13 +1619,21 @@ function sortTreeByPriority(node) {
 }
 
 export async function reparentTask(db, taskId, newParentId, clientId = null) {
-  if (taskId === newParentId) throw new Error('Cannot reparent task under itself');
+  const safeTaskId = assertUuid(taskId, 'task id');
+  const safeNewParentId = optionalUuid(newParentId, 'new_parent_id');
+  if (safeTaskId === safeNewParentId) throw new Error('Cannot reparent task under itself');
+  const sourceTask = await getTask(db, safeTaskId);
+  if (!sourceTask) throw new Error('Task not found');
 
-  if (newParentId) {
+  if (safeNewParentId) {
+    await assertTaskBelongsToWorkspace(db, safeNewParentId, sourceTask.workspace_id, 'new_parent_id');
+  }
+
+  if (safeNewParentId) {
     const cycle = await getRow(
       db,
       'SELECT 1 FROM task_edges WHERE ancestor_id = ? AND descendant_id = ? LIMIT 1',
-      [taskId, newParentId]
+      [safeTaskId, safeNewParentId]
     );
     if (cycle) throw new Error('Cannot reparent task under its descendant');
   }
@@ -1434,12 +1641,12 @@ export async function reparentTask(db, taskId, newParentId, clientId = null) {
   const descendants = await getRows(
     db,
     'SELECT descendant_id, depth FROM task_edges WHERE ancestor_id = ?',
-    [taskId]
+    [safeTaskId]
   );
   const ancestorRows = await getRows(
     db,
     'SELECT ancestor_id, depth FROM task_edges WHERE descendant_id = ? AND depth > 0',
-    [taskId]
+    [safeTaskId]
   );
 
   await db.transaction(async (tx) => {
@@ -1455,11 +1662,11 @@ export async function reparentTask(db, taskId, newParentId, clientId = null) {
       );
     }
 
-    if (newParentId) {
+    if (safeNewParentId) {
       const newAncestors = await getRows(
         tx,
         'SELECT ancestor_id, depth FROM task_edges WHERE descendant_id = ?',
-        [newParentId]
+        [safeNewParentId]
       );
       for (const ancestor of newAncestors) {
         for (const descendant of descendants) {
@@ -1475,20 +1682,21 @@ export async function reparentTask(db, taskId, newParentId, clientId = null) {
     await run(
       tx,
       'UPDATE tasks SET parent_id = ?, updated_at = ? WHERE id = ?',
-      [newParentId ?? null, nowIso(), taskId]
+      [safeNewParentId ?? null, nowIso(), safeTaskId]
     );
   });
 
-  const updated = await getTask(db, taskId);
-  await recordChange(db, updated.workspace_id, 'task', taskId, 'reparent', { new_parent_id: newParentId }, clientId);
+  const updated = await getTask(db, safeTaskId);
+  await recordChange(db, updated.workspace_id, 'task', safeTaskId, 'reparent', { new_parent_id: safeNewParentId }, clientId);
   return updated;
 }
 
 export async function applyTaskCheckIn(db, taskId, response, clientId = null) {
-  const task = await getTask(db, taskId);
+  const safeTaskId = assertUuid(taskId, 'task id');
+  const task = await getTask(db, safeTaskId);
   if (!task) return null;
   if (response === 'no') {
-    await rescheduleSubtree(db, taskId, 24 * 60 * 60 * 1000, clientId);
+    await rescheduleSubtree(db, safeTaskId, 24 * 60 * 60 * 1000, clientId);
   }
   const updated = applyCheckIn(task, response, new Date());
 
@@ -1496,7 +1704,7 @@ export async function applyTaskCheckIn(db, taskId, response, clientId = null) {
     await run(
       tx,
       'UPDATE tasks SET status = ?, completed_at = ?, next_checkin_at = ?, updated_at = ? WHERE id = ?',
-      [updated.status, updated.completed_at, updated.next_checkin_at, nowIso(), taskId]
+      [updated.status, updated.completed_at, updated.next_checkin_at, nowIso(), safeTaskId]
     );
     const checkinId = randomUUID();
     await run(
@@ -1504,7 +1712,7 @@ export async function applyTaskCheckIn(db, taskId, response, clientId = null) {
       'INSERT INTO task_checkins (id, task_id, scheduled_at, response, responded_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       [
         checkinId,
-        taskId,
+        safeTaskId,
         task.next_checkin_at ?? nowIso(),
         response,
         nowIso(),
@@ -1513,15 +1721,16 @@ export async function applyTaskCheckIn(db, taskId, response, clientId = null) {
     );
   });
 
-  await recordChange(db, task.workspace_id, 'task', taskId, 'checkin', { response }, clientId);
-  return getTask(db, taskId);
+  await recordChange(db, task.workspace_id, 'task', safeTaskId, 'checkin', { response }, clientId);
+  return getTask(db, safeTaskId);
 }
 
 export async function rescheduleSubtree(db, taskId, deltaMs, clientId = null) {
+  const safeTaskId = assertUuid(taskId, 'task id');
   const descendants = await getRows(
     db,
     'SELECT descendant_id FROM task_edges WHERE ancestor_id = ?',
-    [taskId]
+    [safeTaskId]
   );
   const ids = descendants.map(row => row.descendant_id);
   if (ids.length === 0) return { updated: 0 };
@@ -1552,13 +1761,14 @@ export async function rescheduleSubtree(db, taskId, deltaMs, clientId = null) {
   });
 
   if (tasks[0]) {
-    await recordChange(db, tasks[0].workspace_id, 'task', taskId, 'reschedule', { deltaMs }, clientId);
+    await recordChange(db, tasks[0].workspace_id, 'task', safeTaskId, 'reschedule', { deltaMs }, clientId);
   }
   return { updated: tasks.length };
 }
 
 export async function searchTasks(db, workspaceId, { text, status, tag }) {
-  const params = [workspaceId];
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  const params = [safeWorkspaceId];
   let where = 'workspace_id = ?';
   if (status) {
     where += ' AND status = ?';
