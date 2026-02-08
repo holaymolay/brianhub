@@ -30,48 +30,44 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 - Tests (state machine + tree invariants): ✅
 
 ## Gaps to Close
-1) Local‑first offline persistence in the client
-2) Check‑in UX (Yes / No / In‑Progress)
-3) Waiting/pending follow‑up UX
-4) AI suggestions UI (stub)
-5) Search/filter UI
-6) Inbox view/filter
-7) Urgency (decide: remove from M1 or re‑introduce as a field)
-8) Workflow templates + instances + phase/task scaffolding
+1) Text search UI wiring (`/tasks/search`)
+2) Inbox-focused filter in list view
+3) Urgency decision (remove from M1 or re-introduce in UI)
+4) Workflow assignee model parity (user + free-text person)
 
 ## Task Tracking (M1)
 
 ### P0 — Must ship
-- [ ] Implement local‑first task storage (offline source of truth)
-  - [ ] Persist tasks/workspaces/statuses locally (indexed or localStorage)
-  - [ ] Queue changes for sync (change log)
-  - [ ] Merge incoming server changes via cursor
-  - [ ] Offline mode: UI fully usable without backend
-- [ ] Add check‑in UX
-  - [ ] Trigger when task.next_checkin_at is due
-  - [ ] UI for Yes / No / In‑Progress
-  - [ ] Write response to `/tasks/:id/checkin`
-- [ ] Add waiting/pending follow‑up UX
-  - [ ] Surface tasks with waiting status + follow‑up date
-  - [ ] Clear / reschedule follow‑up when user acts
-- [ ] Add AI suggestions UI (stub)
-  - [ ] Call `/ai/suggest` and display suggestions
-  - [ ] Explicit accept/reject (no auto‑mutations)
+- [x] Implement local‑first task storage (offline source of truth)
+  - [x] Persist tasks/workspaces/statuses locally (indexed or localStorage)
+  - [x] Queue changes for sync (change log)
+  - [x] Merge incoming server changes via cursor
+  - [x] Offline mode: UI fully usable without backend
+- [x] Add check‑in UX
+  - [x] Trigger when task.next_checkin_at is due
+  - [x] UI for Yes / No / In‑Progress
+  - [x] Write response to `/tasks/:id/checkin`
+- [x] Add waiting/pending follow‑up UX
+  - [x] Surface tasks with waiting status + follow‑up date
+  - [x] Clear / reschedule follow‑up when user acts
+- [x] Add AI suggestions UI (stub)
+  - [x] Call `/ai/suggest` and display suggestions
+  - [x] Explicit accept/reject (no auto‑mutations)
 - [ ] Add search/filter UI
   - [ ] Text search via `/tasks/search`
-  - [ ] Inline filter controls (list view)
-- [ ] Add workflow templates + instances
-  - [ ] Define workflow template (variants + phases + tasks)
-  - [ ] Create workflow instance (title + notes only)
-  - [ ] Scaffold tasks from template with phase grouping
-  - [ ] Track instance open/closed based on linked task completion
-  - [ ] Support task dependencies inside workflow scaffold
+  - [x] Inline filter controls (list view)
+- [x] Add workflow templates + instances
+  - [x] Define workflow template (variants + phases + tasks)
+  - [x] Create workflow instance (title + notes only)
+  - [x] Scaffold tasks from template with phase grouping
+  - [x] Track instance open/closed based on linked task completion
+  - [x] Support task dependencies inside workflow scaffold
   - [ ] Support assignees (user id or free‑text person)
 
 ### P1 — Usability polish
 - [ ] Add Inbox view/filter
 - [ ] Confirm urgency decision (remove vs re‑introduce)
-- [ ] Ensure “Add task” input never loses focus while typing
+- [x] Ensure “Add task” input never loses focus while typing
 
 ### P2 — Tests & correctness
 - [ ] Add tests for reparenting correctness (server + client)
@@ -89,3 +85,4 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 
 ## Progress Log
 - YYYY‑MM‑DD: Created M1 plan and gap list
+- 2026-02-08: Closed P0 items for offline storage, check-ins, waiting follow-up UX, AI stub UI, and workflow template/instance scaffolding.
