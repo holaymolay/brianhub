@@ -177,6 +177,13 @@ const mobileSidebarBackdrop = document.getElementById('mobile-sidebar-backdrop')
 const mobileNav = document.getElementById('mobile-nav');
 const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-button[data-view]'));
 const mobileNavAdd = document.getElementById('mobile-nav-add');
+const mobileCreateSheet = document.getElementById('mobile-create-sheet');
+const mobileCreateSheetBackdrop = document.getElementById('mobile-create-sheet-backdrop');
+const mobileCreateSheetClose = document.getElementById('mobile-create-sheet-close');
+const mobileCreateTask = document.getElementById('mobile-create-task');
+const mobileCreateNotice = document.getElementById('mobile-create-notice');
+const mobileCreateWorkflow = document.getElementById('mobile-create-workflow');
+const mobileCreateShopping = document.getElementById('mobile-create-shopping');
 const newWorkspaceBtn = document.getElementById('new-workspace-btn');
 const noticeBell = document.getElementById('notice-bell');
 const noticeBellMenu = document.getElementById('notice-bell-menu');
@@ -433,6 +440,10 @@ document.addEventListener('click', () => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (mobileCreateSheet && !mobileCreateSheet.classList.contains('hidden')) {
+    closeMobileCreateSheet();
+    return;
+  }
   const hasSelection = getSelectedTaskIds().length > 0;
   const modalOpen = Boolean(document.querySelector('.modal:not(.hidden)'));
   if (hasSelection && !modalOpen) {
@@ -842,6 +853,34 @@ mobileNavAdd?.addEventListener('click', () => {
   handleMobileQuickAdd();
 });
 
+mobileCreateSheetBackdrop?.addEventListener('click', () => {
+  closeMobileCreateSheet();
+});
+
+mobileCreateSheetClose?.addEventListener('click', () => {
+  closeMobileCreateSheet();
+});
+
+mobileCreateTask?.addEventListener('click', () => {
+  closeMobileCreateSheet();
+  runMobileCreateAction('task');
+});
+
+mobileCreateNotice?.addEventListener('click', () => {
+  closeMobileCreateSheet();
+  runMobileCreateAction('notice');
+});
+
+mobileCreateWorkflow?.addEventListener('click', () => {
+  closeMobileCreateSheet();
+  runMobileCreateAction('workflow');
+});
+
+mobileCreateShopping?.addEventListener('click', () => {
+  closeMobileCreateSheet();
+  runMobileCreateAction('shopping');
+});
+
 sidebarEl?.addEventListener('click', (event) => {
   if (!isMobileViewport()) return;
   const target = event.target;
@@ -1249,10 +1288,27 @@ function isMobileViewport() {
 function setMobileSidebarOpen(open) {
   if (typeof document === 'undefined' || !document.body) return;
   const shouldOpen = Boolean(open && isMobileViewport());
+  if (shouldOpen) closeMobileCreateSheet();
   document.body.classList.toggle('mobile-sidebar-open', shouldOpen);
   if (mobileSidebarBackdrop) {
     mobileSidebarBackdrop.classList.toggle('hidden', !shouldOpen);
   }
+}
+
+function openMobileCreateSheet() {
+  if (!isMobileViewport() || !mobileCreateSheet) {
+    runMobileCreateAction('task');
+    return;
+  }
+  mobileCreateSheet.classList.remove('hidden');
+  document.body.classList.add('mobile-create-open');
+}
+
+function closeMobileCreateSheet() {
+  if (mobileCreateSheet) {
+    mobileCreateSheet.classList.add('hidden');
+  }
+  document.body.classList.remove('mobile-create-open');
 }
 
 function getViewLabel(view) {
@@ -1290,27 +1346,43 @@ function renderMobileNavigation() {
   }
 }
 
-function handleMobileQuickAdd() {
-  const view = getActiveView();
-  if (view === 'notices') {
+function runMobileCreateAction(action) {
+  if (action === 'task') {
+    setActiveView('tasks');
+    render();
+    openTaskModal();
+    return;
+  }
+  if (action === 'notice') {
+    setActiveView('notices');
+    render();
     openNoticeModal();
     return;
   }
-  if (view === 'shopping') {
+  if (action === 'shopping') {
+    setActiveView('shopping');
+    render();
     openShoppingListModal();
     return;
   }
-  if (view === 'workflows') {
+  if (action === 'workflow') {
+    setActiveView('workflows');
+    setWorkflowViewMode('runs');
+    render();
     const activeWorkflowId = getActiveWorkflowId();
     if (activeWorkflowId && getWorkflowVariants(activeWorkflowId).length) {
       openWorkflowInstanceModal();
       return;
     }
     setWorkflowViewMode('manage');
+    render();
     openWorkflowModal();
     return;
   }
-  openTaskModal();
+}
+
+function handleMobileQuickAdd() {
+  openMobileCreateSheet();
 }
 
 function getActiveView() {
@@ -1322,6 +1394,7 @@ function setActiveView(view) {
   state.ui.activeView = view;
   if (isMobileViewport()) {
     setMobileSidebarOpen(false);
+    closeMobileCreateSheet();
   }
 }
 
@@ -11941,6 +12014,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('resize', () => {
     if (!isMobileViewport()) {
       setMobileSidebarOpen(false);
+      closeMobileCreateSheet();
     }
     renderMobileNavigation();
   });

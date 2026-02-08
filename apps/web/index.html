@@ -273,23 +273,66 @@
 
     <nav id="mobile-nav" class="mobile-nav" aria-label="Mobile navigation">
       <button class="mobile-nav-button" type="button" data-view="tasks" title="My Tasks">
-        <span class="mobile-nav-icon">✓</span>
+        <span class="mobile-nav-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 7h12M6 12h9M6 17h7"></path>
+            <circle cx="4" cy="7" r="1"></circle>
+            <circle cx="4" cy="12" r="1"></circle>
+            <circle cx="4" cy="17" r="1"></circle>
+          </svg>
+        </span>
         <span class="mobile-nav-label">Tasks</span>
       </button>
       <button class="mobile-nav-button" type="button" data-view="workflows" title="Workflows">
-        <span class="mobile-nav-icon">◎</span>
+        <span class="mobile-nav-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="4" y="4" width="7" height="7" rx="1.5"></rect>
+            <rect x="13" y="4" width="7" height="7" rx="1.5"></rect>
+            <rect x="4" y="13" width="7" height="7" rx="1.5"></rect>
+            <rect x="13" y="13" width="7" height="7" rx="1.5"></rect>
+          </svg>
+        </span>
         <span class="mobile-nav-label">Workflows</span>
       </button>
-      <button id="mobile-nav-add" class="mobile-nav-add" type="button" title="Quick add">＋</button>
       <button class="mobile-nav-button" type="button" data-view="notices" title="Notices">
-        <span class="mobile-nav-icon">🔔</span>
+        <span class="mobile-nav-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 10a6 6 0 0 1 12 0v5l2 2H4l2-2z"></path>
+            <path d="M10 19a2 2 0 0 0 4 0"></path>
+          </svg>
+        </span>
         <span class="mobile-nav-label">Notices</span>
       </button>
       <button class="mobile-nav-button" type="button" data-view="shopping" title="Shopping Lists">
-        <span class="mobile-nav-icon">🛒</span>
+        <span class="mobile-nav-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h2l2 10h9l2-7H7"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="17" cy="19" r="1.4"></circle>
+          </svg>
+        </span>
         <span class="mobile-nav-label">Shopping</span>
       </button>
+      <button id="mobile-nav-add" class="mobile-nav-add" type="button" title="Create">
+        <span class="mobile-nav-add-plus">+</span>
+      </button>
     </nav>
+
+    <div id="mobile-create-sheet" class="mobile-create-sheet hidden">
+      <div id="mobile-create-sheet-backdrop" class="mobile-create-sheet-backdrop"></div>
+      <div class="mobile-create-sheet-card">
+        <div class="mobile-create-sheet-header">
+          <h3>Create</h3>
+          <button id="mobile-create-sheet-close" class="mobile-create-sheet-close" type="button" aria-label="Close create options">✕</button>
+        </div>
+        <div class="mobile-create-sheet-actions">
+          <button id="mobile-create-task" class="mobile-create-action" type="button">Task</button>
+          <button id="mobile-create-notice" class="mobile-create-action" type="button">Notice</button>
+          <button id="mobile-create-workflow" class="mobile-create-action" type="button">Workflow</button>
+          <button id="mobile-create-shopping" class="mobile-create-action" type="button">Shopping list</button>
+        </div>
+      </div>
+    </div>
 
     <template id="task-item-template">
       <div class="task-item">
