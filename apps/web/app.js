@@ -170,6 +170,13 @@ const shoppingItemParse = document.getElementById('shopping-item-parse');
 const shoppingItemCancel = document.getElementById('shopping-item-cancel');
 const syncBtn = document.getElementById('sync-btn');
 const syncStatus = document.getElementById('sync-status');
+const appTitle = document.getElementById('app-title');
+const sidebarEl = document.querySelector('.sidebar');
+const mobileSidebarToggle = document.getElementById('mobile-sidebar-toggle');
+const mobileSidebarBackdrop = document.getElementById('mobile-sidebar-backdrop');
+const mobileNav = document.getElementById('mobile-nav');
+const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-button[data-view]'));
+const mobileNavAdd = document.getElementById('mobile-nav-add');
 const newWorkspaceBtn = document.getElementById('new-workspace-btn');
 const noticeBell = document.getElementById('notice-bell');
 const noticeBellMenu = document.getElementById('notice-bell-menu');
@@ -810,6 +817,47 @@ tasksOpenBtn?.addEventListener('click', () => {
   render();
 });
 
+mobileSidebarToggle?.addEventListener('click', () => {
+  setMobileSidebarOpen(!document.body.classList.contains('mobile-sidebar-open'));
+});
+
+mobileSidebarBackdrop?.addEventListener('click', () => {
+  setMobileSidebarOpen(false);
+});
+
+mobileNavButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const view = button.dataset.view;
+    if (!view) return;
+    if (view === 'workflows') {
+      setWorkflowViewMode('runs');
+    }
+    setActiveView(view);
+    setMobileSidebarOpen(false);
+    render();
+  });
+});
+
+mobileNavAdd?.addEventListener('click', () => {
+  handleMobileQuickAdd();
+});
+
+sidebarEl?.addEventListener('click', (event) => {
+  if (!isMobileViewport()) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const button = target.closest('button');
+  if (!button) return;
+  if (
+    button.classList.contains('menu-icon') ||
+    button.classList.contains('workspace-menu-button') ||
+    button.closest('.workspace-menu')
+  ) {
+    return;
+  }
+  setMobileSidebarOpen(false);
+});
+
 newWorkflowBtn?.addEventListener('click', () => {
   openWorkflowModal();
 });
@@ -1193,6 +1241,78 @@ function getNoticeTypeLabel(key) {
   return types.find(type => type.key === key)?.label ?? 'General';
 }
 
+function isMobileViewport() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(max-width: 980px)').matches;
+}
+
+function setMobileSidebarOpen(open) {
+  if (typeof document === 'undefined' || !document.body) return;
+  const shouldOpen = Boolean(open && isMobileViewport());
+  document.body.classList.toggle('mobile-sidebar-open', shouldOpen);
+  if (mobileSidebarBackdrop) {
+    mobileSidebarBackdrop.classList.toggle('hidden', !shouldOpen);
+  }
+}
+
+function getViewLabel(view) {
+  switch (view) {
+    case 'shopping':
+      return 'Shopping Lists';
+    case 'notices':
+      return 'Notices';
+    case 'workflows':
+      return 'Workflows';
+    case 'workspaces-manage':
+      return 'Workspaces';
+    case 'workspaces-archived':
+      return 'Archived Workspaces';
+    case 'tasks':
+    default:
+      return 'My Tasks';
+  }
+}
+
+function renderMobileNavigation() {
+  if (!mobileNav) return;
+  const activeView = getActiveView();
+  mobileNavButtons.forEach((button) => {
+    const isActive = button.dataset.view === activeView;
+    button.classList.toggle('is-active', isActive);
+    if (isActive) {
+      button.setAttribute('aria-current', 'page');
+    } else {
+      button.removeAttribute('aria-current');
+    }
+  });
+  if (appTitle) {
+    appTitle.textContent = isMobileViewport() ? getViewLabel(activeView) : 'BrianHub';
+  }
+}
+
+function handleMobileQuickAdd() {
+  const view = getActiveView();
+  if (view === 'notices') {
+    openNoticeModal();
+    return;
+  }
+  if (view === 'shopping') {
+    openShoppingListModal();
+    return;
+  }
+  if (view === 'workflows') {
+    const activeWorkflowId = getActiveWorkflowId();
+    if (activeWorkflowId && getWorkflowVariants(activeWorkflowId).length) {
+      openWorkflowInstanceModal();
+      return;
+    }
+    setWorkflowViewMode('manage');
+    openWorkflowModal();
+    return;
+  }
+  openTaskModal();
+}
+
 function getActiveView() {
   return state.ui?.activeView ?? 'tasks';
 }
@@ -1200,6 +1320,9 @@ function getActiveView() {
 function setActiveView(view) {
   state.ui = state.ui ?? {};
   state.ui.activeView = view;
+  if (isMobileViewport()) {
+    setMobileSidebarOpen(false);
+  }
 }
 
 function getTaskView() {
@@ -6475,6 +6598,7 @@ function render() {
   }
   renderShoppingPanel();
   renderView();
+  renderMobileNavigation();
   if (taskColumnsModal && !taskColumnsModal.classList.contains('hidden')) {
     renderTaskColumnsModal();
   }
@@ -11812,6 +11936,15 @@ enableNotificationsBtn?.addEventListener('change', async () => {
 
 setInterval(checkNotices, 60 * 1000);
 setInterval(maybeShowCheckinModal, 60 * 1000);
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', () => {
+    if (!isMobileViewport()) {
+      setMobileSidebarOpen(false);
+    }
+    renderMobileNavigation();
+  });
+}
 
 async function init() {
   initNotesEditor();

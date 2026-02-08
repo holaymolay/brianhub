@@ -9,7 +9,8 @@
   <body>
     <header class="app-header">
       <div class="header-left">
-        <h1>BrianHub</h1>
+        <button id="mobile-sidebar-toggle" class="icon-button menu-icon mobile-sidebar-toggle" type="button" title="Open menu">☰</button>
+        <h1 id="app-title">BrianHub</h1>
       </div>
       <div class="sync-controls">
         <button id="sync-btn">Sync Now</button>
@@ -124,6 +125,7 @@
           </div>
           <div id="notice-list" class="workspace-list"></div>
         </aside>
+        <div id="mobile-sidebar-backdrop" class="mobile-sidebar-backdrop hidden"></div>
         <section class="panel content-panel">
           <section id="tasks-panel">
             <div class="tasks-toolbar">
@@ -268,6 +270,26 @@
         </section>
       </div>
     </main>
+
+    <nav id="mobile-nav" class="mobile-nav" aria-label="Mobile navigation">
+      <button class="mobile-nav-button" type="button" data-view="tasks" title="My Tasks">
+        <span class="mobile-nav-icon">✓</span>
+        <span class="mobile-nav-label">Tasks</span>
+      </button>
+      <button class="mobile-nav-button" type="button" data-view="workflows" title="Workflows">
+        <span class="mobile-nav-icon">◎</span>
+        <span class="mobile-nav-label">Workflows</span>
+      </button>
+      <button id="mobile-nav-add" class="mobile-nav-add" type="button" title="Quick add">＋</button>
+      <button class="mobile-nav-button" type="button" data-view="notices" title="Notices">
+        <span class="mobile-nav-icon">🔔</span>
+        <span class="mobile-nav-label">Notices</span>
+      </button>
+      <button class="mobile-nav-button" type="button" data-view="shopping" title="Shopping Lists">
+        <span class="mobile-nav-icon">🛒</span>
+        <span class="mobile-nav-label">Shopping</span>
+      </button>
+    </nav>
 
     <template id="task-item-template">
       <div class="task-item">
