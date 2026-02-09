@@ -66,6 +66,15 @@ function normalizeTitleInput(value) {
 const taskTreeEl = document.getElementById('task-tree');
 const taskFilterButton = document.getElementById('task-filter-button');
 const taskFilterMenu = document.getElementById('task-filter-menu');
+const taskToolsButton = document.getElementById('task-tools-button');
+const taskToolsMenu = document.getElementById('task-tools-menu');
+const taskToolsToggleQuickAdd = document.getElementById('task-tools-toggle-quick-add');
+const taskToolsMobileFilter = document.getElementById('task-tools-mobile-filter');
+const taskToolsMobileSort = document.getElementById('task-tools-mobile-sort');
+const taskToolsMobileGroup = document.getElementById('task-tools-mobile-group');
+const taskToolsMobileView = document.getElementById('task-tools-mobile-view');
+const taskAiButton = document.getElementById('task-ai-button');
+const taskAiMenu = document.getElementById('task-ai-menu');
 const taskSortButton = document.getElementById('task-sort-button');
 const taskSortMenu = document.getElementById('task-sort-menu');
 const taskGroupButton = document.getElementById('task-group-button');
@@ -135,6 +144,9 @@ const noticeFilterMenu = document.getElementById('notice-filter-menu');
 const noticeSortButton = document.getElementById('notice-sort-button');
 const noticeSortMenu = document.getElementById('notice-sort-menu');
 const tasksPanel = document.getElementById('tasks-panel');
+const projectsPage = document.getElementById('projects-page');
+const projectsAddBtn = document.getElementById('projects-add-btn');
+const projectsMobileList = document.getElementById('projects-mobile-list');
 const shoppingPage = document.getElementById('shopping-page');
 const workspaceManagePage = document.getElementById('workspace-manage-page');
 const workspaceArchivedPage = document.getElementById('workspace-archived-page');
@@ -145,6 +157,8 @@ const workspaceArchivedBack = document.getElementById('workspace-archived-back')
 const shoppingListTitle = document.getElementById('shopping-list-title');
 const shoppingListSubtitle = document.getElementById('shopping-list-subtitle');
 const shoppingListItemsEl = document.getElementById('shopping-list-items');
+const shoppingMobileBackRow = document.getElementById('shopping-mobile-back-row');
+const shoppingMobileBack = document.getElementById('shopping-mobile-back');
 const shoppingAddBtn = document.getElementById('shopping-add-item');
 const shoppingListSidebarMenuButton = document.getElementById('shopping-list-sidebar-menu-button');
 const shoppingListSidebarMenu = document.getElementById('shopping-list-sidebar-menu');
@@ -156,8 +170,10 @@ const shoppingListDelete = document.getElementById('shopping-list-delete');
 const shoppingListModal = document.getElementById('shopping-list-modal');
 const shoppingListForm = document.getElementById('shopping-list-form');
 const shoppingListStoreSelect = document.getElementById('shopping-list-store-select');
-const shoppingListStoreNewRow = document.getElementById('shopping-list-store-new-row');
-const shoppingListStoreNew = document.getElementById('shopping-list-store-new');
+const shoppingStoreModal = document.getElementById('shopping-store-modal');
+const shoppingStoreForm = document.getElementById('shopping-store-form');
+const shoppingStoreNameInput = document.getElementById('shopping-store-name');
+const shoppingStoreCancel = document.getElementById('shopping-store-cancel');
 const shoppingListDate = document.getElementById('shopping-list-date');
 const shoppingListItemsInput = document.getElementById('shopping-list-items-input');
 const shoppingListParse = document.getElementById('shopping-list-parse');
@@ -171,6 +187,13 @@ const shoppingItemCancel = document.getElementById('shopping-item-cancel');
 const syncBtn = document.getElementById('sync-btn');
 const syncStatus = document.getElementById('sync-status');
 const appTitle = document.getElementById('app-title');
+const mobileTopMenuButton = document.getElementById('mobile-top-menu-button');
+const mobileTopMenu = document.getElementById('mobile-top-menu');
+const mobileMenuNotices = document.getElementById('mobile-menu-notices');
+const mobileMenuSettings = document.getElementById('mobile-menu-settings');
+const mobileMenuProfile = document.getElementById('mobile-menu-profile');
+const mobileMenuWorkspaces = document.getElementById('mobile-menu-workspaces');
+const mobileMenuAuth = document.getElementById('mobile-menu-auth');
 const sidebarEl = document.querySelector('.sidebar');
 const mobileSidebarToggle = document.getElementById('mobile-sidebar-toggle');
 const mobileSidebarBackdrop = document.getElementById('mobile-sidebar-backdrop');
@@ -396,9 +419,12 @@ let recurrenceContext = 'modal';
 let modalRecurrence = { interval: null, unit: 'month' };
 let editorRecurrence = { interval: null, unit: 'month' };
 let syncInFlight = false;
+let syncFailureCount = 0;
+let syncCooldownUntil = 0;
 let taskEditorSwapTimer = null;
 let activeNoticeId = null;
 let noticeTypePreviousKey = 'general';
+let shoppingStorePreviousSelection = '';
 let noticeRecurrenceDraft = null;
 let activeCheckinTaskId = null;
 let checkinProgressTaskId = null;
@@ -429,6 +455,9 @@ let taskEditorScrollbarDragStart = 0;
 let taskEditorScrollbarScrollStart = 0;
 let undoToastTimer = null;
 let undoToastEl = null;
+
+const SYNC_POLL_INTERVAL_MS = 5000;
+const SYNC_BACKOFF_STEPS_MS = [30000, 60000, 120000, 300000];
 
 document.addEventListener('click', () => {
   if (openMenu) {
@@ -646,6 +675,86 @@ taskFilterMenu?.addEventListener('click', (event) => {
   render();
 });
 
+taskToolsButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (openMenu && openMenu !== taskToolsMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (taskToolsMenu.classList.contains('hidden')) {
+    taskToolsMenu.classList.remove('hidden');
+    openMenu = taskToolsMenu;
+  } else {
+    taskToolsMenu.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+taskToolsMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+
+taskToolsToggleQuickAdd?.addEventListener('click', () => {
+  setTaskQuickAddVisible(!getTaskQuickAddVisible());
+  taskToolsMenu?.classList.add('hidden');
+  openMenu = null;
+  render();
+});
+
+taskToolsMobileFilter?.addEventListener('click', () => {
+  cycleTaskFilterSelection();
+  taskToolsMenu?.classList.add('hidden');
+  openMenu = null;
+  render();
+});
+
+taskToolsMobileSort?.addEventListener('click', async () => {
+  const sortKey = cycleTaskSortSelection();
+  taskToolsMenu?.classList.add('hidden');
+  openMenu = null;
+  if (sortKey === 'ai-queue') {
+    const hasTaskSuggestions = getAiSuggestions().some(item => item?.task_id);
+    if (!hasTaskSuggestions) {
+      await refreshAiSuggestions(getFilteredTasks());
+      return;
+    }
+  }
+  render();
+});
+
+taskToolsMobileGroup?.addEventListener('click', () => {
+  cycleTaskGroupSelection();
+  taskToolsMenu?.classList.add('hidden');
+  openMenu = null;
+  render();
+});
+
+taskToolsMobileView?.addEventListener('click', () => {
+  cycleTaskViewSelection();
+  taskToolsMenu?.classList.add('hidden');
+  openMenu = null;
+  render();
+});
+
+taskAiButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!taskAiMenu) return;
+  if (openMenu && openMenu !== taskAiMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (taskAiMenu.classList.contains('hidden')) {
+    renderAiSuggestionsMenu(getFilteredTasks());
+    taskAiMenu.classList.remove('hidden');
+    openMenu = taskAiMenu;
+  } else {
+    taskAiMenu.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+taskAiMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+
 taskSortButton?.addEventListener('click', (event) => {
   event.stopPropagation();
   if (openMenu && openMenu !== taskSortMenu) {
@@ -660,7 +769,7 @@ taskSortButton?.addEventListener('click', (event) => {
   }
 });
 
-taskSortMenu?.addEventListener('click', (event) => {
+taskSortMenu?.addEventListener('click', async (event) => {
   event.stopPropagation();
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
@@ -669,6 +778,13 @@ taskSortMenu?.addEventListener('click', (event) => {
   setTaskSortKey(sortKey);
   taskSortMenu.classList.add('hidden');
   openMenu = null;
+  if (sortKey === 'ai-queue') {
+    const hasTaskSuggestions = getAiSuggestions().some(item => item?.task_id);
+    if (!hasTaskSuggestions) {
+      await refreshAiSuggestions(getFilteredTasks());
+      return;
+    }
+  }
   render();
 });
 
@@ -820,6 +936,9 @@ noticesAddBtn?.addEventListener('click', () => {
 });
 workflowsOpenBtn?.addEventListener('click', () => {
   setWorkflowViewMode('runs');
+  if (isMobileViewport()) {
+    setMobileWorkflowPanelMode('list');
+  }
   setActiveView('workflows');
   render();
 });
@@ -842,6 +961,10 @@ mobileNavButtons.forEach((button) => {
     if (!view) return;
     if (view === 'workflows') {
       setWorkflowViewMode('runs');
+      setMobileWorkflowPanelMode('list');
+    }
+    if (view === 'shopping') {
+      setMobileShoppingPanelMode('list');
     }
     setActiveView(view);
     setMobileSidebarOpen(false);
@@ -851,6 +974,52 @@ mobileNavButtons.forEach((button) => {
 
 mobileNavAdd?.addEventListener('click', () => {
   handleMobileQuickAdd();
+});
+
+mobileTopMenuButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!mobileTopMenu) return;
+  if (openMenu && openMenu !== mobileTopMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (mobileTopMenu.classList.contains('hidden')) {
+    mobileTopMenu.classList.remove('hidden');
+    openMenu = mobileTopMenu;
+  } else {
+    mobileTopMenu.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+mobileTopMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+
+mobileMenuNotices?.addEventListener('click', () => {
+  closeMobileTopMenu();
+  setActiveView('notices');
+  render();
+});
+
+mobileMenuSettings?.addEventListener('click', () => {
+  closeMobileTopMenu();
+  openSettings();
+});
+
+mobileMenuProfile?.addEventListener('click', () => {
+  closeMobileTopMenu();
+  openProfile();
+});
+
+mobileMenuWorkspaces?.addEventListener('click', () => {
+  closeMobileTopMenu();
+  setActiveView('workspaces-manage');
+  render();
+});
+
+mobileMenuAuth?.addEventListener('click', () => {
+  closeMobileTopMenu();
+  accountLogout?.click();
 });
 
 mobileCreateSheetBackdrop?.addEventListener('click', () => {
@@ -1246,7 +1415,11 @@ workflowSidebarMenuButton?.addEventListener('click', (event) => {
     openMenu.classList.add('hidden');
     openMenu = null;
   }
-  setWorkflowViewMode('manage');
+  setWorkflowViewMode(isMobileViewport() ? 'runs' : 'manage');
+  if (isMobileViewport()) {
+    setMobileWorkflowPanelMode('list');
+  }
+  setWorkflowInstanceFilter('open');
   setActiveView('workflows');
   render();
 });
@@ -1287,8 +1460,10 @@ function isMobileViewport() {
 
 function setMobileSidebarOpen(open) {
   if (typeof document === 'undefined' || !document.body) return;
-  const shouldOpen = Boolean(open && isMobileViewport());
-  if (shouldOpen) closeMobileCreateSheet();
+  if (open && isMobileViewport()) {
+    // Mobile uses bottom navigation and top-menu actions; keep legacy sidebar disabled.
+  }
+  const shouldOpen = false;
   document.body.classList.toggle('mobile-sidebar-open', shouldOpen);
   if (mobileSidebarBackdrop) {
     mobileSidebarBackdrop.classList.toggle('hidden', !shouldOpen);
@@ -1300,6 +1475,7 @@ function openMobileCreateSheet() {
     runMobileCreateAction('task');
     return;
   }
+  closeMobileTopMenu();
   mobileCreateSheet.classList.remove('hidden');
   document.body.classList.add('mobile-create-open');
 }
@@ -1311,8 +1487,18 @@ function closeMobileCreateSheet() {
   document.body.classList.remove('mobile-create-open');
 }
 
+function closeMobileTopMenu() {
+  if (!mobileTopMenu) return;
+  mobileTopMenu.classList.add('hidden');
+  if (openMenu === mobileTopMenu) {
+    openMenu = null;
+  }
+}
+
 function getViewLabel(view) {
   switch (view) {
+    case 'projects':
+      return 'Projects';
     case 'shopping':
       return 'Shopping Lists';
     case 'notices':
@@ -1361,6 +1547,7 @@ function runMobileCreateAction(action) {
   }
   if (action === 'shopping') {
     setActiveView('shopping');
+    setMobileShoppingPanelMode('list');
     render();
     openShoppingListModal();
     return;
@@ -1368,16 +1555,20 @@ function runMobileCreateAction(action) {
   if (action === 'workflow') {
     setActiveView('workflows');
     setWorkflowViewMode('runs');
+    setMobileWorkflowPanelMode('instances');
+    setWorkflowInstanceFilter('open');
+    let workflowId = getActiveWorkflowId();
+    const usableWorkflows = getWorkflowsForWorkspace().filter(workflow => isWorkflowUsable(workflow.id));
+    if (!workflowId || !usableWorkflows.some(workflow => workflow.id === workflowId)) {
+      workflowId = usableWorkflows[0]?.id ?? null;
+      setActiveWorkflowId(workflowId);
+    }
     render();
-    const activeWorkflowId = getActiveWorkflowId();
-    if (activeWorkflowId && getWorkflowVariants(activeWorkflowId).length) {
-      openWorkflowInstanceModal();
+    if (!workflowId) {
+      alert('No runnable workflows yet. Use desktop to build or edit workflow blueprints.');
       return;
     }
-    setWorkflowViewMode('manage');
-    render();
-    openWorkflowModal();
-    return;
+    openWorkflowInstanceModal();
   }
 }
 
@@ -1390,9 +1581,14 @@ function getActiveView() {
 }
 
 function setActiveView(view) {
+  const previousView = getActiveView();
+  if (previousView === 'shopping' && view !== 'shopping') {
+    void maybeArchiveCompletedShoppingListOnExit();
+  }
   state.ui = state.ui ?? {};
   state.ui.activeView = view;
   if (isMobileViewport()) {
+    closeMobileTopMenu();
     setMobileSidebarOpen(false);
     closeMobileCreateSheet();
   }
@@ -1429,6 +1625,15 @@ function getTaskGroupMode() {
 function setTaskGroupMode(mode) {
   state.ui = state.ui ?? {};
   state.ui.taskGroupMode = normalizeTaskGroupMode(mode);
+}
+
+function getTaskQuickAddVisible() {
+  return state.ui?.showTaskQuickAdd !== false;
+}
+
+function setTaskQuickAddVisible(value) {
+  state.ui = state.ui ?? {};
+  state.ui.showTaskQuickAdd = Boolean(value);
 }
 
 function getSectionsForWorkspace() {
@@ -1903,6 +2108,24 @@ function getWorkflowViewMode() {
 function setWorkflowViewMode(mode) {
   state.ui = state.ui ?? {};
   state.ui.workflowViewMode = mode;
+}
+
+function getMobileShoppingPanelMode() {
+  return state.ui?.mobileShoppingPanelMode === 'details' ? 'details' : 'list';
+}
+
+function setMobileShoppingPanelMode(mode) {
+  state.ui = state.ui ?? {};
+  state.ui.mobileShoppingPanelMode = mode === 'details' ? 'details' : 'list';
+}
+
+function getMobileWorkflowPanelMode() {
+  return state.ui?.mobileWorkflowPanelMode === 'instances' ? 'instances' : 'list';
+}
+
+function setMobileWorkflowPanelMode(mode) {
+  state.ui = state.ui ?? {};
+  state.ui.mobileWorkflowPanelMode = mode === 'instances' ? 'instances' : 'list';
 }
 
 function getWorkflowPatternCollapsedMap() {
@@ -2759,6 +2982,26 @@ function setKanbanQuickAdd(statusKey = null) {
   state.ui.kanbanQuickAdd = statusKey;
 }
 
+function getSyncBackoffMs(failureCount) {
+  const index = Math.max(0, Math.min(SYNC_BACKOFF_STEPS_MS.length - 1, failureCount - 1));
+  return SYNC_BACKOFF_STEPS_MS[index];
+}
+
+function resetSyncBackoff() {
+  syncFailureCount = 0;
+  syncCooldownUntil = 0;
+}
+
+function registerSyncFailure() {
+  syncFailureCount = Math.min(syncFailureCount + 1, SYNC_BACKOFF_STEPS_MS.length);
+  const backoffMs = getSyncBackoffMs(syncFailureCount);
+  syncCooldownUntil = Date.now() + backoffMs;
+  if (syncStatus) {
+    const seconds = Math.max(1, Math.ceil(backoffMs / 1000));
+    syncStatus.textContent = `Local-only mode (retry in ${seconds}s)`;
+  }
+}
+
 async function reloadWorkspacesAndData() {
   await loadWorkspaces();
   if (state.workspace) {
@@ -2785,21 +3028,24 @@ async function primeSyncCursor() {
 
 async function autoRefreshOnChanges() {
   if (!state.workspace || syncInFlight) return;
+  if (syncCooldownUntil && Date.now() < syncCooldownUntil) return;
   syncInFlight = true;
   try {
+    if (!navigator.onLine) {
+      if (syncStatus) syncStatus.textContent = 'Offline changes pending';
+      return;
+    }
     if (hasPendingLocalChanges()) {
-      if (!navigator.onLine) {
-        syncStatus.textContent = 'Offline changes pending';
-        return;
-      }
       const pushResult = await pushPendingChanges();
       if (pushResult.error || pushResult.remaining.length) {
-        syncStatus.textContent = 'Offline changes pending';
+        if (syncStatus) syncStatus.textContent = 'Offline changes pending';
+        registerSyncFailure();
         return;
       }
     }
     const cursor = state.ui?.syncCursor ?? 0;
     const result = await api.pullChanges(state.workspace.id, cursor);
+    resetSyncBackoff();
     if (result?.next_cursor !== undefined) {
       state.ui = state.ui ?? {};
       state.ui.syncCursor = result.next_cursor;
@@ -2825,7 +3071,7 @@ async function autoRefreshOnChanges() {
       syncStatus.textContent = 'Auto-refreshed';
     }
   } catch {
-    // ignore sync failures (offline OK)
+    registerSyncFailure();
   } finally {
     syncInFlight = false;
   }
@@ -2908,6 +3154,22 @@ function isCanceledStatusKey(key) {
 
 function isWaitingStatusKey(key) {
   return getStatusKind(key) === TaskStatus.WAITING;
+}
+
+function isInboxStatusKey(key) {
+  return getStatusKind(key) === TaskStatus.INBOX;
+}
+
+function isPlannedStatusKey(key) {
+  return getStatusKind(key) === TaskStatus.PLANNED;
+}
+
+function isInProgressStatusKey(key) {
+  return getStatusKind(key) === TaskStatus.IN_PROGRESS;
+}
+
+function isBlockedStatusKey(key) {
+  return getStatusKind(key) === TaskStatus.BLOCKED;
 }
 
 function requestInlineTaskEdit(taskId) {
@@ -3644,6 +3906,32 @@ function queueLocalChange(change) {
   state.local.pendingChanges = updated.pendingChanges;
 }
 
+function normalizePendingTaskCreatePayload(change) {
+  const payload = { ...(change?.payload ?? {}) };
+  const fallbackId = change?.entity_id ?? payload.id ?? null;
+  const localTask = fallbackId ? state.tasks?.[fallbackId] : null;
+  if (fallbackId) payload.id = fallbackId;
+  payload.workspace_id = payload.workspace_id ?? localTask?.workspace_id ?? state.workspace?.id ?? null;
+  const normalizedTitle = normalizeTitleInput(payload.title);
+  const fallbackTitle = normalizeTitleInput(localTask?.title ?? '') || 'Untitled task';
+  payload.title = normalizedTitle || fallbackTitle;
+  payload.status = payload.status ?? localTask?.status ?? getDefaultStatusKey();
+  payload.priority = payload.priority ?? localTask?.priority ?? 'medium';
+
+  // Keep local and pending copies aligned so replay does not repeatedly fail.
+  if (change) {
+    change.payload = payload;
+  }
+  if (localTask) {
+    localTask.title = payload.title;
+    localTask.workspace_id = payload.workspace_id;
+    localTask.status = payload.status;
+    localTask.priority = payload.priority;
+    localTask.updated_at = nowIso();
+  }
+  return payload;
+}
+
 function snapshotLocalData() {
   return {
     workspaces: state.workspaces ?? [],
@@ -3706,7 +3994,24 @@ async function pushPendingChanges() {
     if (!change) return;
     if (change.entity_type === 'task') {
       if (change.action === 'create') {
-        const created = await api.createTask(change.payload ?? {});
+        const payload = normalizePendingTaskCreatePayload(change);
+        let created;
+        try {
+          created = await api.createTask(payload);
+        } catch (err) {
+          if (!(err?.status >= 400 && err.status < 500)) throw err;
+          // Retry with a minimal valid payload to recover from older malformed queue entries.
+          const minimalPayload = {
+            id: payload.id ?? change.entity_id ?? createId(),
+            workspace_id: payload.workspace_id ?? state.workspace?.id ?? null,
+            title: normalizeTitleInput(payload.title) || 'Untitled task',
+            status: getDefaultStatusKey(),
+            priority: 'medium'
+          };
+          if (!minimalPayload.workspace_id) throw err;
+          change.payload = { ...minimalPayload };
+          created = await api.createTask(minimalPayload);
+        }
         if (created) upsertTask(created);
         return;
       }
@@ -3905,9 +4210,11 @@ async function loadWorkspaceData() {
   ensureLocalWorkspaceDefaults(state.workspace);
   const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
   const preferredListId = state.ui?.activeShoppingListId;
-  const availableLists = state.shoppingLists.filter(list => showArchived || !list.archived);
+  const availableLists = state.shoppingLists.filter(list =>
+    shouldShowShoppingListInSidebar(list, { showArchived })
+  );
   const activeList = availableLists.find(list => list.id === preferredListId)
-    ?? availableLists.find(list => !list.archived)
+    ?? availableLists.find(list => !list.archived && !isShoppingListComplete(list.id))
     ?? availableLists[0]
     ?? null;
   state.ui.activeShoppingListId = activeList?.id ?? null;
@@ -4158,7 +4465,7 @@ async function createTaskRecord(payload) {
   const normalizedGroup = payload.group_label ? normalizeTitleInput(payload.group_label) : payload.group_label;
   const taskPayload = {
     ...payload,
-    title: normalizedTitle,
+    title: normalizedTitle || 'Untitled task',
     type_label: normalizedType ?? null,
     group_label: normalizedGroup ?? null,
     sort_order: sortOrder,
@@ -4170,7 +4477,11 @@ async function createTaskRecord(payload) {
       const created = await api.createTask(taskPayload);
       if (created) upsertTask(created);
       return created;
-    } catch {
+    } catch (err) {
+      if (err?.status && err.status >= 400 && err.status < 500) {
+        alert(err?.message ?? 'Unable to create task.');
+        return null;
+      }
       // fall back to local create
     }
   }
@@ -4791,24 +5102,32 @@ async function deleteShoppingItemRecord(id) {
   return result;
 }
 
-async function archiveShoppingListRecord(listId) {
+async function archiveShoppingListRecord(listId, options = {}) {
+  const { skipFallbackView = false } = options;
   const updated = await updateShoppingListRecord(listId, { archived: 1 });
   if (!updated) return null;
   if (state.ui?.activeShoppingListId === listId) {
     const next = (state.shoppingLists ?? []).find(list => list.id !== listId && !list.archived);
     state.ui.activeShoppingListId = next?.id ?? null;
-    if (!next) {
+    if (!next && !skipFallbackView) {
       setActiveView('tasks');
     }
   }
   return updated;
 }
 
-async function maybeAutoArchiveList(listId) {
+async function maybeArchiveCompletedShoppingListOnExit() {
+  const listId = state.ui?.activeShoppingListId;
+  if (!listId) return;
   const list = (state.shoppingLists ?? []).find(item => item.id === listId);
   if (!list || list.archived) return;
   if (!isShoppingListComplete(listId)) return;
-  await archiveShoppingListRecord(listId);
+  try {
+    await archiveShoppingListRecord(listId, { skipFallbackView: true });
+    render();
+  } catch {
+    // Keep current state if archiving fails (e.g., API unavailable).
+  }
 }
 
 function parseShoppingItems(input) {
@@ -6416,7 +6735,115 @@ function compareTasksByDueDate(a, b, direction = 'asc') {
   return compareTasksByPriority(a, b);
 }
 
-function getTaskSortComparator() {
+function getTopLevelTaskId(taskId, visibleIds = null) {
+  let current = state.tasks?.[taskId];
+  while (current?.parent_id) {
+    if (visibleIds && !visibleIds.has(current.parent_id)) break;
+    const parent = state.tasks?.[current.parent_id];
+    if (!parent) break;
+    current = parent;
+  }
+  return current?.id ?? taskId;
+}
+
+function getTaskPriorityWeight(priority) {
+  if (priority === 'critical') return 400;
+  if (priority === 'high') return 300;
+  if (priority === 'medium') return 200;
+  if (priority === 'low') return 100;
+  return 0;
+}
+
+function getTaskStatusWeight(status) {
+  if (isInProgressStatusKey(status)) return 160;
+  if (isPlannedStatusKey(status)) return 120;
+  if (isInboxStatusKey(status)) return 90;
+  if (isWaitingStatusKey(status)) return 40;
+  if (isBlockedStatusKey(status)) return 10;
+  if (isDoneStatusKey(status) || isCanceledStatusKey(status)) return -1000;
+  return 0;
+}
+
+function getTaskDueWeight(task) {
+  if (!task?.due_at) return 0;
+  const dueAt = new Date(task.due_at).getTime();
+  if (Number.isNaN(dueAt)) return 0;
+  const now = Date.now();
+  const days = Math.floor((dueAt - now) / (24 * 60 * 60 * 1000));
+  if (days < 0) return 280;
+  if (days === 0) return 220;
+  if (days <= 2) return 170;
+  if (days <= 6) return 120;
+  if (days <= 13) return 70;
+  return 20;
+}
+
+function scoreTaskForQueue(task) {
+  if (!task) return -1000;
+  let score = 0;
+  score += getTaskStatusWeight(task.status ?? getDefaultStatusKey());
+  score += getTaskPriorityWeight(task.priority ?? 'medium');
+  score += getTaskDueWeight(task);
+  if (hasIncompleteDependencies(task.id)) score -= 80;
+  if (isDoneStatusKey(task.status) || isCanceledStatusKey(task.status)) score -= 2000;
+  return score;
+}
+
+function buildAiQueueRankMap(tasks) {
+  const visibleIds = new Set((tasks ?? []).map(task => task.id));
+  const roots = (tasks ?? []).filter(task => !task.parent_id || !visibleIds.has(task.parent_id));
+  const rankMap = new Map();
+
+  getAiSuggestions().forEach((entry) => {
+    if (!entry?.task_id) return;
+    if (entry.decision === 'rejected') return;
+    if (!visibleIds.has(entry.task_id)) return;
+    const rootId = getTopLevelTaskId(entry.task_id, visibleIds);
+    if (!rootId || rankMap.has(rootId)) return;
+    rankMap.set(rootId, rankMap.size);
+  });
+
+  if (!rankMap.size) {
+    roots
+      .slice()
+      .sort((a, b) => scoreTaskForQueue(b) - scoreTaskForQueue(a) || compareTasksByPriority(a, b))
+      .forEach((task) => {
+        rankMap.set(task.id, rankMap.size);
+      });
+    return rankMap;
+  }
+
+  roots
+    .filter(task => !rankMap.has(task.id))
+    .sort((a, b) => scoreTaskForQueue(b) - scoreTaskForQueue(a) || compareTasksByPriority(a, b))
+    .forEach((task) => {
+      rankMap.set(task.id, rankMap.size);
+    });
+  return rankMap;
+}
+
+function compareTasksByAiQueue(a, b, rankMap) {
+  const aStatus = a.status ?? getDefaultStatusKey();
+  const bStatus = b.status ?? getDefaultStatusKey();
+  const aComplete = isDoneStatusKey(aStatus) || isCanceledStatusKey(aStatus);
+  const bComplete = isDoneStatusKey(bStatus) || isCanceledStatusKey(bStatus);
+  if (aComplete !== bComplete) return aComplete ? 1 : -1;
+
+  const aRootId = getTopLevelTaskId(a.id);
+  const bRootId = getTopLevelTaskId(b.id);
+  const aRank = rankMap.get(aRootId);
+  const bRank = rankMap.get(bRootId);
+  const aHasRank = Number.isInteger(aRank);
+  const bHasRank = Number.isInteger(bRank);
+  if (aHasRank && bHasRank && aRank !== bRank) return aRank - bRank;
+  if (aHasRank !== bHasRank) return aHasRank ? -1 : 1;
+
+  const scoreDiff = scoreTaskForQueue(b) - scoreTaskForQueue(a);
+  if (scoreDiff !== 0) return scoreDiff;
+  return compareTasksByPriority(a, b);
+}
+
+function getTaskSortComparator(tasks = null) {
   const key = getTaskSortKey();
   if (key === 'due-asc') {
     return (a, b) => compareTasksByDueDate(a, b, 'asc');
@@ -6424,7 +6851,62 @@ function getTaskSortComparator() {
   if (key === 'due-desc') {
     return (a, b) => compareTasksByDueDate(a, b, 'desc');
   }
+  if (key === 'ai-queue') {
+    const rankMap = buildAiQueueRankMap(tasks ?? getFilteredTasks());
+    return (a, b) => compareTasksByAiQueue(a, b, rankMap);
+  }
   return compareTasksByPriority;
+}
+
+function renderAiQueueBanner(tasks) {
+  if (getTaskSortKey() !== 'ai-queue') return;
+  const banner = document.createElement('section');
+  banner.className = 'ai-queue-banner';
+
+  const title = document.createElement('div');
+  title.className = 'ai-queue-title';
+  title.textContent = 'AI Queue';
+  banner.appendChild(title);
+
+  const suggestionCount = getAiSuggestions().filter(item => item?.task_id && item.decision !== 'rejected').length;
+  const rankCount = buildAiQueueRankMap(tasks).size;
+  const summary = document.createElement('div');
+  summary.className = 'ai-queue-summary';
+  summary.textContent = suggestionCount
+    ? `Ordered by AI suggestions. ${rankCount} task${rankCount === 1 ? '' : 's'} in queue.`
+    : 'No explicit AI picks yet. Using AI queue fallback ordering.';
+  banner.appendChild(summary);
+
+  const actions = document.createElement('div');
+  actions.className = 'ai-queue-actions';
+
+  const refreshBtn = document.createElement('button');
+  refreshBtn.type = 'button';
+  refreshBtn.className = 'subtle-button';
+  refreshBtn.textContent = state.ui?.aiSuggestionLoading ? 'Refreshing…' : 'Refresh queue';
+  refreshBtn.disabled = Boolean(state.ui?.aiSuggestionLoading);
+  refreshBtn.addEventListener('click', async () => {
+    await refreshAiSuggestions(tasks);
+  });
+  actions.appendChild(refreshBtn);
+
+  const showBtn = document.createElement('button');
+  showBtn.type = 'button';
+  showBtn.className = 'subtle-button';
+  showBtn.textContent = 'Open suggestions';
+  showBtn.addEventListener('click', () => {
+    if (!taskAiMenu) return;
+    if (openMenu && openMenu !== taskAiMenu) {
+      openMenu.classList.add('hidden');
+    }
+    renderAiSuggestionsMenu(tasks);
+    taskAiMenu.classList.remove('hidden');
+    openMenu = taskAiMenu;
+  });
+  actions.appendChild(showBtn);
+
+  banner.appendChild(actions);
+  taskTreeEl.appendChild(banner);
 }
 
 function getAiSuggestionMinutes() {
@@ -6499,10 +6981,9 @@ async function refreshAiSuggestions(tasks) {
   }
 }
 
-function renderAiSuggestionsPanel(tasks) {
-  const panel = document.createElement('section');
-  panel.className = 'ai-suggestions-panel';
-
+function renderAiSuggestionsMenu(tasks) {
+  if (!taskAiMenu) return;
+  taskAiMenu.innerHTML = '';
   const header = document.createElement('div');
   header.className = 'ai-suggestions-header';
   const title = document.createElement('h3');
@@ -6544,14 +7025,14 @@ function renderAiSuggestionsPanel(tasks) {
   controls.appendChild(clearBtn);
   header.appendChild(title);
   header.appendChild(controls);
-  panel.appendChild(header);
+  taskAiMenu.appendChild(header);
 
   const notes = getAiSuggestionNotes();
   if (notes) {
     const notesEl = document.createElement('div');
     notesEl.className = 'ai-suggestions-notes';
     notesEl.textContent = notes;
-    panel.appendChild(notesEl);
+    taskAiMenu.appendChild(notesEl);
   }
 
   const list = document.createElement('div');
@@ -6606,8 +7087,7 @@ function renderAiSuggestionsPanel(tasks) {
       list.appendChild(row);
     });
   }
-  panel.appendChild(list);
-  taskTreeEl.appendChild(panel);
+  taskAiMenu.appendChild(list);
 }
 
 function render() {
@@ -6620,6 +7100,7 @@ function render() {
   renderWorkspaceList();
   renderAccountMenu();
   renderProjectList();
+  renderProjectsPage();
   renderWorkflowList();
   renderTemplateList();
   renderTaskTypeList();
@@ -6632,6 +7113,7 @@ function render() {
   renderWorkflowsPage();
   renderNoticeBellMenu();
   renderTaskFilter();
+  renderTaskTools();
   renderTaskSort();
   renderTaskGroup();
   renderNoticeFilter();
@@ -6665,9 +7147,12 @@ function render() {
   } else if (view === 'calendar') {
     renderCalendarView(tasks);
   } else {
-    sortTree(tree, getTaskSortComparator());
-    renderAiSuggestionsPanel(tasks);
+    sortTree(tree, getTaskSortComparator(tasks));
+    renderAiQueueBanner(tasks);
     renderTaskList(tree);
+  }
+  if (taskAiMenu && !taskAiMenu.classList.contains('hidden')) {
+    renderAiSuggestionsMenu(tasks);
   }
   renderShoppingPanel();
   renderView();
@@ -6698,6 +7183,7 @@ function render() {
 function renderView() {
   const view = getActiveView();
   const showTasks = view === 'tasks';
+  const showProjects = view === 'projects';
   const showShopping = view === 'shopping';
   const showNotices = view === 'notices';
   const showWorkflows = view === 'workflows';
@@ -6705,6 +7191,7 @@ function renderView() {
   const showArchivedWorkspaces = view === 'workspaces-archived';
 
   tasksPanel?.classList.toggle('hidden', !showTasks);
+  projectsPage?.classList.toggle('hidden', !showProjects);
   shoppingPage?.classList.toggle('hidden', !showShopping);
   noticesPage?.classList.toggle('hidden', !showNotices);
   workflowsPage?.classList.toggle('hidden', !showWorkflows);
@@ -6721,11 +7208,11 @@ function getActiveShoppingList() {
   if (!state.workspace) return null;
   const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
   const lists = (state.shoppingLists ?? []).filter(list =>
-    list.workspace_id === state.workspace.id && (showArchived || !list.archived)
+    list.workspace_id === state.workspace.id && shouldShowShoppingListInSidebar(list, { showArchived })
   );
   const activeId = state.ui?.activeShoppingListId ?? null;
   return lists.find(list => list.id === activeId)
-    ?? lists.find(list => !list.archived)
+    ?? lists.find(list => !list.archived && !isShoppingListComplete(list.id))
     ?? lists[0]
     ?? null;
 }
@@ -6741,6 +7228,13 @@ function isShoppingListComplete(listId) {
   return items.every(item => item.is_checked);
 }
 
+function shouldShowShoppingListInSidebar(list, { showArchived = false } = {}) {
+  if (!list) return false;
+  if (showArchived) return true;
+  if (list.archived) return false;
+  return !isShoppingListComplete(list.id);
+}
+
 function getFilteredTasks() {
   if (!state.workspace) return [];
   const tasks = Object.values(state.tasks).filter(task => task.workspace_id === state.workspace.id);
@@ -6754,15 +7248,102 @@ function getFilteredTasks() {
 
 function renderTaskFilter() {
   if (!taskFilterButton || !taskFilterMenu) return;
+  const label = getTaskFilterLabel();
+  taskFilterButton.textContent = `${label} ▾`;
+}
+
+function getTaskFilterLabel() {
   const active = state.ui?.activeProjectId ?? null;
   let label = 'All tasks';
   if (active === 'unassigned') {
-    label = 'Unassigned';
+    return 'Unassigned';
   } else if (active) {
     const project = (state.projects ?? []).find(item => item.id === active);
     label = project?.name ?? 'All tasks';
   }
-  taskFilterButton.textContent = `${label} ▾`;
+  return label;
+}
+
+function cycleTaskFilterSelection() {
+  const projectIds = getProjectsForWorkspace().map(project => project.id);
+  const cycle = [null, 'unassigned', ...projectIds];
+  const active = state.ui?.activeProjectId ?? null;
+  const activeKey = active === undefined ? null : active;
+  const currentIndex = cycle.findIndex(item => item === activeKey);
+  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % cycle.length : 0;
+  state.ui = state.ui ?? {};
+  state.ui.activeProjectId = cycle[nextIndex] ?? null;
+}
+
+function cycleTaskSortSelection() {
+  const cycle = ['default', 'due-asc', 'due-desc', 'ai-queue'];
+  const current = getTaskSortKey();
+  const currentIndex = cycle.indexOf(current);
+  const next = cycle[(currentIndex + 1) % cycle.length] ?? 'default';
+  setTaskSortKey(next);
+  return next;
+}
+
+function cycleTaskGroupSelection() {
+  const cycle = ['none', 'section', 'task-type', 'priority'];
+  const current = getTaskGroupMode();
+  const currentIndex = cycle.indexOf(current);
+  const next = cycle[(currentIndex + 1) % cycle.length] ?? 'none';
+  setTaskGroupMode(next);
+}
+
+function cycleTaskViewSelection() {
+  const cycle = ['list', 'kanban', 'calendar'];
+  const current = getTaskView();
+  const currentIndex = cycle.indexOf(current);
+  const next = cycle[(currentIndex + 1) % cycle.length] ?? 'list';
+  setTaskView(next);
+}
+
+function renderTaskTools() {
+  if (!taskToolsToggleQuickAdd) return;
+  const mobile = isMobileViewport();
+  taskToolsToggleQuickAdd.classList.toggle('hidden', mobile);
+  taskToolsToggleQuickAdd.textContent = `${getTaskQuickAddVisible() ? 'Hide' : 'Show'} quick add`;
+  taskToolsMobileFilter?.classList.toggle('hidden', !mobile);
+  taskToolsMobileSort?.classList.toggle('hidden', !mobile);
+  taskToolsMobileGroup?.classList.toggle('hidden', !mobile);
+  taskToolsMobileView?.classList.toggle('hidden', !mobile);
+  if (taskToolsMobileFilter) {
+    taskToolsMobileFilter.textContent = `Filter: ${getTaskFilterLabel()}`;
+  }
+  if (taskToolsMobileSort) {
+    const sortLabelMap = {
+      default: 'Default',
+      'due-asc': 'Due (Soonest)',
+      'due-desc': 'Due (Latest)',
+      'ai-queue': 'AI queue'
+    };
+    taskToolsMobileSort.textContent = `Sort: ${sortLabelMap[getTaskSortKey()] ?? 'Default'}`;
+  }
+  if (taskToolsMobileGroup) {
+    const groupLabelMap = {
+      none: 'None',
+      section: 'Section',
+      'task-type': 'Task type',
+      priority: 'Priority'
+    };
+    taskToolsMobileGroup.textContent = `Group: ${groupLabelMap[getTaskGroupMode()] ?? 'None'}`;
+  }
+  if (taskToolsMobileView) {
+    const viewLabelMap = {
+      list: 'List',
+      kanban: 'Kanban',
+      calendar: 'Calendar'
+    };
+    taskToolsMobileView.textContent = `View: ${viewLabelMap[getTaskView()] ?? 'List'}`;
+  }
+  if (taskAiButton) {
+    const pending = getAiSuggestions().filter(item => item?.task_id && item.decision !== 'rejected').length;
+    taskAiButton.classList.toggle('has-count', pending > 0);
+    taskAiButton.dataset.count = pending > 0 ? String(pending) : '';
+    taskAiButton.title = pending > 0 ? `AI suggestions (${pending})` : 'AI suggestions';
+  }
 }
 
 function renderTaskSort() {
@@ -6771,7 +7352,8 @@ function renderTaskSort() {
   const labelMap = {
     default: 'Sort',
     'due-asc': 'Due date (soonest)',
-    'due-desc': 'Due date (latest)'
+    'due-desc': 'Due date (latest)',
+    'ai-queue': 'AI queue'
   };
   taskSortButton.textContent = `${labelMap[key] ?? 'Sort'} ▾`;
 }
@@ -6960,6 +7542,47 @@ function renderProjectList() {
     row.appendChild(badge);
     row.appendChild(menuWrapper);
     projectListEl.appendChild(row);
+  });
+}
+
+function renderProjectsPage() {
+  if (!projectsMobileList) return;
+  projectsMobileList.innerHTML = '';
+  if (!state.workspace) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'Select a workspace first.';
+    projectsMobileList.appendChild(empty);
+    return;
+  }
+  const projects = getProjectsForWorkspace();
+  if (!projects.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'No projects yet.';
+    projectsMobileList.appendChild(empty);
+    return;
+  }
+  const active = state.ui?.activeProjectId ?? null;
+  projects.forEach(project => {
+    const row = document.createElement('div');
+    row.className = 'workspace-row project-row' + (project.id === active ? ' active' : '');
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'workspace-select';
+    selectBtn.textContent = project.name;
+    selectBtn.addEventListener('click', () => {
+      state.ui = state.ui ?? {};
+      state.ui.activeProjectId = project.id;
+      setActiveView('tasks');
+      render();
+    });
+    const badge = document.createElement('span');
+    badge.className = 'project-badge';
+    badge.textContent = 'Project';
+    row.appendChild(selectBtn);
+    row.appendChild(badge);
+    projectsMobileList.appendChild(row);
   });
 }
 
@@ -7412,13 +8035,22 @@ function renderWorkflowsPage() {
     return;
   }
 
-  const viewMode = getWorkflowViewMode();
-  const isManageView = viewMode === 'manage';
+  const isMobileWorkflows = isMobileViewport();
+  if (isMobileWorkflows && getWorkflowViewMode() !== 'runs') {
+    setWorkflowViewMode('runs');
+  }
+  const viewMode = isMobileWorkflows ? 'runs' : getWorkflowViewMode();
+  const isManageView = !isMobileWorkflows && viewMode === 'manage';
   const workflows = getWorkflowsForWorkspace();
+  let mobilePanelMode = isMobileWorkflows ? getMobileWorkflowPanelMode() : 'instances';
   let workflow = getWorkflowById(getActiveWorkflowId());
-  if (isManageView && !workflow && workflows.length) {
+  if (!workflow && workflows.length && !isMobileWorkflows) {
     setActiveWorkflowId(workflows[0].id);
     workflow = workflows[0];
+  }
+  if (isMobileWorkflows && mobilePanelMode === 'instances' && !workflow) {
+    mobilePanelMode = 'list';
+    setMobileWorkflowPanelMode('list');
   }
   const variants = workflow ? getWorkflowVariants(workflow.id) : [];
 
@@ -7426,12 +8058,76 @@ function renderWorkflowsPage() {
   workflowMenuButton?.classList.add('hidden');
   workflowMenu?.classList.add('hidden');
   if (workflowPageTitle) {
-    workflowPageTitle.textContent = isManageView ? 'Manage Workflows' : (workflow?.name ?? 'Workflows');
+    workflowPageTitle.textContent = isManageView
+      ? 'Manage Workflows'
+      : (isMobileWorkflows && mobilePanelMode === 'list' ? 'Workflows' : (workflow?.name ?? 'Workflows'));
   }
   if (workflowPageSubtitle) {
-    workflowPageSubtitle.textContent = isManageView
-      ? 'Blueprints and builder.'
-      : (workflow ? 'Workflow runs' : 'Select a workflow to view runs.');
+    if (isManageView) {
+      workflowPageSubtitle.textContent = 'Blueprints and builder.';
+    } else if (isMobileWorkflows && mobilePanelMode === 'list') {
+      workflowPageSubtitle.textContent = 'Choose a workflow to view open and completed instances.';
+    } else {
+      workflowPageSubtitle.textContent = workflow ? 'Workflow runs' : 'Select a workflow to view runs.';
+    }
+  }
+
+  if (isMobileWorkflows && mobilePanelMode === 'list') {
+    const listSection = document.createElement('div');
+    listSection.className = 'workflow-section workflow-mobile-list';
+    if (!workflows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'sidebar-note';
+      empty.textContent = 'No workflows yet.';
+      listSection.appendChild(empty);
+      workflowDetailEl.appendChild(listSection);
+      return;
+    }
+    workflows.forEach((item) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'workflow-mobile-row';
+      if (item.id === workflow?.id) {
+        row.classList.add('is-active');
+      }
+
+      const info = document.createElement('div');
+      info.className = 'workflow-mobile-row-main';
+      const name = document.createElement('div');
+      name.className = 'workflow-mobile-row-name';
+      name.textContent = item.name;
+      const allInstances = getWorkflowInstances(item.id);
+      const summary = allInstances.reduce((acc, instance) => {
+        const progress = getWorkflowInstanceProgress(instance.id);
+        if (progress.isComplete) {
+          acc.completed += 1;
+        } else {
+          acc.open += 1;
+        }
+        return acc;
+      }, { open: 0, completed: 0 });
+      const meta = document.createElement('div');
+      meta.className = 'workflow-mobile-row-meta';
+      meta.textContent = `${summary.open} open · ${summary.completed} completed`;
+      info.appendChild(name);
+      info.appendChild(meta);
+
+      const chevron = document.createElement('span');
+      chevron.className = 'workflow-mobile-row-chevron';
+      chevron.textContent = '›';
+
+      row.appendChild(info);
+      row.appendChild(chevron);
+      row.addEventListener('click', () => {
+        setActiveWorkflowId(item.id);
+        setWorkflowInstanceFilter('open');
+        setMobileWorkflowPanelMode('instances');
+        render();
+      });
+      listSection.appendChild(row);
+    });
+    workflowDetailEl.appendChild(listSection);
+    return;
   }
 
   if (isManageView) {
@@ -8402,6 +9098,17 @@ function renderWorkflowsPage() {
   instanceSection.className = 'workflow-section';
   const instanceHeader = document.createElement('div');
   instanceHeader.className = 'workflow-section-header';
+  if (isMobileWorkflows) {
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'subtle-button';
+    backBtn.textContent = '← Workflows';
+    backBtn.addEventListener('click', () => {
+      setMobileWorkflowPanelMode('list');
+      render();
+    });
+    instanceHeader.appendChild(backBtn);
+  }
   const instanceTitle = document.createElement('h3');
   instanceTitle.textContent = 'Workflows';
   const runBtn = document.createElement('button');
@@ -8714,7 +9421,7 @@ function renderShoppingListList() {
     showArchivedShoppingToggle.checked = showArchived;
   }
   const lists = (state.shoppingLists ?? []).filter(list =>
-    list.workspace_id === state.workspace.id && (showArchived || !list.archived)
+    list.workspace_id === state.workspace.id && shouldShowShoppingListInSidebar(list, { showArchived })
   );
   const activeList = getActiveShoppingList();
   if (activeList) {
@@ -8734,9 +9441,12 @@ function renderShoppingListList() {
     const selectBtn = document.createElement('button');
     selectBtn.type = 'button';
     selectBtn.className = 'workspace-select';
-    selectBtn.textContent = list.archived ? `${list.name} (archived)` : list.name;
+    selectBtn.textContent = list.archived ? `${list.name} (completed)` : list.name;
     selectBtn.addEventListener('click', () => {
       state.ui.activeShoppingListId = list.id;
+      if (isMobileViewport()) {
+        setMobileShoppingPanelMode('details');
+      }
       setActiveView('shopping');
       render();
     });
@@ -8748,7 +9458,66 @@ function renderShoppingListList() {
 
 function renderShoppingPanel() {
   if (!shoppingPage) return;
+  const isMobileShopping = isMobileViewport();
+  const mobileMode = isMobileShopping ? getMobileShoppingPanelMode() : 'details';
+  const isShoppingView = getActiveView() === 'shopping';
   const activeList = getActiveShoppingList();
+  const showMobileBack = isShoppingView && isMobileShopping && mobileMode === 'details';
+  shoppingMobileBackRow?.classList.toggle('hidden', !showMobileBack);
+  if (shoppingMobileBack) {
+    shoppingMobileBack.classList.toggle('hidden', !showMobileBack);
+  }
+
+  if (isMobileShopping && mobileMode === 'list') {
+    shoppingPage.classList.remove('is-empty');
+    shoppingListTitle.textContent = 'Shopping Lists';
+    shoppingListSubtitle.textContent = 'Select a list to view its checklist.';
+    shoppingListMenuButton?.classList.add('hidden');
+    shoppingListMenu?.classList.add('hidden');
+    shoppingCompleteBtn?.classList.add('hidden');
+    shoppingAddBtn?.classList.add('hidden');
+    shoppingListItemsEl.innerHTML = '';
+    const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
+    const lists = (state.shoppingLists ?? [])
+      .filter(list =>
+        list.workspace_id === state.workspace?.id && shouldShowShoppingListInSidebar(list, { showArchived })
+      )
+      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+    if (!lists.length) {
+      const empty = document.createElement('div');
+      empty.className = 'sidebar-note';
+      empty.textContent = 'No shopping lists yet.';
+      shoppingListItemsEl.appendChild(empty);
+      return;
+    }
+    lists.forEach((list) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'workspace-row shopping-mobile-row';
+      if (activeList?.id === list.id) row.classList.add('active');
+      const name = document.createElement('span');
+      name.className = 'shopping-mobile-row-name';
+      name.textContent = list.name;
+      const meta = document.createElement('span');
+      meta.className = 'shopping-mobile-row-meta';
+      const itemCount = getShoppingItemsForList(list.id).length;
+      meta.textContent = `${itemCount} item${itemCount === 1 ? '' : 's'}`;
+      row.appendChild(name);
+      row.appendChild(meta);
+      row.addEventListener('click', () => {
+        state.ui = state.ui ?? {};
+        state.ui.activeShoppingListId = list.id;
+        setMobileShoppingPanelMode('details');
+        render();
+      });
+      shoppingListItemsEl.appendChild(row);
+    });
+    return;
+  }
+
+  if (isMobileShopping && !activeList) {
+    setMobileShoppingPanelMode('list');
+  }
   if (!activeList) {
     shoppingPage.classList.add('is-empty');
     shoppingListTitle.textContent = 'Shopping Lists';
@@ -8766,7 +9535,7 @@ function renderShoppingPanel() {
   const items = getShoppingItemsForList(activeList.id)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const complete = isShoppingListComplete(activeList.id);
-  shoppingListSubtitle.textContent = `${items.length} items${complete ? ' · complete' : ''}${activeList.archived ? ' · archived' : ''}`;
+  shoppingListSubtitle.textContent = `${items.length} items${complete ? ' · complete' : ''}${activeList.archived ? ' · completed' : ''}`;
   shoppingListMenuButton?.classList.remove('hidden');
   shoppingCompleteBtn?.classList.remove('hidden');
   shoppingAddBtn?.classList.remove('hidden');
@@ -8788,7 +9557,6 @@ function renderShoppingPanel() {
     checkbox.checked = Boolean(item.is_checked);
     checkbox.addEventListener('change', async () => {
       await updateShoppingItemRecord(item.id, { is_checked: checkbox.checked ? 1 : 0 });
-      await maybeAutoArchiveList(activeList.id);
       render();
     });
 
@@ -8840,7 +9608,9 @@ function renderNotificationStatus() {
 }
 
 function renderTaskList(roots) {
-  const groupMode = getTaskGroupMode();
+  const inlineAddDisabled = isMobileViewport();
+  const quickAddVisible = getTaskQuickAddVisible();
+  const groupMode = getTaskSortKey() === 'ai-queue' ? 'none' : getTaskGroupMode();
   if (groupMode === 'none') {
     const topDropzone = document.createElement('div');
     topDropzone.className = 'task-root-dropzone';
@@ -8952,7 +9722,9 @@ function renderTaskList(roots) {
       groupList.className = 'task-group-list';
       attachTaskDropzone(groupList, { parentId: null, groupMode: 'section', groupValue: label });
       (grouped.get(label) ?? []).forEach(node => groupList.appendChild(renderTask(node)));
-      groupList.appendChild(createSectionAddRow(label));
+      if (!inlineAddDisabled && quickAddVisible) {
+        groupList.appendChild(createSectionAddRow(label));
+      }
       section.appendChild(groupList);
       list.appendChild(section);
     });
@@ -8987,7 +9759,7 @@ function renderTaskList(roots) {
     });
     addSectionRow.appendChild(addSectionInput);
 
-    if (!sections.length) {
+    if (!sections.length && !inlineAddDisabled && quickAddVisible) {
       const addRow = document.createElement('div');
       addRow.className = 'task-add-subtask task-add-task';
       const addInput = document.createElement('input');
@@ -9012,7 +9784,9 @@ function renderTaskList(roots) {
       addRow.appendChild(addInput);
       list.appendChild(addRow);
     }
-    list.appendChild(addSectionRow);
+    if (!inlineAddDisabled) {
+      list.appendChild(addSectionRow);
+    }
   } else if (groupMode !== 'none') {
     const grouped = new Map();
     const priorityOrder = ['critical', 'high', 'medium', 'low'];
@@ -9102,51 +9876,54 @@ function renderTaskList(roots) {
   } else {
     roots.forEach(node => list.appendChild(renderTask(node)));
   }
-  const addRow = document.createElement('div');
-  addRow.className = 'task-add-subtask task-add-task';
-  const addInput = document.createElement('input');
-  addInput.type = 'text';
-  addInput.className = 'task-add-input';
-  addInput.placeholder = 'Add task...';
-  addInput.value = state.ui?.taskAddDraft ?? '';
-  attachQuickAddClick(addInput, () => createTaskRecord({ title: '' }));
-  addInput.addEventListener('focus', () => {
-    state.ui = state.ui ?? {};
-    state.ui.taskAddFocused = true;
-  });
-  addInput.addEventListener('blur', () => {
-    if (!state.ui) return;
-    state.ui.taskAddFocused = false;
-  });
-  addInput.addEventListener('input', () => {
-    state.ui = state.ui ?? {};
-    state.ui.taskAddDraft = addInput.value;
-  });
-  addInput.addEventListener('keydown', async (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      const title = addInput.value.trim();
-      if (!title) return;
-      await createTaskRecord({ title });
-      addInput.value = '';
+  let addInput = null;
+  if (quickAddVisible && !inlineAddDisabled) {
+    const addRow = document.createElement('div');
+    addRow.className = 'task-add-subtask task-add-task';
+    addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.className = 'task-add-input';
+    addInput.placeholder = 'Add task...';
+    addInput.value = state.ui?.taskAddDraft ?? '';
+    attachQuickAddClick(addInput, () => createTaskRecord({ title: '' }));
+    addInput.addEventListener('focus', () => {
       state.ui = state.ui ?? {};
-      state.ui.taskAddDraft = '';
+      state.ui.taskAddFocused = true;
+    });
+    addInput.addEventListener('blur', () => {
+      if (!state.ui) return;
+      state.ui.taskAddFocused = false;
+    });
+    addInput.addEventListener('input', () => {
       state.ui = state.ui ?? {};
-      state.ui.focusTaskAdd = true;
-      render();
-    }
-    if (event.key === 'Escape') {
-      addInput.value = '';
-      if (state.ui) state.ui.taskAddDraft = '';
-      addInput.blur();
-    }
-  });
-  addRow.appendChild(addInput);
-  if (groupMode === 'none' || (groupMode !== 'section' && groupMode !== 'none')) {
-    if (groupMode === 'none') {
-      list.appendChild(addRow);
-    } else {
-      (defaultGroupList ?? list).appendChild(addRow);
+      state.ui.taskAddDraft = addInput.value;
+    });
+    addInput.addEventListener('keydown', async (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const title = addInput.value.trim();
+        if (!title) return;
+        await createTaskRecord({ title });
+        addInput.value = '';
+        state.ui = state.ui ?? {};
+        state.ui.taskAddDraft = '';
+        state.ui = state.ui ?? {};
+        state.ui.focusTaskAdd = true;
+        render();
+      }
+      if (event.key === 'Escape') {
+        addInput.value = '';
+        if (state.ui) state.ui.taskAddDraft = '';
+        addInput.blur();
+      }
+    });
+    addRow.appendChild(addInput);
+    if (groupMode === 'none' || (groupMode !== 'section' && groupMode !== 'none')) {
+      if (groupMode === 'none') {
+        list.appendChild(addRow);
+      } else {
+        (defaultGroupList ?? list).appendChild(addRow);
+      }
     }
   }
   taskTreeEl.appendChild(list);
@@ -9158,11 +9935,15 @@ function renderTaskList(roots) {
     taskTreeEl.appendChild(bottomDropzone);
   }
 
-  if (state.ui?.focusTaskAdd || state.ui?.taskAddFocused) {
+  if (addInput && (state.ui?.focusTaskAdd || state.ui?.taskAddFocused)) {
     state.ui = state.ui ?? {};
     state.ui.focusTaskAdd = false;
     state.ui.taskAddFocused = true;
     setTimeout(() => addInput.focus(), 0);
+  } else if (!addInput && state.ui?.focusTaskAdd) {
+    state.ui = state.ui ?? {};
+    state.ui.focusTaskAdd = false;
+    state.ui.taskAddFocused = false;
   }
 }
 
@@ -9322,6 +10103,11 @@ function renderCalendarView(tasks) {
 }
 
 function renderKanban(roots) {
+  const inlineAddDisabled = isMobileViewport();
+  const quickAddVisible = getTaskQuickAddVisible();
+  if ((inlineAddDisabled || !quickAddVisible) && state.ui?.kanbanQuickAdd) {
+    setKanbanQuickAdd(null);
+  }
   const grouped = new Map();
   roots.forEach(task => {
     const status = task.status ?? getDefaultStatusKey();
@@ -9454,7 +10240,9 @@ function renderKanban(roots) {
       event.stopPropagation();
     });
 
-    actions.appendChild(addButton);
+    if (!inlineAddDisabled && quickAddVisible) {
+      actions.appendChild(addButton);
+    }
     actions.appendChild(menuWrapper);
 
     header.appendChild(titleWrap);
@@ -9464,7 +10252,7 @@ function renderKanban(roots) {
     const list = document.createElement('div');
     list.className = 'kanban-cards';
     attachKanbanDropzone(list, status.key);
-    if (state.ui?.kanbanQuickAdd === status.key) {
+    if (!inlineAddDisabled && quickAddVisible && state.ui?.kanbanQuickAdd === status.key) {
       const quickAdd = document.createElement('div');
       quickAdd.className = 'kanban-quick-add';
       const input = document.createElement('input');
@@ -10809,25 +11597,33 @@ function renderShoppingStoreSelect(selectedName = '') {
   addNew.value = '__add_new__';
   addNew.textContent = 'Add new store…';
   shoppingListStoreSelect.appendChild(addNew);
-  if (selectedName && storeNames.includes(selectedName)) {
-    shoppingListStoreSelect.value = selectedName;
-    shoppingListStoreNewRow?.classList.add('hidden');
-  } else if (selectedName) {
-    shoppingListStoreSelect.value = '__add_new__';
-    shoppingListStoreNewRow?.classList.remove('hidden');
-    if (shoppingListStoreNew) shoppingListStoreNew.value = selectedName;
-  } else {
-    shoppingListStoreSelect.value = '';
-    shoppingListStoreNewRow?.classList.add('hidden');
+  shoppingListStoreSelect.value = selectedName && storeNames.includes(selectedName)
+    ? selectedName
+    : '';
+}
+
+function openShoppingStoreModal() {
+  if (!shoppingStoreModal) return;
+  shoppingStoreModal.classList.remove('hidden');
+  if (shoppingStoreNameInput) {
+    shoppingStoreNameInput.value = '';
+    shoppingStoreNameInput.focus();
   }
 }
 
+function closeShoppingStoreModal(options = {}) {
+  const { restoreSelection = true } = options;
+  shoppingStoreModal?.classList.add('hidden');
+  if (shoppingStoreNameInput) shoppingStoreNameInput.value = '';
+  if (!restoreSelection || !shoppingListStoreSelect) return;
+  const previous = shoppingStorePreviousSelection;
+  shoppingListStoreSelect.value = previous && previous !== '__add_new__' ? previous : '';
+}
+
 function openShoppingListModal() {
-  if (shoppingListStoreSelect) {
-    renderShoppingStoreSelect('');
-  }
-  if (shoppingListStoreNew) shoppingListStoreNew.value = '';
-  shoppingListStoreNewRow?.classList.add('hidden');
+  if (shoppingListStoreSelect) renderShoppingStoreSelect('');
+  shoppingStorePreviousSelection = '';
+  closeShoppingStoreModal({ restoreSelection: false });
   if (shoppingListDate) {
     shoppingListDate.value = new Date().toISOString().slice(0, 10);
   }
@@ -10838,6 +11634,7 @@ function openShoppingListModal() {
 
 function closeShoppingListModal() {
   shoppingListModal.classList.add('hidden');
+  closeShoppingStoreModal({ restoreSelection: false });
 }
 
 function openShoppingItemModal() {
@@ -11358,18 +12155,20 @@ workspaceArchivedBack?.addEventListener('click', () => {
   render();
 });
 shoppingAddBtn?.addEventListener('click', openShoppingItemModal);
+shoppingMobileBack?.addEventListener('click', () => {
+  setMobileShoppingPanelMode('list');
+  render();
+});
 shoppingItemCancel?.addEventListener('click', closeShoppingItemModal);
 shoppingItemModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeShoppingItemModal);
 
 shoppingListStoreSelect?.addEventListener('change', () => {
   if (!shoppingListStoreSelect) return;
-  const isAddNew = shoppingListStoreSelect.value === '__add_new__';
-  shoppingListStoreNewRow?.classList.toggle('hidden', !isAddNew);
-  if (isAddNew) {
-    shoppingListStoreNew?.focus();
-  } else if (shoppingListStoreNew) {
-    shoppingListStoreNew.value = '';
+  if (shoppingListStoreSelect.value === '__add_new__') {
+    openShoppingStoreModal();
+    return;
   }
+  shoppingStorePreviousSelection = shoppingListStoreSelect.value || '';
 });
 
 shoppingListParse?.addEventListener('click', () => {
@@ -11379,15 +12178,30 @@ shoppingListParse?.addEventListener('click', () => {
     ? items.join('\n')
     : normalizeShoppingItems(shoppingListItemsInput.value);
   const currentStore = shoppingListStoreSelect?.value ?? '';
-  if ((!currentStore || currentStore === '__add_new__') && parsed.title) {
+  if (!currentStore && parsed.title) {
     const parsedMeta = parseStoreAndDateFromTitle(parsed.title);
     if (parsedMeta.store) {
       renderShoppingStoreSelect(parsedMeta.store);
+      shoppingStorePreviousSelection = shoppingListStoreSelect?.value || '';
     }
     if (parsedMeta.date && shoppingListDate) {
       shoppingListDate.value = parsedMeta.date;
     }
   }
+});
+
+shoppingStoreCancel?.addEventListener('click', () => closeShoppingStoreModal({ restoreSelection: true }));
+shoppingStoreModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => closeShoppingStoreModal({ restoreSelection: true }));
+shoppingStoreForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const storeName = shoppingStoreNameInput?.value?.trim();
+  if (!storeName) return;
+  const created = await createStoreRuleRecord({ store_name: storeName, keywords: [] });
+  const selectedStoreName = created?.store_name ?? normalizeTitleInput(storeName);
+  renderShoppingStoreSelect(selectedStoreName);
+  shoppingStorePreviousSelection = selectedStoreName;
+  closeShoppingStoreModal({ restoreSelection: false });
+  shoppingListStoreSelect?.focus();
 });
 
 shoppingItemParse?.addEventListener('click', () => {
@@ -11398,14 +12212,7 @@ shoppingListForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const parsed = parseShoppingListInput(shoppingListItemsInput.value);
   const items = parsed.items ?? [];
-  let store = '';
-  if (shoppingListStoreSelect) {
-    if (shoppingListStoreSelect.value === '__add_new__') {
-      store = shoppingListStoreNew?.value?.trim() ?? '';
-    } else {
-      store = shoppingListStoreSelect.value?.trim() ?? '';
-    }
-  }
+  let store = shoppingListStoreSelect?.value?.trim() ?? '';
   let dateValue = shoppingListDate?.value ?? '';
   if ((!store || !dateValue) && parsed.title) {
     const parsedMeta = parseStoreAndDateFromTitle(parsed.title);
@@ -11425,16 +12232,6 @@ shoppingListForm?.addEventListener('submit', async (event) => {
   if (store) {
     store = normalizeTitleInput(store);
   }
-  if (store && shoppingListStoreSelect?.value === '__add_new__') {
-    const existing = getStoreNames().some(name => name.toLowerCase() === store.toLowerCase());
-    if (!existing) {
-      try {
-        await createStoreRuleRecord({ store_name: store, keywords: [] });
-      } catch (err) {
-        alert(err?.message ?? 'Unable to add store.');
-      }
-    }
-  }
   const dateLabel = formatShortDateFromInput(dateValue);
   const name = store ? `${store} ${dateLabel}` : dateLabel;
   if (!name) return;
@@ -11444,6 +12241,9 @@ shoppingListForm?.addEventListener('submit', async (event) => {
     await createShoppingItemsRecord(created.id, items.map(item => ({ name: item })));
   }
   state.ui.activeShoppingListId = created.id;
+  if (isMobileViewport()) {
+    setMobileShoppingPanelMode('details');
+  }
   setActiveView('shopping');
   closeShoppingListModal();
   render();
@@ -11486,6 +12286,9 @@ shoppingListDelete?.addEventListener('click', async (event) => {
   if (state.ui?.activeShoppingListId === activeList.id) {
     const next = (state.shoppingLists ?? []).find(list => !list.archived);
     state.ui.activeShoppingListId = next?.id ?? null;
+    if (isMobileViewport() && !next) {
+      setMobileShoppingPanelMode('list');
+    }
   }
   shoppingListMenu?.classList.add('hidden');
   openMenu = null;
@@ -11497,18 +12300,26 @@ shoppingCompleteBtn?.addEventListener('click', async () => {
   if (!activeList) return;
   const items = getShoppingItemsForList(activeList.id);
   if (!items.length) return;
-  const allChecked = items.every(item => item.is_checked);
-  if (!allChecked) {
-    const confirmed = confirm('Mark remaining items complete and archive this list?');
-    if (!confirmed) return;
-    for (const item of items) {
-      if (!item.is_checked) {
-        await updateShoppingItemRecord(item.id, { is_checked: 1 });
+  try {
+    const allChecked = items.every(item => item.is_checked);
+    if (!allChecked) {
+      const confirmed = confirm('Mark remaining items complete and archive this list?');
+      if (!confirmed) return;
+      for (const item of items) {
+        if (!item.is_checked) {
+          await updateShoppingItemRecord(item.id, { is_checked: 1 });
+        }
       }
     }
+    await archiveShoppingListRecord(activeList.id, { skipFallbackView: true });
+    setActiveView('shopping');
+    if (isMobileViewport()) {
+      setMobileShoppingPanelMode('list');
+    }
+    render();
+  } catch {
+    alert('Could not complete this shopping list right now.');
   }
-  await archiveShoppingListRecord(activeList.id);
-  render();
 });
 
 settingsOpen?.addEventListener('click', () => {
@@ -11913,6 +12724,7 @@ workflowApplicabilityForm?.addEventListener('submit', (event) => {
 
 syncBtn.addEventListener('click', async () => {
   if (!state.workspace) return;
+  resetSyncBackoff();
   syncStatus.textContent = 'Syncing...';
   try {
     if (hasPendingLocalChanges()) {
@@ -11928,8 +12740,10 @@ syncBtn.addEventListener('click', async () => {
     }
     await refreshWorkspace();
     await primeSyncCursor();
+    resetSyncBackoff();
     syncStatus.textContent = 'Synced (local)';
   } catch (err) {
+    registerSyncFailure();
     syncStatus.textContent = 'Sync failed (offline OK)';
   }
 });
@@ -11984,6 +12798,10 @@ newProjectBtn?.addEventListener('click', async () => {
   render();
 });
 
+projectsAddBtn?.addEventListener('click', () => {
+  newProjectBtn?.click();
+});
+
 showArchivedShoppingToggle?.addEventListener('change', () => {
   state.ui = state.ui ?? {};
   state.ui.showArchivedShoppingLists = showArchivedShoppingToggle.checked;
@@ -12015,6 +12833,7 @@ if (typeof window !== 'undefined') {
     if (!isMobileViewport()) {
       setMobileSidebarOpen(false);
       closeMobileCreateSheet();
+      closeMobileTopMenu();
     }
     renderMobileNavigation();
   });
@@ -12034,4 +12853,4 @@ init();
 setInterval(() => {
   if (document.hidden) return;
   autoRefreshOnChanges();
-}, 5000);
+}, SYNC_POLL_INTERVAL_MS);

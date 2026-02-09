@@ -15,6 +15,16 @@
       <div class="sync-controls">
         <button id="sync-btn">Sync Now</button>
         <span id="sync-status">Local-first (offline ready)</span>
+        <div class="mobile-top-menu-wrapper">
+          <button id="mobile-top-menu-button" class="icon-button menu-icon mobile-top-menu-button" type="button" title="Menu">☰</button>
+          <div id="mobile-top-menu" class="mobile-top-menu hidden">
+            <button id="mobile-menu-notices" class="workspace-menu-item" type="button">Notices</button>
+            <button id="mobile-menu-settings" class="workspace-menu-item" type="button">Settings</button>
+            <button id="mobile-menu-profile" class="workspace-menu-item" type="button">Profile</button>
+            <button id="mobile-menu-workspaces" class="workspace-menu-item" type="button">Workspaces</button>
+            <button id="mobile-menu-auth" class="workspace-menu-item" type="button">Login / Logout</button>
+          </div>
+        </div>
         <div class="workspace-menu-wrapper">
           <button id="notice-bell" class="icon-button menu-icon" type="button" title="Notices">🔔</button>
           <div id="notice-bell-menu" class="workspace-menu hidden"></div>
@@ -111,7 +121,7 @@
                 <div id="shopping-list-sidebar-menu" class="workspace-menu hidden">
                   <label class="workspace-menu-item checkbox-item">
                     <input type="checkbox" id="show-archived-shopping" />
-                    Show archived
+                    Show completed
                   </label>
                 </div>
               </div>
@@ -136,6 +146,20 @@
                 <button class="workspace-menu-item" type="button" data-filter="unassigned">Unassigned</button>
               </div>
             </div>
+            <div class="task-tools">
+              <button id="task-tools-button" class="subtle-button" type="button">Tools ▾</button>
+              <div id="task-tools-menu" class="workspace-menu hidden">
+                <button id="task-tools-toggle-quick-add" class="workspace-menu-item" type="button">Show quick add</button>
+                <button id="task-tools-mobile-filter" class="workspace-menu-item task-tools-mobile-item hidden" type="button">Filter: All tasks</button>
+                <button id="task-tools-mobile-sort" class="workspace-menu-item task-tools-mobile-item hidden" type="button">Sort: Default</button>
+                <button id="task-tools-mobile-group" class="workspace-menu-item task-tools-mobile-item hidden" type="button">Group: None</button>
+                <button id="task-tools-mobile-view" class="workspace-menu-item task-tools-mobile-item hidden" type="button">View: List</button>
+              </div>
+            </div>
+            <div class="task-ai">
+              <button id="task-ai-button" class="icon-button menu-icon task-ai-button" type="button" title="AI suggestions">🔔</button>
+              <div id="task-ai-menu" class="workspace-menu task-ai-menu hidden"></div>
+            </div>
             <div class="task-view-toggle">
               <div class="task-sort">
                 <button id="task-sort-button" class="subtle-button" type="button">Sort ▾</button>
@@ -143,6 +167,7 @@
                   <button class="workspace-menu-item" type="button" data-sort="default">Default</button>
                   <button class="workspace-menu-item" type="button" data-sort="due-asc">Due date (soonest)</button>
                   <button class="workspace-menu-item" type="button" data-sort="due-desc">Due date (latest)</button>
+                  <button class="workspace-menu-item" type="button" data-sort="ai-queue">AI queue</button>
                 </div>
               </div>
               <div class="task-group">
@@ -174,6 +199,16 @@
             </div>
             <div id="task-tree"></div>
           </section>
+          <section id="projects-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Projects</h2>
+              <button id="projects-add-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
+            </div>
+            <div id="projects-mobile-list" class="workspace-list"></div>
+          </section>
+          <div id="shopping-mobile-back-row" class="shopping-mobile-back-row hidden">
+            <button id="shopping-mobile-back" class="subtle-button hidden" type="button">← Lists</button>
+          </div>
           <section id="shopping-page" class="shopping-panel hidden">
             <div class="panel-header shopping-panel-header">
               <div class="shopping-header-left">
@@ -283,25 +318,14 @@
         </span>
         <span class="mobile-nav-label">Tasks</span>
       </button>
-      <button class="mobile-nav-button" type="button" data-view="workflows" title="Workflows">
+      <button class="mobile-nav-button" type="button" data-view="projects" title="Projects">
         <span class="mobile-nav-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4" y="4" width="7" height="7" rx="1.5"></rect>
-            <rect x="13" y="4" width="7" height="7" rx="1.5"></rect>
-            <rect x="4" y="13" width="7" height="7" rx="1.5"></rect>
-            <rect x="13" y="13" width="7" height="7" rx="1.5"></rect>
+            <path d="M4 8h16M4 16h16"></path>
+            <path d="M7 4v16"></path>
           </svg>
         </span>
-        <span class="mobile-nav-label">Workflows</span>
-      </button>
-      <button class="mobile-nav-button" type="button" data-view="notices" title="Notices">
-        <span class="mobile-nav-icon">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 10a6 6 0 0 1 12 0v5l2 2H4l2-2z"></path>
-            <path d="M10 19a2 2 0 0 0 4 0"></path>
-          </svg>
-        </span>
-        <span class="mobile-nav-label">Notices</span>
+        <span class="mobile-nav-label">Projects</span>
       </button>
       <button class="mobile-nav-button" type="button" data-view="shopping" title="Shopping Lists">
         <span class="mobile-nav-icon">
@@ -311,7 +335,18 @@
             <circle cx="17" cy="19" r="1.4"></circle>
           </svg>
         </span>
-        <span class="mobile-nav-label">Shopping</span>
+        <span class="mobile-nav-label">Shopping Lists</span>
+      </button>
+      <button class="mobile-nav-button" type="button" data-view="workflows" title="Workflow Instances">
+        <span class="mobile-nav-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="4" y="4" width="7" height="7" rx="1.5"></rect>
+            <rect x="13" y="4" width="7" height="7" rx="1.5"></rect>
+            <rect x="4" y="13" width="7" height="7" rx="1.5"></rect>
+            <rect x="13" y="13" width="7" height="7" rx="1.5"></rect>
+          </svg>
+        </span>
+        <span class="mobile-nav-label">Workflow</span>
       </button>
       <button id="mobile-nav-add" class="mobile-nav-add" type="button" title="Create">
         <span class="mobile-nav-add-plus">+</span>
@@ -400,10 +435,6 @@
               <option value="critical">Critical</option>
             </select>
           </label>
-          <div class="recurrence-row">
-            <button id="modal-recurring-button" class="icon-button subtle-button" type="button" title="Set repeat">↻</button>
-            <span id="modal-recurring-summary" class="recurrence-summary">No repeat</span>
-          </div>
           <label>
             Status
             <select id="modal-status">
@@ -424,10 +455,19 @@
               <input id="modal-due" type="datetime-local" />
             </label>
           </div>
-          <label>
-            Reminder (days before)
-            <input id="modal-reminder" type="number" min="0" placeholder="0" />
-          </label>
+          <div class="datetime-row reminder-repeat-row">
+            <label>
+              Reminder (days before)
+              <input id="modal-reminder" type="number" min="0" placeholder="0" />
+            </label>
+            <label class="repeat-field">
+              Repeat
+              <div class="recurrence-row">
+                <button id="modal-recurring-button" class="icon-button subtle-button" type="button" title="Set repeat">↻</button>
+                <span id="modal-recurring-summary" class="recurrence-summary">No repeat</span>
+              </div>
+            </label>
+          </div>
           <label>
             Notes
             <textarea id="modal-desc" rows="4"></textarea>
@@ -1026,10 +1066,6 @@
               <option value="__add_new__">Add new store…</option>
             </select>
           </label>
-          <label id="shopping-list-store-new-row" class="hidden">
-            New store
-            <input id="shopping-list-store-new" type="text" placeholder="Safeway" />
-          </label>
           <label>
             Date
             <input id="shopping-list-date" type="date" required />
@@ -1042,6 +1078,23 @@
           <div class="modal-actions">
             <button type="submit">Create</button>
             <button type="button" id="shopping-list-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="shopping-store-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>New Store</h2>
+        <form id="shopping-store-form">
+          <label>
+            Store name
+            <input id="shopping-store-name" type="text" placeholder="Safeway" required />
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Save</button>
+            <button type="button" id="shopping-store-cancel">Cancel</button>
           </div>
         </form>
       </div>
