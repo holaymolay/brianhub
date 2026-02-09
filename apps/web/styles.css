@@ -3261,6 +3261,13 @@ button:hover { opacity: 0.9; }
     max-width: calc(100vw - 1rem);
   }
 
+  #tasks-panel #task-tools-menu {
+    left: 0;
+    right: auto;
+    min-width: min(260px, calc(100vw - 1rem));
+    max-width: calc(100vw - 1rem);
+  }
+
   .task-view-toggle {
     width: 100%;
     flex-wrap: wrap;
