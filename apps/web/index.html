@@ -9,12 +9,10 @@
   <body>
     <header class="app-header">
       <div class="header-left">
-        <button id="mobile-sidebar-toggle" class="icon-button menu-icon mobile-sidebar-toggle" type="button" title="Open menu">☰</button>
         <h1 id="app-title">BrianHub</h1>
       </div>
       <div class="sync-controls">
-        <button id="sync-btn">Sync Now</button>
-        <span id="sync-status">Local-first (offline ready)</span>
+        <span id="sync-status" aria-live="polite"></span>
         <div class="mobile-top-menu-wrapper">
           <button id="mobile-top-menu-button" class="icon-button menu-icon mobile-top-menu-button" type="button" title="Menu">☰</button>
           <div id="mobile-top-menu" class="mobile-top-menu hidden">
@@ -99,7 +97,7 @@
           </div>
           <div class="sidebar-divider"></div>
           <div class="sidebar-header-row">
-            <h2>Projects</h2>
+            <button id="projects-open" class="sidebar-section-button" type="button">Projects</button>
             <button id="new-project-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
           </div>
           <div id="project-list" class="workspace-list"></div>
@@ -107,13 +105,18 @@
           <div class="sidebar-header-row">
             <button id="workflows-open" class="sidebar-section-button" type="button">Workflows</button>
             <div class="sidebar-header-actions">
-              <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Manage workflows">⋯</button>
+              <div class="workspace-menu-wrapper">
+                <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Workflow menu">⋯</button>
+                <div id="workflow-sidebar-menu" class="workspace-menu hidden">
+                  <button id="workflow-sidebar-manage" class="workspace-menu-item" type="button">Manage Workflows</button>
+                </div>
+              </div>
             </div>
           </div>
           <div id="workflow-list" class="workspace-list"></div>
           <div class="sidebar-divider"></div>
           <div class="sidebar-header-row">
-            <h2>Shopping Lists</h2>
+            <button id="shopping-open" class="sidebar-section-button" type="button">Shopping Lists</button>
             <div class="sidebar-header-actions">
               <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
               <div class="workspace-menu-wrapper">
@@ -135,7 +138,6 @@
           </div>
           <div id="notice-list" class="workspace-list"></div>
         </aside>
-        <div id="mobile-sidebar-backdrop" class="mobile-sidebar-backdrop hidden"></div>
         <section class="panel content-panel">
           <section id="tasks-panel">
             <div class="tasks-toolbar">
@@ -204,6 +206,16 @@
               <h2>Projects</h2>
               <button id="projects-add-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
             </div>
+            <div class="tasks-toolbar">
+              <div class="task-filter">
+                <button id="project-filter-button" class="subtle-button" type="button">Open projects ▾</button>
+                <div id="project-filter-menu" class="workspace-menu hidden">
+                  <button class="workspace-menu-item" type="button" data-filter="open">Open projects</button>
+                  <button class="workspace-menu-item" type="button" data-filter="closed">Closed projects</button>
+                  <button class="workspace-menu-item" type="button" data-filter="all">All projects</button>
+                </div>
+              </div>
+            </div>
             <div id="projects-mobile-list" class="workspace-list"></div>
           </section>
           <div id="shopping-mobile-back-row" class="shopping-mobile-back-row hidden">
@@ -218,6 +230,14 @@
                 </div>
               </div>
               <div class="shopping-panel-actions">
+                <div class="task-filter">
+                  <button id="shopping-filter-button" class="subtle-button" type="button">Open lists ▾</button>
+                  <div id="shopping-filter-menu" class="workspace-menu hidden">
+                    <button class="workspace-menu-item" type="button" data-filter="open">Open lists</button>
+                    <button class="workspace-menu-item" type="button" data-filter="closed">Completed lists</button>
+                    <button class="workspace-menu-item" type="button" data-filter="all">All lists</button>
+                  </div>
+                </div>
                 <button id="shopping-add-item" class="icon-button shopping-add-button" type="button" title="Add items">＋</button>
                 <button id="shopping-list-menu-button" class="icon-button menu-icon" type="button" title="List actions">⋯</button>
                 <div id="shopping-list-menu" class="workspace-menu hidden">
@@ -242,6 +262,8 @@
               <div class="task-filter">
                 <button id="notice-filter-button" class="subtle-button" type="button">All notices ▾</button>
                 <div id="notice-filter-menu" class="workspace-menu hidden">
+                  <button class="workspace-menu-item" type="button" data-filter="open">Open notices</button>
+                  <button class="workspace-menu-item" type="button" data-filter="closed">Closed notices</button>
                   <button class="workspace-menu-item" type="button" data-filter="all">All notices</button>
                   <button class="workspace-menu-item" type="button" data-filter="upcoming">Upcoming</button>
                   <button class="workspace-menu-item" type="button" data-filter="overdue">Overdue</button>
@@ -277,6 +299,82 @@
               </div>
             </div>
             <div id="workflow-detail" class="workflow-detail"></div>
+          </section>
+          <section id="data-transfer-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Import / Export</h2>
+              <button id="data-transfer-back" class="subtle-button" type="button">← Settings</button>
+            </div>
+            <div class="settings-page-grid">
+              <div class="settings-section">
+                <h3>Data Export</h3>
+                <div class="setting-row audit-controls">
+                  <select id="data-export-format" class="setting-input">
+                    <option value="json">JSON</option>
+                    <option value="csv">CSV</option>
+                    <option value="markdown">Markdown</option>
+                    <option value="pdf">PDF</option>
+                  </select>
+                  <button id="data-export-download" class="subtle-button" type="button">Export</button>
+                </div>
+                <label class="setting-checkbox">
+                  <input id="data-export-include-audit" type="checkbox" checked />
+                  Include audit log
+                </label>
+                <div class="sidebar-note setting-help">Exports the active workspace data to a local file.</div>
+                <div class="sidebar-note setting-help">For 100% fidelity import, use JSON format.</div>
+              </div>
+              <div class="settings-section">
+                <h3>Data Import</h3>
+                <input id="data-import-file" type="file" accept=".json,application/json" />
+                <label class="setting-checkbox">
+                  <input id="data-import-replace" type="checkbox" checked />
+                  Replace matching workspace data
+                </label>
+                <button id="data-import-apply" class="subtle-button" type="button">Import JSON</button>
+                <div class="sidebar-note setting-help">Imports a JSON workspace export and reconstructs linked data with original IDs.</div>
+              </div>
+            </div>
+          </section>
+          <section id="audit-log-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Audit Log</h2>
+              <button id="audit-log-back" class="subtle-button" type="button">← Settings</button>
+            </div>
+            <div class="settings-section">
+              <div class="setting-row audit-controls">
+                <select id="audit-log-filter" class="setting-input">
+                  <option value="all">All</option>
+                  <option value="crud">CRUD</option>
+                  <option value="notification">Notifications</option>
+                  <option value="export">Exports</option>
+                  <option value="import">Imports</option>
+                  <option value="error">Errors</option>
+                </select>
+                <button id="audit-log-refresh" class="subtle-button" type="button">Refresh</button>
+                <button id="audit-log-copy" class="subtle-button" type="button">Copy JSON</button>
+                <button id="audit-log-clear" class="subtle-button" type="button">Clear</button>
+              </div>
+              <textarea id="audit-log-output" class="audit-log-output" rows="10" readonly></textarea>
+            </div>
+          </section>
+          <section id="automation-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Automation Console</h2>
+              <button id="automation-back" class="subtle-button" type="button">← Settings</button>
+            </div>
+            <div class="settings-section">
+              <div class="automation-guide-row">
+                <div class="sidebar-note setting-help">Paste JSON commands from ChatGPT and run them in bulk.</div>
+                <button id="automation-copy-guide" class="subtle-button automation-guide-button" type="button" title="Copy automation syntax guide">Copy syntax</button>
+              </div>
+              <textarea id="automation-input" class="automation-input" rows="8" placeholder='{"commands":[{"op":"create_task","title":"Follow up client"}]}'></textarea>
+              <div class="setting-row audit-controls">
+                <button id="automation-run" class="subtle-button" type="button">Run</button>
+                <button id="automation-clear" class="subtle-button" type="button">Clear</button>
+              </div>
+              <textarea id="automation-output" class="audit-log-output" rows="8" readonly placeholder="Results will appear here"></textarea>
+            </div>
           </section>
           <section id="workspace-manage-page" class="workspace-panel hidden">
             <div class="panel-header workspace-panel-header">
@@ -444,6 +542,14 @@
               <option value="waiting">Waiting</option>
               <option value="blocked">Blocked</option>
             </select>
+          </label>
+          <label>
+            Assignee
+            <select id="modal-assignee"></select>
+          </label>
+          <label id="modal-assignee-label-row" class="hidden">
+            External assignee
+            <input id="modal-assignee-label" type="text" placeholder="Person name" />
           </label>
           <div class="datetime-row">
             <label>
@@ -692,12 +798,37 @@
           <button id="new-template-btn" class="subtle-button" type="button">New Template</button>
         </div>
         <div class="settings-section">
+          <h3>Collaboration</h3>
+          <div class="setting-row team-add-row">
+            <input id="team-member-name" class="setting-input" type="text" placeholder="Member name" />
+            <input id="team-member-email" class="setting-input" type="email" placeholder="Email (optional)" />
+            <select id="team-member-role" class="setting-input">
+              <option value="member">Member</option>
+              <option value="manager">Manager</option>
+            </select>
+            <button id="team-member-add" class="subtle-button" type="button">Add member</button>
+          </div>
+          <div id="team-member-list" class="workspace-list"></div>
+        </div>
+        <div class="settings-section">
           <h3>Task Types</h3>
           <button id="task-types-open" class="subtle-button" type="button">Manage task types</button>
         </div>
         <div class="settings-section">
           <h3>Stores</h3>
           <button id="store-rules-open" class="subtle-button" type="button">Manage stores</button>
+        </div>
+        <div class="settings-section">
+          <h3>Data</h3>
+          <button id="settings-open-data-transfer" class="subtle-button" type="button">Open Import / Export</button>
+        </div>
+        <div class="settings-section">
+          <h3>Audit</h3>
+          <button id="settings-open-audit-log" class="subtle-button" type="button">Open Audit Log</button>
+        </div>
+        <div class="settings-section">
+          <h3>Automation</h3>
+          <button id="settings-open-automation" class="subtle-button" type="button">Open Automation Console</button>
         </div>
         <div class="modal-actions">
           <button type="button" id="settings-close">Close</button>
@@ -810,34 +941,54 @@
       <div class="modal-card">
         <h2>New Notice</h2>
         <form id="notice-form">
-          <label>
-            Title
-            <input id="notice-title" type="text" required />
-          </label>
-          <label>
-            Type
-            <select id="notice-type"></select>
-          </label>
-          <label>
-            Date
-            <input id="notice-date" type="date" required />
-          </label>
-          <label>
-            Time (optional)
-            <input id="notice-time" type="time" />
-          </label>
-          <label>
-            Repeat
-            <select id="notice-repeat-preset">
-              <option value="none">Does not repeat</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Annually</option>
-              <option value="weekday">Every weekday (Monday to Friday)</option>
-              <option value="custom">Custom...</option>
-            </select>
-          </label>
+          <div id="notice-readonly" class="notice-readonly hidden">
+            <div class="notice-readonly-row">
+              <div class="notice-readonly-label">Title</div>
+              <div id="notice-readonly-title" class="notice-readonly-value"></div>
+            </div>
+            <div class="notice-readonly-row">
+              <div class="notice-readonly-label">Type</div>
+              <div id="notice-readonly-type" class="notice-readonly-value"></div>
+            </div>
+            <div class="notice-readonly-row">
+              <div class="notice-readonly-label">Date &amp; time</div>
+              <div id="notice-readonly-datetime" class="notice-readonly-value"></div>
+            </div>
+            <div class="notice-readonly-row">
+              <div class="notice-readonly-label">Repeat</div>
+              <div id="notice-readonly-repeat" class="notice-readonly-value"></div>
+            </div>
+          </div>
+          <div id="notice-form-fields">
+            <label>
+              Title
+              <input id="notice-title" type="text" required />
+            </label>
+            <label>
+              Type
+              <select id="notice-type"></select>
+            </label>
+            <label>
+              Date
+              <input id="notice-date" type="date" required />
+            </label>
+            <label>
+              Time (optional)
+              <input id="notice-time" type="time" />
+            </label>
+            <label>
+              Repeat
+              <select id="notice-repeat-preset">
+                <option value="none">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Annually</option>
+                <option value="weekday">Every weekday (Monday to Friday)</option>
+                <option value="custom">Custom...</option>
+              </select>
+            </label>
+          </div>
           <div class="modal-actions">
             <button type="submit" id="notice-save">Create</button>
             <button type="button" id="notice-dismiss" class="danger-button hidden">Dismiss</button>
@@ -949,6 +1100,14 @@
           <label>
             Project
             <select id="editor-project"></select>
+          </label>
+          <label>
+            Assignee
+            <select id="editor-assignee"></select>
+          </label>
+          <label id="editor-assignee-label-row" class="hidden">
+            External assignee
+            <input id="editor-assignee-label" type="text" placeholder="Person name" />
           </label>
           <label>
             Priority

@@ -26,6 +26,8 @@ const state = {
   workflowInstanceTasks: localData.workflowInstanceTasks ?? [],
   statuses: localData.statuses ?? [],
   taskTypes: localData.taskTypes ?? [],
+  users: localData.users ?? [],
+  workspaceMemberships: localData.workspaceMemberships ?? [],
   taskSections: localData.taskSections ?? [],
   storeRules: localData.storeRules ?? [],
   tasks: localData.tasks ?? {},
@@ -34,6 +36,7 @@ const state = {
   noticeTypes: localData.noticeTypes ?? [],
   shoppingLists: localData.shoppingLists ?? [],
   shoppingItems: localData.shoppingItems ?? {},
+  auditLog: localData.auditLog ?? [],
   local: {
     localSeq: localData.localSeq ?? 0,
     pendingChanges: localData.pendingChanges ?? []
@@ -57,6 +60,7 @@ const DEFAULT_TASK_TYPE_DEFS = [
   { name: 'General', is_default: 1 },
   { name: 'Bill Due', is_default: 1 }
 ];
+const DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000001';
 
 function normalizeTitleInput(value) {
   const text = String(value ?? '').trim();
@@ -108,6 +112,11 @@ const enableNotificationsBtn = document.getElementById('enable-notifications');
 const notificationStatus = document.getElementById('notification-status');
 const templateListEl = document.getElementById('template-list');
 const newTemplateBtn = document.getElementById('new-template-btn');
+const teamMemberNameInput = document.getElementById('team-member-name');
+const teamMemberEmailInput = document.getElementById('team-member-email');
+const teamMemberRoleSelect = document.getElementById('team-member-role');
+const teamMemberAddBtn = document.getElementById('team-member-add');
+const teamMemberListEl = document.getElementById('team-member-list');
 const taskTypeListEl = document.getElementById('task-type-list');
 const taskTypeNameInput = document.getElementById('task-type-name');
 const taskTypeAddBtn = document.getElementById('task-type-add');
@@ -117,18 +126,25 @@ const storeRuleKeywordsInput = document.getElementById('store-rule-keywords');
 const storeRuleAddBtn = document.getElementById('store-rule-add');
 const projectListEl = document.getElementById('project-list');
 const newProjectBtn = document.getElementById('new-project-btn');
+const projectsOpenBtn = document.getElementById('projects-open');
 const tasksOpenBtn = document.getElementById('tasks-open');
 const workflowsOpenBtn = document.getElementById('workflows-open');
 const workflowListEl = document.getElementById('workflow-list');
 const newWorkflowBtn = document.getElementById('new-workflow-btn');
 const workflowSidebarMenuButton = document.getElementById('workflow-sidebar-menu-button');
+const workflowSidebarMenu = document.getElementById('workflow-sidebar-menu');
+const workflowSidebarManage = document.getElementById('workflow-sidebar-manage');
 const shoppingListListEl = document.getElementById('shopping-list-list');
+const shoppingOpenBtn = document.getElementById('shopping-open');
 const newShoppingListBtn = document.getElementById('new-shopping-list-btn');
 const noticeListEl = document.getElementById('notice-list');
 const newNoticeSidebarBtn = document.getElementById('new-notice-sidebar-btn');
 const noticesOpenBtn = document.getElementById('notices-open');
 const noticesPage = document.getElementById('notices-page');
 const workflowsPage = document.getElementById('workflows-page');
+const dataTransferPage = document.getElementById('data-transfer-page');
+const auditLogPage = document.getElementById('audit-log-page');
+const automationPage = document.getElementById('automation-page');
 const workflowPageTitle = document.getElementById('workflow-page-title');
 const workflowPageSubtitle = document.getElementById('workflow-page-subtitle');
 const workflowMenuButton = document.getElementById('workflow-menu-button');
@@ -147,6 +163,8 @@ const tasksPanel = document.getElementById('tasks-panel');
 const projectsPage = document.getElementById('projects-page');
 const projectsAddBtn = document.getElementById('projects-add-btn');
 const projectsMobileList = document.getElementById('projects-mobile-list');
+const projectFilterButton = document.getElementById('project-filter-button');
+const projectFilterMenu = document.getElementById('project-filter-menu');
 const shoppingPage = document.getElementById('shopping-page');
 const workspaceManagePage = document.getElementById('workspace-manage-page');
 const workspaceArchivedPage = document.getElementById('workspace-archived-page');
@@ -165,6 +183,8 @@ const shoppingListSidebarMenu = document.getElementById('shopping-list-sidebar-m
 const showArchivedShoppingToggle = document.getElementById('show-archived-shopping');
 const shoppingListMenuButton = document.getElementById('shopping-list-menu-button');
 const shoppingListMenu = document.getElementById('shopping-list-menu');
+const shoppingFilterButton = document.getElementById('shopping-filter-button');
+const shoppingFilterMenu = document.getElementById('shopping-filter-menu');
 const shoppingListRename = document.getElementById('shopping-list-rename');
 const shoppingListDelete = document.getElementById('shopping-list-delete');
 const shoppingListModal = document.getElementById('shopping-list-modal');
@@ -184,7 +204,6 @@ const shoppingItemForm = document.getElementById('shopping-item-form');
 const shoppingItemInput = document.getElementById('shopping-item-input');
 const shoppingItemParse = document.getElementById('shopping-item-parse');
 const shoppingItemCancel = document.getElementById('shopping-item-cancel');
-const syncBtn = document.getElementById('sync-btn');
 const syncStatus = document.getElementById('sync-status');
 const appTitle = document.getElementById('app-title');
 const mobileTopMenuButton = document.getElementById('mobile-top-menu-button');
@@ -194,9 +213,6 @@ const mobileMenuSettings = document.getElementById('mobile-menu-settings');
 const mobileMenuProfile = document.getElementById('mobile-menu-profile');
 const mobileMenuWorkspaces = document.getElementById('mobile-menu-workspaces');
 const mobileMenuAuth = document.getElementById('mobile-menu-auth');
-const sidebarEl = document.querySelector('.sidebar');
-const mobileSidebarToggle = document.getElementById('mobile-sidebar-toggle');
-const mobileSidebarBackdrop = document.getElementById('mobile-sidebar-backdrop');
 const mobileNav = document.getElementById('mobile-nav');
 const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-button[data-view]'));
 const mobileNavAdd = document.getElementById('mobile-nav-add');
@@ -220,6 +236,9 @@ const modalDue = document.getElementById('modal-due');
 const modalDesc = document.getElementById('modal-desc');
 const modalCancel = document.getElementById('modal-cancel');
 const modalType = document.getElementById('modal-type');
+const modalAssignee = document.getElementById('modal-assignee');
+const modalAssigneeLabelRow = document.getElementById('modal-assignee-label-row');
+const modalAssigneeLabel = document.getElementById('modal-assignee-label');
 const modalRecurringButton = document.getElementById('modal-recurring-button');
 const modalRecurringSummary = document.getElementById('modal-recurring-summary');
 const modalReminder = document.getElementById('modal-reminder');
@@ -269,6 +288,28 @@ const settingsOpen = document.getElementById('settings-open');
 const profileOpen = document.getElementById('profile-open');
 const settingsModal = document.getElementById('settings-modal');
 const settingsClose = document.getElementById('settings-close');
+const settingsOpenDataTransfer = document.getElementById('settings-open-data-transfer');
+const settingsOpenAuditLog = document.getElementById('settings-open-audit-log');
+const settingsOpenAutomation = document.getElementById('settings-open-automation');
+const dataTransferBack = document.getElementById('data-transfer-back');
+const auditLogBack = document.getElementById('audit-log-back');
+const automationBack = document.getElementById('automation-back');
+const dataExportFormat = document.getElementById('data-export-format');
+const dataExportIncludeAudit = document.getElementById('data-export-include-audit');
+const dataExportDownload = document.getElementById('data-export-download');
+const dataImportFile = document.getElementById('data-import-file');
+const dataImportReplace = document.getElementById('data-import-replace');
+const dataImportApply = document.getElementById('data-import-apply');
+const auditLogFilter = document.getElementById('audit-log-filter');
+const auditLogRefresh = document.getElementById('audit-log-refresh');
+const auditLogCopy = document.getElementById('audit-log-copy');
+const auditLogClear = document.getElementById('audit-log-clear');
+const auditLogOutput = document.getElementById('audit-log-output');
+const automationInput = document.getElementById('automation-input');
+const automationRun = document.getElementById('automation-run');
+const automationClear = document.getElementById('automation-clear');
+const automationOutput = document.getElementById('automation-output');
+const automationCopyGuide = document.getElementById('automation-copy-guide');
 const profileModal = document.getElementById('profile-modal');
 const profileClose = document.getElementById('profile-close');
 const taskTypesOpen = document.getElementById('task-types-open');
@@ -284,7 +325,14 @@ const recurrenceUnit = document.getElementById('recurrence-unit');
 const recurrenceClear = document.getElementById('recurrence-clear');
 const recurrenceCancel = document.getElementById('recurrence-cancel');
 const noticeModal = document.getElementById('notice-modal');
+const noticeModalTitle = noticeModal?.querySelector('h2') ?? null;
 const noticeForm = document.getElementById('notice-form');
+const noticeReadonly = document.getElementById('notice-readonly');
+const noticeReadonlyTitle = document.getElementById('notice-readonly-title');
+const noticeReadonlyType = document.getElementById('notice-readonly-type');
+const noticeReadonlyDatetime = document.getElementById('notice-readonly-datetime');
+const noticeReadonlyRepeat = document.getElementById('notice-readonly-repeat');
+const noticeFormFields = document.getElementById('notice-form-fields');
 const noticeTitle = document.getElementById('notice-title');
 const noticeType = document.getElementById('notice-type');
 const noticeTypeModal = document.getElementById('notice-type-modal');
@@ -365,6 +413,9 @@ const editorCancel = document.getElementById('editor-cancel');
 const editorDelete = document.getElementById('editor-delete');
 const editorClose = document.getElementById('editor-close');
 const editorProject = document.getElementById('editor-project');
+const editorAssignee = document.getElementById('editor-assignee');
+const editorAssigneeLabelRow = document.getElementById('editor-assignee-label-row');
+const editorAssigneeLabel = document.getElementById('editor-assignee-label');
 const editorParent = document.getElementById('editor-parent');
 const templatePrompt = document.getElementById('template-prompt');
 const templatePromptTitle = document.getElementById('template-prompt-title');
@@ -423,6 +474,7 @@ let syncFailureCount = 0;
 let syncCooldownUntil = 0;
 let taskEditorSwapTimer = null;
 let activeNoticeId = null;
+let noticeModalMode = 'create';
 let noticeTypePreviousKey = 'general';
 let shoppingStorePreviousSelection = '';
 let noticeRecurrenceDraft = null;
@@ -458,6 +510,26 @@ let undoToastEl = null;
 
 const SYNC_POLL_INTERVAL_MS = 5000;
 const SYNC_BACKOFF_STEPS_MS = [30000, 60000, 120000, 300000];
+const AUDIT_LOG_MAX_ENTRIES = 2000;
+const AUDIT_LOG_ALLOWED_CATEGORIES = new Set(['crud', 'notification', 'export', 'import', 'error']);
+const NAVIGABLE_VIEWS = new Set([
+  'tasks',
+  'projects',
+  'shopping',
+  'notices',
+  'workflows',
+  'data-transfer',
+  'audit-log',
+  'automation',
+  'workspaces-manage',
+  'workspaces-archived'
+]);
+const NAVIGATION_STATE_VERSION = 1;
+
+let auditLogSanitized = false;
+let navigationHistoryReady = false;
+let navigationHistoryApplying = false;
+let navigationHistoryLastSignature = '';
 
 document.addEventListener('click', () => {
   if (openMenu) {
@@ -649,6 +721,9 @@ archivedWorkspacesBtn?.addEventListener('click', (event) => {
 
 taskFilterButton?.addEventListener('click', (event) => {
   event.stopPropagation();
+  if (isWorkflowChecklistViewActive()) {
+    return;
+  }
   if (openMenu && openMenu !== taskFilterMenu) {
     openMenu.classList.add('hidden');
   }
@@ -669,6 +744,7 @@ taskFilterMenu?.addEventListener('click', (event) => {
   if (!filter) return;
   state.ui = state.ui ?? {};
   state.ui.activeProjectId = filter === 'all' ? null : 'unassigned';
+  clearActiveWorkflowChecklistInstanceId();
   setActiveView('tasks');
   taskFilterMenu.classList.add('hidden');
   openMenu = null;
@@ -775,6 +851,13 @@ taskSortMenu?.addEventListener('click', async (event) => {
   if (!(target instanceof HTMLElement)) return;
   const sortKey = target.dataset.sort;
   if (!sortKey) return;
+  if (sortKey === 'ai-queue' && isWorkflowChecklistViewActive()) {
+    setTaskSortKey('default');
+    taskSortMenu.classList.add('hidden');
+    openMenu = null;
+    render();
+    return;
+  }
   setTaskSortKey(sortKey);
   taskSortMenu.classList.add('hidden');
   openMenu = null;
@@ -866,6 +949,58 @@ noticeSortMenu?.addEventListener('click', (event) => {
   render();
 });
 
+projectFilterButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (openMenu && openMenu !== projectFilterMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (projectFilterMenu.classList.contains('hidden')) {
+    projectFilterMenu.classList.remove('hidden');
+    openMenu = projectFilterMenu;
+  } else {
+    projectFilterMenu.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+projectFilterMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const filterKey = target.dataset.filter;
+  if (!filterKey) return;
+  setProjectFilterKey(filterKey);
+  projectFilterMenu.classList.add('hidden');
+  openMenu = null;
+  render();
+});
+
+shoppingFilterButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (openMenu && openMenu !== shoppingFilterMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (shoppingFilterMenu.classList.contains('hidden')) {
+    shoppingFilterMenu.classList.remove('hidden');
+    openMenu = shoppingFilterMenu;
+  } else {
+    shoppingFilterMenu.classList.add('hidden');
+    openMenu = null;
+  }
+});
+
+shoppingFilterMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const filterKey = target.dataset.filter;
+  if (!filterKey) return;
+  setShoppingFilterKey(filterKey);
+  shoppingFilterMenu.classList.add('hidden');
+  openMenu = null;
+  render();
+});
+
 taskViewSelect?.addEventListener('change', () => {
   setTaskView(taskViewSelect.value);
   render();
@@ -934,6 +1069,18 @@ noticesAddBtn?.addEventListener('click', () => {
   setActiveView('notices');
   openNoticeModal();
 });
+projectsOpenBtn?.addEventListener('click', () => {
+  setActiveView('projects');
+  render();
+});
+shoppingOpenBtn?.addEventListener('click', () => {
+  setShoppingPageMode('list');
+  if (isMobileViewport()) {
+    setMobileShoppingPanelMode('list');
+  }
+  setActiveView('shopping');
+  render();
+});
 workflowsOpenBtn?.addEventListener('click', () => {
   setWorkflowViewMode('runs');
   if (isMobileViewport()) {
@@ -943,16 +1090,9 @@ workflowsOpenBtn?.addEventListener('click', () => {
   render();
 });
 tasksOpenBtn?.addEventListener('click', () => {
+  clearActiveWorkflowChecklistInstanceId();
   setActiveView('tasks');
   render();
-});
-
-mobileSidebarToggle?.addEventListener('click', () => {
-  setMobileSidebarOpen(!document.body.classList.contains('mobile-sidebar-open'));
-});
-
-mobileSidebarBackdrop?.addEventListener('click', () => {
-  setMobileSidebarOpen(false);
 });
 
 mobileNavButtons.forEach((button) => {
@@ -967,7 +1107,6 @@ mobileNavButtons.forEach((button) => {
       setMobileShoppingPanelMode('list');
     }
     setActiveView(view);
-    setMobileSidebarOpen(false);
     render();
   });
 });
@@ -1050,22 +1189,6 @@ mobileCreateShopping?.addEventListener('click', () => {
   runMobileCreateAction('shopping');
 });
 
-sidebarEl?.addEventListener('click', (event) => {
-  if (!isMobileViewport()) return;
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) return;
-  const button = target.closest('button');
-  if (!button) return;
-  if (
-    button.classList.contains('menu-icon') ||
-    button.classList.contains('workspace-menu-button') ||
-    button.closest('.workspace-menu')
-  ) {
-    return;
-  }
-  setMobileSidebarOpen(false);
-});
-
 newWorkflowBtn?.addEventListener('click', () => {
   openWorkflowModal();
 });
@@ -1109,7 +1232,14 @@ workflowDeleteBtn?.addEventListener('click', () => {
 });
 
 workflowInstanceAddBtn?.addEventListener('click', () => {
-  setWorkflowViewMode('manage');
+  const isManageView = !isMobileViewport() && getActiveView() === 'workflows' && getWorkflowViewMode() === 'manage';
+  if (isManageView) {
+    exitWorkflowManageView();
+    render();
+    return;
+  }
+  enterWorkflowManageView();
+  render();
   openWorkflowModal();
 });
 
@@ -1173,6 +1303,14 @@ noticeRecurrenceForm?.addEventListener('submit', (event) => {
 
 noticeForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (noticeModalMode === 'view') {
+    const existing = activeNoticeId ? (state.notices ?? []).find(item => item.id === activeNoticeId) : null;
+    if (!existing) return;
+    setNoticeModalMode('edit', existing);
+    noticeTitle.focus();
+    noticeTitle.select();
+    return;
+  }
   const title = noticeTitle.value.trim();
   if (!title) return;
   const noticeDateValue = noticeDate?.value?.trim() ?? '';
@@ -1411,16 +1549,26 @@ shoppingListSidebarMenu?.addEventListener('click', (event) => {
 
 workflowSidebarMenuButton?.addEventListener('click', (event) => {
   event.stopPropagation();
-  if (openMenu) {
+  if (openMenu && openMenu !== workflowSidebarMenu) {
     openMenu.classList.add('hidden');
+  }
+  if (workflowSidebarMenu?.classList.contains('hidden')) {
+    workflowSidebarMenu.classList.remove('hidden');
+    openMenu = workflowSidebarMenu;
+  } else {
+    workflowSidebarMenu?.classList.add('hidden');
     openMenu = null;
   }
-  setWorkflowViewMode(isMobileViewport() ? 'runs' : 'manage');
-  if (isMobileViewport()) {
-    setMobileWorkflowPanelMode('list');
-  }
-  setWorkflowInstanceFilter('open');
-  setActiveView('workflows');
+});
+
+workflowSidebarMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+
+workflowSidebarManage?.addEventListener('click', () => {
+  workflowSidebarMenu?.classList.add('hidden');
+  openMenu = null;
+  enterWorkflowManageView();
   render();
 });
 
@@ -1448,6 +1596,1213 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function ensureAuditLogArray() {
+  if (!Array.isArray(state.auditLog)) {
+    state.auditLog = [];
+  }
+  if (!auditLogSanitized) {
+    state.auditLog = state.auditLog.filter(entry => AUDIT_LOG_ALLOWED_CATEGORIES.has(String(entry?.category ?? '').toLowerCase()));
+    auditLogSanitized = true;
+  }
+  return state.auditLog;
+}
+
+function sanitizeAuditValue(value, depth = 0) {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (typeof value === 'string') {
+    return value.length > 1200 ? `${value.slice(0, 1200)}...` : value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (depth >= 4) return '[max-depth]';
+  if (Array.isArray(value)) {
+    return value.slice(0, 40).map(item => sanitizeAuditValue(item, depth + 1));
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value).slice(0, 40);
+    const next = {};
+    entries.forEach(([key, item]) => {
+      next[key] = sanitizeAuditValue(item, depth + 1);
+    });
+    return next;
+  }
+  return String(value);
+}
+
+function appendAuditEvent(entry = {}) {
+  const list = ensureAuditLogArray();
+  const category = String(entry.category ?? '').toLowerCase();
+  if (!AUDIT_LOG_ALLOWED_CATEGORIES.has(category)) {
+    return null;
+  }
+  const event = {
+    id: createId(),
+    ts: nowIso(),
+    source: entry.source ?? 'app',
+    category,
+    event: entry.event ?? 'unknown',
+    workspace_id: entry.workspace_id ?? state.workspace?.id ?? null,
+    view: entry.view ?? getActiveView(),
+    entity_type: entry.entity_type ?? null,
+    entity_id: entry.entity_id ?? null,
+    data: sanitizeAuditValue(entry.data ?? null)
+  };
+  list.push(event);
+  const extra = list.length - AUDIT_LOG_MAX_ENTRIES;
+  if (extra > 0) {
+    list.splice(0, extra);
+  }
+  if ((settingsModal && !settingsModal.classList.contains('hidden')) || getActiveView() === 'audit-log') {
+    renderAuditLogOutput();
+  }
+  return event;
+}
+
+function appendCrudEvent(entry = {}) {
+  appendAuditEvent({
+    ...entry,
+    category: 'crud'
+  });
+}
+
+function getAuditFilterValue() {
+  return auditLogFilter?.value ?? 'all';
+}
+
+function getFilteredAuditLogEntries() {
+  const entries = ensureAuditLogArray();
+  const filter = getAuditFilterValue();
+  if (filter === 'all') return entries;
+  return entries.filter(entry => entry.category === filter);
+}
+
+function renderAuditLogOutput() {
+  if (!auditLogOutput) return;
+  const entries = getFilteredAuditLogEntries();
+  auditLogOutput.value = JSON.stringify(entries, null, 2);
+}
+
+async function copyAuditLogOutput() {
+  if (!auditLogOutput) return;
+  const content = auditLogOutput.value ?? '';
+  if (!content.trim()) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(content);
+    return;
+  }
+  auditLogOutput.focus();
+  auditLogOutput.select();
+  document.execCommand('copy');
+}
+
+async function copyTextToClipboard(value) {
+  const text = String(value ?? '');
+  if (!text) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const helper = document.createElement('textarea');
+  helper.value = text;
+  helper.setAttribute('readonly', '');
+  helper.style.position = 'fixed';
+  helper.style.opacity = '0';
+  helper.style.pointerEvents = 'none';
+  document.body.appendChild(helper);
+  helper.focus();
+  helper.select();
+  document.execCommand('copy');
+  helper.remove();
+}
+
+function clearAuditLogOutput() {
+  const list = ensureAuditLogArray();
+  list.length = 0;
+  renderAuditLogOutput();
+}
+
+function sanitizeExportFilenamePart(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return 'workspace';
+  return text.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'workspace';
+}
+
+function downloadExportBlob(content, mimeType, fileName) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function getWorkspaceExportPayload(workspaceId, options = {}) {
+  const includeAudit = options.includeAudit !== false;
+  if (!workspaceId) return null;
+  const workspace = (state.workspaces ?? []).find(item => item.id === workspaceId) ?? null;
+  if (!workspace) return null;
+
+  const tasks = Object.values(state.tasks ?? {})
+    .filter(task => task.workspace_id === workspaceId)
+    .map(task => ({ ...task }));
+  const taskIdSet = new Set(tasks.map(task => task.id));
+  const taskDependencies = (state.taskDependencies ?? [])
+    .filter(dep => taskIdSet.has(dep.task_id))
+    .map(dep => ({ ...dep }));
+
+  const projects = (state.projects ?? [])
+    .filter(project => project.workspace_id === workspaceId)
+    .map(project => ({ ...project }));
+  const statuses = (state.statuses ?? [])
+    .filter(status => status.workspace_id === workspaceId)
+    .map(status => ({ ...status }));
+  const taskTypes = (state.taskTypes ?? [])
+    .filter(type => type.workspace_id === workspaceId)
+    .map(type => ({ ...type }));
+  const taskSections = (state.taskSections ?? [])
+    .filter(section => section.workspace_id === workspaceId)
+    .map(section => ({ ...section }));
+  const templates = (state.templates ?? [])
+    .filter(template => template.workspace_id === workspaceId)
+    .map(template => ({ ...template }));
+  const workspaceMemberships = (state.workspaceMemberships ?? [])
+    .filter(item => item.workspace_id === workspaceId)
+    .map(item => ({ ...item }));
+  const userIds = new Set(workspaceMemberships.map(item => item.user_id));
+  tasks.forEach((task) => {
+    if (task.assignee_user_id) userIds.add(task.assignee_user_id);
+  });
+  const users = (state.users ?? [])
+    .filter(user => userIds.has(user.id))
+    .map(user => ({ ...user }));
+  const notices = (state.notices ?? [])
+    .filter(notice => notice.workspace_id === workspaceId)
+    .map(notice => ({ ...notice }));
+  const noticeTypes = (state.noticeTypes ?? [])
+    .filter(type => type.workspace_id === workspaceId)
+    .map(type => ({ ...type }));
+  const storeRules = (state.storeRules ?? [])
+    .filter(rule => rule.workspace_id === workspaceId)
+    .map(rule => ({ ...rule }));
+
+  const shoppingLists = (state.shoppingLists ?? [])
+    .filter(list => list.workspace_id === workspaceId)
+    .map(list => ({ ...list }));
+  const shoppingListIdSet = new Set(shoppingLists.map(list => list.id));
+  const shoppingItems = Object.values(state.shoppingItems ?? {})
+    .filter(item => shoppingListIdSet.has(item.list_id))
+    .map(item => ({ ...item }));
+
+  const workflows = (state.workflows ?? [])
+    .filter(workflow => workflow.workspace_id === workspaceId)
+    .map(workflow => ({ ...workflow }));
+  const workflowIdSet = new Set(workflows.map(workflow => workflow.id));
+  const workflowVariants = (state.workflowVariants ?? [])
+    .filter(variant => workflowIdSet.has(variant.workflow_id))
+    .map(variant => ({ ...variant }));
+  const workflowVariantIdSet = new Set(workflowVariants.map(variant => variant.id));
+  const workflowPhases = (state.workflowPhases ?? [])
+    .filter(phase => workflowIdSet.has(phase.workflow_id))
+    .map(phase => ({ ...phase }));
+  const workflowPhaseIdSet = new Set(workflowPhases.map(phase => phase.id));
+  const workflowVariantPhases = (state.workflowVariantPhases ?? [])
+    .filter(link => workflowVariantIdSet.has(link.variant_id))
+    .map(link => ({ ...link }));
+  const workflowPhaseTasks = (state.workflowPhaseTasks ?? [])
+    .filter(task => workflowPhaseIdSet.has(task.phase_id))
+    .map(task => ({ ...task }));
+  const workflowPatterns = (state.workflowPatterns ?? [])
+    .filter(pattern => pattern.workspace_id === workspaceId)
+    .map(pattern => ({ ...pattern }));
+  const workflowPatternIdSet = new Set(workflowPatterns.map(pattern => pattern.id));
+  const workflowPatternTasks = (state.workflowPatternTasks ?? [])
+    .filter(task => workflowPatternIdSet.has(task.pattern_id))
+    .map(task => ({ ...task }));
+  const workflowInstances = (state.workflowInstances ?? [])
+    .filter(instance => workflowIdSet.has(instance.workflow_id))
+    .map(instance => ({ ...instance }));
+  const workflowInstanceIdSet = new Set(workflowInstances.map(instance => instance.id));
+  const workflowInstanceTasks = (state.workflowInstanceTasks ?? [])
+    .filter(link => workflowInstanceIdSet.has(link.workflow_instance_id))
+    .map(link => ({ ...link }));
+
+  const auditLog = includeAudit
+    ? ensureAuditLogArray()
+      .filter(entry => !entry.workspace_id || entry.workspace_id === workspaceId)
+      .map(entry => ({ ...entry }))
+    : [];
+
+  return {
+    meta: {
+      format_version: 1,
+      exported_at: nowIso(),
+      workspace_id: workspace.id,
+      workspace_name: workspace.name,
+      includes_audit_log: includeAudit
+    },
+    workspace: { ...workspace },
+    projects,
+    statuses,
+    taskTypes,
+    taskSections,
+    tasks,
+    taskDependencies,
+    templates,
+    users,
+    workspaceMemberships,
+    workflows,
+    workflowVariants,
+    workflowPhases,
+    workflowVariantPhases,
+    workflowPhaseTasks,
+    workflowPatterns,
+    workflowPatternTasks,
+    workflowInstances,
+    workflowInstanceTasks,
+    notices,
+    noticeTypes,
+    storeRules,
+    shoppingLists,
+    shoppingItems,
+    auditLog
+  };
+}
+
+function toCsvValue(value) {
+  const text = value === undefined || value === null ? '' : String(value);
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function buildExportCsv(payload) {
+  const columns = [
+    'entity_type',
+    'id',
+    'workspace_id',
+    'name',
+    'title',
+    'status',
+    'priority',
+    'parent_id',
+    'project_id',
+    'type_label',
+    'start_at',
+    'due_at',
+    'notify_at',
+    'archived',
+    'created_at',
+    'updated_at',
+    'raw_json'
+  ];
+  const rows = [];
+  const pushRows = (entityType, items = [], mapper = () => ({})) => {
+    items.forEach((item) => {
+      const base = mapper(item) ?? {};
+      rows.push({
+        entity_type: entityType,
+        id: item?.id ?? '',
+        workspace_id: item?.workspace_id ?? payload?.workspace?.id ?? '',
+        name: '',
+        title: '',
+        status: '',
+        priority: '',
+        parent_id: '',
+        project_id: '',
+        type_label: '',
+        start_at: '',
+        due_at: '',
+        notify_at: '',
+        archived: '',
+        created_at: item?.created_at ?? '',
+        updated_at: item?.updated_at ?? '',
+        ...base,
+        raw_json: JSON.stringify(item ?? {})
+      });
+    });
+  };
+
+  pushRows('project', payload.projects, item => ({ name: item.name, archived: item.archived ? 1 : 0 }));
+  pushRows('status', payload.statuses, item => ({ name: item.label, status: item.key }));
+  pushRows('task_type', payload.taskTypes, item => ({ name: item.name, archived: item.archived ? 1 : 0 }));
+  pushRows('task_section', payload.taskSections, item => ({ name: item.label }));
+  pushRows('task', payload.tasks, item => ({
+    title: item.title,
+    status: item.status,
+    priority: item.priority,
+    parent_id: item.parent_id ?? '',
+    project_id: item.project_id ?? '',
+    type_label: item.type_label ?? '',
+    start_at: item.start_at ?? '',
+    due_at: item.due_at ?? '',
+    archived: item.archived ? 1 : 0
+  }));
+  pushRows('task_dependency', payload.taskDependencies, item => ({
+    title: item.task_id,
+    parent_id: item.depends_on_id
+  }));
+  pushRows('template', payload.templates, item => ({
+    name: item.name,
+    project_id: item.project_id ?? '',
+    due_at: item.next_event_date ?? '',
+    archived: item.archived ? 1 : 0
+  }));
+  pushRows('user', payload.users, item => ({
+    name: item.display_name ?? '',
+    status: item.email ?? '',
+    archived: item.archived ? 1 : 0
+  }));
+  pushRows('workspace_membership', payload.workspaceMemberships, item => ({
+    title: item.user_id ?? '',
+    status: item.role ?? '',
+    archived: item.archived ? 1 : 0
+  }));
+  pushRows('workflow', payload.workflows, item => ({ name: item.name, archived: item.archived ? 1 : 0 }));
+  pushRows('workflow_type', payload.workflowVariants, item => ({ name: item.name }));
+  pushRows('workflow_phase', payload.workflowPhases, item => ({ name: item.name }));
+  pushRows('workflow_type_phase', payload.workflowVariantPhases, item => ({
+    parent_id: item.variant_id ?? '',
+    project_id: item.phase_id ?? ''
+  }));
+  pushRows('workflow_phase_item', payload.workflowPhaseTasks, item => ({ title: item.title, status: item.item_kind ?? '' }));
+  pushRows('workflow_pattern', payload.workflowPatterns, item => ({ name: item.name }));
+  pushRows('workflow_pattern_item', payload.workflowPatternTasks, item => ({ title: item.title, status: item.item_kind ?? '' }));
+  pushRows('workflow_instance', payload.workflowInstances, item => ({ title: item.title, status: item.status }));
+  pushRows('workflow_instance_task', payload.workflowInstanceTasks, item => ({ title: item.task_id, status: item.dismissed_at ? 'dismissed' : 'active' }));
+  pushRows('notice_type', payload.noticeTypes, item => ({ name: item.label, status: item.key }));
+  pushRows('notice', payload.notices, item => ({
+    title: item.title,
+    status: item.notice_type ?? '',
+    notify_at: item.notify_at ?? '',
+    archived: item.dismissed_at ? 1 : 0
+  }));
+  pushRows('store_rule', payload.storeRules, item => ({ name: item.store_name, archived: item.archived ? 1 : 0 }));
+  pushRows('shopping_list', payload.shoppingLists, item => ({ name: item.name, archived: item.archived ? 1 : 0 }));
+  pushRows('shopping_item', payload.shoppingItems, item => ({ title: item.name, status: item.is_checked ? 'checked' : 'open', parent_id: item.list_id ?? '' }));
+  pushRows('audit_event', payload.auditLog, item => ({ title: item.event, status: item.category, notify_at: item.ts ?? '' }));
+
+  const lines = [columns.join(',')];
+  rows.forEach((row) => {
+    lines.push(columns.map(column => toCsvValue(row[column])).join(','));
+  });
+  return lines.join('\n');
+}
+
+function buildExportMarkdown(payload) {
+  const tasks = [...(payload.tasks ?? [])].sort((a, b) => {
+    const aSort = Number.isFinite(a.sort_order) ? a.sort_order : 0;
+    const bSort = Number.isFinite(b.sort_order) ? b.sort_order : 0;
+    return aSort - bSort || String(a.title ?? '').localeCompare(String(b.title ?? ''));
+  });
+  const projects = [...(payload.projects ?? [])].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+  const notices = [...(payload.notices ?? [])].sort((a, b) => String(a.notify_at ?? '').localeCompare(String(b.notify_at ?? '')));
+  const shoppingLists = [...(payload.shoppingLists ?? [])].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+  const shoppingItemsByList = new Map();
+  (payload.shoppingItems ?? []).forEach((item) => {
+    if (!shoppingItemsByList.has(item.list_id)) shoppingItemsByList.set(item.list_id, []);
+    shoppingItemsByList.get(item.list_id).push(item);
+  });
+
+  const lines = [
+    '# BrianHub Export',
+    '',
+    `- Exported: ${payload.meta?.exported_at ?? nowIso()}`,
+    `- Workspace: ${payload.workspace?.name ?? 'Unknown'}`,
+    `- Includes audit log: ${payload.meta?.includes_audit_log ? 'Yes' : 'No'}`,
+    ''
+  ];
+
+  lines.push(`## Tasks (${tasks.length})`);
+  if (!tasks.length) {
+    lines.push('- None');
+  } else {
+    tasks.forEach((task) => {
+      const done = isDoneStatusKey(task.status ?? getDefaultStatusKey());
+      const check = done ? 'x' : ' ';
+      const bits = [];
+      if (task.status) bits.push(`status: ${task.status}`);
+      if (task.priority) bits.push(`priority: ${task.priority}`);
+      if (task.due_at) bits.push(`due: ${task.due_at}`);
+      lines.push(`- [${check}] ${task.title} (${bits.join(' · ')})`);
+    });
+  }
+  lines.push('');
+
+  lines.push(`## Projects (${projects.length})`);
+  if (!projects.length) {
+    lines.push('- None');
+  } else {
+    projects.forEach((project) => {
+      lines.push(`- ${project.name}${project.archived ? ' (archived)' : ''}`);
+    });
+  }
+  lines.push('');
+
+  lines.push(`## Notices (${notices.length})`);
+  if (!notices.length) {
+    lines.push('- None');
+  } else {
+    notices.forEach((notice) => {
+      lines.push(`- ${notice.title} · ${notice.notify_at ?? 'No date'}${notice.dismissed_at ? ' (dismissed)' : ''}`);
+    });
+  }
+  lines.push('');
+
+  lines.push(`## Shopping Lists (${shoppingLists.length})`);
+  if (!shoppingLists.length) {
+    lines.push('- None');
+  } else {
+    shoppingLists.forEach((list) => {
+      const items = shoppingItemsByList.get(list.id) ?? [];
+      const completeCount = items.filter(item => item.is_checked).length;
+      lines.push(`- ${list.name}${list.archived ? ' (archived)' : ''} · ${completeCount}/${items.length} complete`);
+    });
+  }
+  lines.push('');
+
+  lines.push(`## Workflows (${(payload.workflows ?? []).length})`);
+  lines.push(`- Blueprints: ${(payload.workflows ?? []).length}`);
+  lines.push(`- Types: ${(payload.workflowVariants ?? []).length}`);
+  lines.push(`- Phases: ${(payload.workflowPhases ?? []).length}`);
+  lines.push(`- Patterns: ${(payload.workflowPatterns ?? []).length}`);
+  lines.push(`- Instances: ${(payload.workflowInstances ?? []).length}`);
+  lines.push('');
+
+  if (payload.meta?.includes_audit_log) {
+    lines.push(`## Audit Events (${(payload.auditLog ?? []).length})`);
+    const latest = [...(payload.auditLog ?? [])]
+      .sort((a, b) => String(b.ts ?? '').localeCompare(String(a.ts ?? '')))
+      .slice(0, 20);
+    if (!latest.length) {
+      lines.push('- None');
+    } else {
+      latest.forEach((entry) => {
+        lines.push(`- ${entry.ts ?? ''} · ${entry.category}/${entry.event}`);
+      });
+    }
+    lines.push('');
+  }
+
+  lines.push('---');
+  lines.push('Machine payload available in JSON export.');
+  return lines.join('\n');
+}
+
+function escapeHtmlText(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function openPdfExportWindow(payload, filename) {
+  const markdown = buildExportMarkdown(payload);
+  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  if (!popup) return false;
+  const title = escapeHtmlText(filename);
+  const body = escapeHtmlText(markdown);
+  popup.document.open();
+  popup.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${title}</title>
+    <style>
+      body { margin: 0; background: #10151d; color: #e6edf8; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+      h1 { font-size: 20px; margin: 0 0 16px; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+      pre { white-space: pre-wrap; word-break: break-word; line-height: 1.45; font-size: 12px; margin: 0; }
+      @media print {
+        body { background: white; color: black; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtmlText(payload.workspace?.name ?? 'Workspace Export')}</h1>
+      <pre>${body}</pre>
+    </main>
+    <script>setTimeout(function(){ window.focus(); window.print(); }, 250);<\/script>
+  </body>
+</html>`);
+  popup.document.close();
+  return true;
+}
+
+function exportCurrentWorkspaceData() {
+  if (!state.workspace) {
+    alert('Select a workspace before exporting.');
+    return;
+  }
+  const format = String(dataExportFormat?.value ?? 'json').toLowerCase();
+  const includeAudit = Boolean(dataExportIncludeAudit?.checked);
+  const payload = getWorkspaceExportPayload(state.workspace.id, { includeAudit });
+  if (!payload) {
+    alert('Unable to prepare export payload.');
+    return;
+  }
+
+  const workspaceSlug = sanitizeExportFilenamePart(payload.workspace?.name ?? 'workspace');
+  const dateStamp = nowIso().slice(0, 10);
+  const baseName = `brianhub-${workspaceSlug}-${dateStamp}`;
+
+  if (format === 'json') {
+    const content = JSON.stringify(payload, null, 2);
+    downloadExportBlob(content, 'application/json;charset=utf-8', `${baseName}.json`);
+  } else if (format === 'csv') {
+    const content = buildExportCsv(payload);
+    downloadExportBlob(content, 'text/csv;charset=utf-8', `${baseName}.csv`);
+  } else if (format === 'markdown' || format === 'md') {
+    const content = buildExportMarkdown(payload);
+    downloadExportBlob(content, 'text/markdown;charset=utf-8', `${baseName}.md`);
+  } else if (format === 'pdf') {
+    const opened = openPdfExportWindow(payload, `${baseName}.pdf`);
+    if (!opened) {
+      alert('Popup blocked. Allow popups to export PDF.');
+      return;
+    }
+  } else {
+    alert(`Unsupported export format: ${format}`);
+    return;
+  }
+
+  appendAuditEvent({
+    source: 'ui',
+    category: 'export',
+    event: 'workspace_exported',
+    data: {
+      format,
+      include_audit_log: includeAudit,
+      workspace_id: payload.workspace?.id ?? null
+    }
+  });
+}
+
+function cloneArrayOfObjects(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(item => item && typeof item === 'object')
+    .map(item => ({ ...item }));
+}
+
+function cloneTasksMap(value) {
+  if (!value || typeof value !== 'object') return {};
+  const entries = Array.isArray(value)
+    ? value.map(item => [item?.id, item])
+    : Object.entries(value);
+  return Object.fromEntries(
+    entries
+      .filter(([id, item]) => id && item && typeof item === 'object')
+      .map(([id, item]) => [id, { ...item }])
+  );
+}
+
+function parseWorkspaceImportPayload(raw) {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Invalid import payload.');
+  }
+  const workspace = raw.workspace && typeof raw.workspace === 'object' ? { ...raw.workspace } : null;
+  if (!workspace?.id) {
+    throw new Error('Import payload is missing workspace.id.');
+  }
+
+  const tasksMap = cloneTasksMap(raw.tasks);
+  const taskIdSet = new Set(Object.keys(tasksMap));
+  const shoppingLists = cloneArrayOfObjects(raw.shoppingLists);
+  const shoppingListIdSet = new Set(shoppingLists.map(list => list.id).filter(Boolean));
+  const workflows = cloneArrayOfObjects(raw.workflows);
+  const workflowIdSet = new Set(workflows.map(item => item.id).filter(Boolean));
+  const users = cloneArrayOfObjects(raw.users)
+    .filter(item => item.id && (item.org_id ? item.org_id === workspace.org_id : true));
+  const userIdSet = new Set(users.map(item => item.id));
+  const workspaceMemberships = cloneArrayOfObjects(raw.workspaceMemberships)
+    .filter(item => item.workspace_id === workspace.id && userIdSet.has(item.user_id));
+  const workflowVariants = cloneArrayOfObjects(raw.workflowVariants);
+  const workflowVariantIdSet = new Set(workflowVariants.map(item => item.id).filter(Boolean));
+  const workflowPhases = cloneArrayOfObjects(raw.workflowPhases);
+  const workflowPhaseIdSet = new Set(workflowPhases.map(item => item.id).filter(Boolean));
+  const workflowPatterns = cloneArrayOfObjects(raw.workflowPatterns);
+  const workflowPatternIdSet = new Set(workflowPatterns.map(item => item.id).filter(Boolean));
+  const workflowInstances = cloneArrayOfObjects(raw.workflowInstances);
+  const workflowInstanceIdSet = new Set(workflowInstances.map(item => item.id).filter(Boolean));
+
+  return {
+    workspace,
+    projects: cloneArrayOfObjects(raw.projects),
+    statuses: cloneArrayOfObjects(raw.statuses),
+    taskTypes: cloneArrayOfObjects(raw.taskTypes),
+    taskSections: cloneArrayOfObjects(raw.taskSections),
+    tasks: tasksMap,
+    taskDependencies: cloneArrayOfObjects(raw.taskDependencies)
+      .filter(dep => taskIdSet.has(dep.task_id) && taskIdSet.has(dep.depends_on_id)),
+    templates: cloneArrayOfObjects(raw.templates),
+    users,
+    workspaceMemberships,
+    workflows,
+    workflowVariants: workflowVariants.filter(item => workflowIdSet.has(item.workflow_id)),
+    workflowPhases: workflowPhases.filter(item => workflowIdSet.has(item.workflow_id)),
+    workflowVariantPhases: cloneArrayOfObjects(raw.workflowVariantPhases)
+      .filter(item => workflowVariantIdSet.has(item.variant_id) && workflowPhaseIdSet.has(item.phase_id)),
+    workflowPhaseTasks: cloneArrayOfObjects(raw.workflowPhaseTasks)
+      .filter(item => workflowPhaseIdSet.has(item.phase_id)),
+    workflowPatterns: workflowPatterns.filter(item => item.workspace_id === workspace.id),
+    workflowPatternTasks: cloneArrayOfObjects(raw.workflowPatternTasks)
+      .filter(item => workflowPatternIdSet.has(item.pattern_id)),
+    workflowInstances: workflowInstances.filter(item => workflowIdSet.has(item.workflow_id)),
+    workflowInstanceTasks: cloneArrayOfObjects(raw.workflowInstanceTasks)
+      .filter(item => workflowInstanceIdSet.has(item.workflow_instance_id) && taskIdSet.has(item.task_id)),
+    notices: cloneArrayOfObjects(raw.notices),
+    noticeTypes: cloneArrayOfObjects(raw.noticeTypes),
+    storeRules: cloneArrayOfObjects(raw.storeRules),
+    shoppingLists,
+    shoppingItems: cloneArrayOfObjects(raw.shoppingItems)
+      .filter(item => shoppingListIdSet.has(item.list_id)),
+    auditLog: cloneArrayOfObjects(raw.auditLog)
+  };
+}
+
+function applyImportedWorkspacePayload(payload, options = {}) {
+  const replaceExisting = options.replaceExisting !== false;
+  const workspaceId = payload.workspace.id;
+
+  const existingWorkspace = (state.workspaces ?? []).find(item => item.id === workspaceId);
+  const existingWorkspaceWorkflowIds = new Set(
+    (state.workflows ?? [])
+      .filter(item => item.workspace_id === workspaceId)
+      .map(item => item.id)
+  );
+  const existingWorkspaceTaskIds = new Set(
+    Object.values(state.tasks ?? {})
+      .filter(task => task.workspace_id === workspaceId)
+      .map(task => task.id)
+  );
+  const existingWorkspaceListIds = new Set(
+    (state.shoppingLists ?? [])
+      .filter(list => list.workspace_id === workspaceId)
+      .map(list => list.id)
+  );
+
+  const normalizedWorkspace = normalizeWorkspace({ ...existingWorkspace, ...payload.workspace });
+  const nextWorkspaces = (state.workspaces ?? []).filter(item => item.id !== workspaceId);
+  state.workspaces = [...nextWorkspaces, normalizedWorkspace];
+
+  const keepByWorkspace = (items = [], workspaceKey = 'workspace_id') => {
+    if (!replaceExisting) return [...items];
+    return items.filter(item => item[workspaceKey] !== workspaceId);
+  };
+
+  state.projects = [
+    ...keepByWorkspace(state.projects),
+    ...payload.projects.map(normalizeProject)
+  ];
+  state.statuses = [
+    ...keepByWorkspace(state.statuses),
+    ...payload.statuses.map(normalizeStatus)
+  ];
+  state.taskTypes = [
+    ...keepByWorkspace(state.taskTypes),
+    ...payload.taskTypes.map(normalizeTaskType)
+  ];
+  state.taskSections = [
+    ...keepByWorkspace(state.taskSections),
+    ...payload.taskSections
+  ];
+  state.templates = [
+    ...keepByWorkspace(state.templates),
+    ...payload.templates.map(normalizeTemplate)
+  ];
+  const importedUsersById = new Map(payload.users.map(user => [user.id, normalizeUser(user)]));
+  state.users = [
+    ...(state.users ?? []).filter(user => !importedUsersById.has(user.id)),
+    ...Array.from(importedUsersById.values())
+  ];
+
+  if (replaceExisting) {
+    state.workspaceMemberships = (state.workspaceMemberships ?? [])
+      .filter(item => item.workspace_id !== workspaceId);
+  }
+  const membershipById = new Map((state.workspaceMemberships ?? []).map(item => [item.id, item]));
+  payload.workspaceMemberships.map(normalizeWorkspaceMembership).forEach((membership) => {
+    membershipById.set(membership.id, membership);
+  });
+  state.workspaceMemberships = Array.from(membershipById.values());
+  state.workflows = [
+    ...keepByWorkspace(state.workflows),
+    ...payload.workflows.map(normalizeWorkflow)
+  ];
+
+  if (replaceExisting) {
+    const existingVariantIds = new Set(
+      (state.workflowVariants ?? [])
+        .filter(item => existingWorkspaceWorkflowIds.has(item.workflow_id))
+        .map(item => item.id)
+    );
+    const existingPhaseIds = new Set(
+      (state.workflowPhases ?? [])
+        .filter(item => existingWorkspaceWorkflowIds.has(item.workflow_id))
+        .map(item => item.id)
+    );
+    const existingInstanceIds = new Set(
+      (state.workflowInstances ?? [])
+        .filter(item => existingWorkspaceWorkflowIds.has(item.workflow_id))
+        .map(item => item.id)
+    );
+    const existingPatternIds = new Set(
+      (state.workflowPatterns ?? [])
+        .filter(item => item.workspace_id === workspaceId)
+        .map(item => item.id)
+    );
+    state.workflowVariants = (state.workflowVariants ?? []).filter(item => !existingWorkspaceWorkflowIds.has(item.workflow_id));
+    state.workflowPhases = (state.workflowPhases ?? []).filter(item => !existingWorkspaceWorkflowIds.has(item.workflow_id));
+    state.workflowVariantPhases = (state.workflowVariantPhases ?? []).filter(item => !existingVariantIds.has(item.variant_id));
+    state.workflowPhaseTasks = (state.workflowPhaseTasks ?? []).filter(item => !existingPhaseIds.has(item.phase_id));
+    state.workflowPatterns = (state.workflowPatterns ?? []).filter(item => item.workspace_id !== workspaceId);
+    state.workflowPatternTasks = (state.workflowPatternTasks ?? []).filter(item => !existingPatternIds.has(item.pattern_id));
+    state.workflowInstances = (state.workflowInstances ?? []).filter(item => !existingWorkspaceWorkflowIds.has(item.workflow_id));
+    state.workflowInstanceTasks = (state.workflowInstanceTasks ?? []).filter(item => !existingInstanceIds.has(item.workflow_instance_id));
+  }
+
+  state.workflowVariants = [...(state.workflowVariants ?? []), ...payload.workflowVariants.map(normalizeWorkflowVariant)];
+  state.workflowPhases = [...(state.workflowPhases ?? []), ...payload.workflowPhases.map(normalizeWorkflowPhase)];
+  state.workflowVariantPhases = [...(state.workflowVariantPhases ?? []), ...payload.workflowVariantPhases];
+  state.workflowPhaseTasks = [...(state.workflowPhaseTasks ?? []), ...payload.workflowPhaseTasks.map(normalizeWorkflowPhaseTask)];
+  state.workflowPatterns = [...(state.workflowPatterns ?? []), ...payload.workflowPatterns.map(normalizeWorkflowPattern)];
+  state.workflowPatternTasks = [...(state.workflowPatternTasks ?? []), ...payload.workflowPatternTasks.map(normalizeWorkflowPatternTask)];
+  state.workflowInstances = [...(state.workflowInstances ?? []), ...payload.workflowInstances.map(normalizeWorkflowInstance)];
+  state.workflowInstanceTasks = [...(state.workflowInstanceTasks ?? []), ...payload.workflowInstanceTasks.map(normalizeWorkflowInstanceTaskLink)];
+
+  state.notices = [
+    ...keepByWorkspace(state.notices),
+    ...payload.notices.map(normalizeNotice)
+  ];
+  state.noticeTypes = [
+    ...keepByWorkspace(state.noticeTypes),
+    ...payload.noticeTypes.map(normalizeNoticeType)
+  ];
+  state.storeRules = [
+    ...keepByWorkspace(state.storeRules),
+    ...payload.storeRules.map(normalizeStoreRule)
+  ];
+  state.shoppingLists = [
+    ...keepByWorkspace(state.shoppingLists),
+    ...payload.shoppingLists.map(normalizeShoppingList)
+  ];
+
+  if (replaceExisting) {
+    Object.entries(state.shoppingItems ?? {}).forEach(([id, item]) => {
+      if (existingWorkspaceListIds.has(item?.list_id)) {
+        delete state.shoppingItems[id];
+      }
+    });
+  }
+  state.shoppingItems = state.shoppingItems ?? {};
+  payload.shoppingItems.forEach((item) => {
+    state.shoppingItems[item.id] = normalizeShoppingItem(item);
+  });
+
+  if (replaceExisting) {
+    Object.entries(state.tasks ?? {}).forEach(([id, task]) => {
+      if (task?.workspace_id === workspaceId || existingWorkspaceTaskIds.has(id)) {
+        delete state.tasks[id];
+      }
+    });
+    state.taskDependencies = (state.taskDependencies ?? []).filter(dep =>
+      !existingWorkspaceTaskIds.has(dep.task_id) && !existingWorkspaceTaskIds.has(dep.depends_on_id)
+    );
+  }
+  state.tasks = state.tasks ?? {};
+  Object.entries(payload.tasks).forEach(([id, task]) => {
+    state.tasks[id] = normalizeTask(task);
+  });
+  state.taskDependencies = [...(state.taskDependencies ?? []), ...payload.taskDependencies];
+
+  if (Array.isArray(payload.auditLog) && payload.auditLog.length) {
+    const existingById = new Set(ensureAuditLogArray().map(entry => entry.id));
+    payload.auditLog.forEach((entry) => {
+      if (!entry?.id || existingById.has(entry.id)) return;
+      ensureAuditLogArray().push({ ...entry });
+    });
+  }
+
+  state.local = state.local ?? {};
+  state.local.localSeq = 0;
+  state.local.pendingChanges = [];
+
+  state.workspace = normalizedWorkspace;
+  state.ui = state.ui ?? {};
+  state.ui.activeWorkspaceId = normalizedWorkspace.id;
+  state.ui.activeProjectId = null;
+  state.ui.activeShoppingListId = null;
+  state.ui.syncCursor = 0;
+  state.ui.aiSuggestions = [];
+  state.ui.aiSuggestionNotes = '';
+  setActiveView('tasks');
+  clearActiveWorkflowChecklistInstanceId();
+  ensureLocalWorkspaceDefaults(state.workspace);
+}
+
+async function importWorkspaceFromJsonFile(file, options = {}) {
+  if (!file) throw new Error('Select a JSON file first.');
+  const text = await file.text();
+  if (!text.trim()) throw new Error('Import file is empty.');
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('Import file is not valid JSON.');
+  }
+  const payload = parseWorkspaceImportPayload(parsed);
+  applyImportedWorkspacePayload(payload, options);
+  appendAuditEvent({
+    source: 'ui',
+    category: 'import',
+    event: 'workspace_imported',
+    workspace_id: payload.workspace.id,
+    data: {
+      workspace_name: payload.workspace.name ?? '',
+      replace_existing: options.replaceExisting !== false,
+      task_count: Object.keys(payload.tasks).length
+    }
+  });
+  render();
+}
+
+function normalizeAutomationDateInput(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === 'number') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const parsed = new Date(`${text}T${hours}:${minutes}:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function buildAutomationTaskPatch(command = {}) {
+  const patch = (command.patch && typeof command.patch === 'object')
+    ? { ...command.patch }
+    : {};
+  const directKeys = [
+    'title',
+    'description_md',
+    'status',
+    'priority',
+    'project_id',
+    'parent_id',
+    'assignee_user_id',
+    'assignee_label',
+    'type_label',
+    'group_label',
+    'start_at',
+    'due_at',
+    'reminder_offset_days',
+    'recurrence_interval',
+    'recurrence_unit'
+  ];
+  directKeys.forEach((key) => {
+    if (command[key] !== undefined && patch[key] === undefined) {
+      patch[key] = command[key];
+    }
+  });
+  if (patch.start_at !== undefined) {
+    patch.start_at = normalizeAutomationDateInput(patch.start_at);
+  }
+  if (patch.due_at !== undefined) {
+    patch.due_at = normalizeAutomationDateInput(patch.due_at);
+  }
+  return patch;
+}
+
+async function runAutomationCommand(command = {}, index = 0) {
+  const opRaw = command.op ?? command.action ?? '';
+  const op = String(opRaw).trim().toLowerCase();
+  if (!op) throw new Error(`Command ${index + 1}: missing op`);
+
+  if (op === 'create_task') {
+    const title = normalizeTitleInput(command.title ?? command.name ?? '');
+    if (!title) throw new Error(`Command ${index + 1}: create_task requires title`);
+    const created = await createTaskRecord({
+      title,
+      description_md: command.description_md ?? '',
+      status: command.status ?? getDefaultStatusKey(),
+      priority: command.priority ?? 'medium',
+      project_id: command.project_id ?? null,
+      parent_id: command.parent_id ?? null,
+      type_label: command.type_label ?? null,
+      group_label: command.group_label ?? null,
+      start_at: normalizeAutomationDateInput(command.start_at),
+      due_at: normalizeAutomationDateInput(command.due_at),
+      reminder_offset_days: command.reminder_offset_days ?? null
+    });
+    if (!created) throw new Error(`Command ${index + 1}: create_task failed`);
+    appendCrudEvent({
+      source: 'automation',
+      event: 'create_task',
+      entity_type: 'task',
+      entity_id: created.id,
+      data: { title: created.title }
+    });
+    return { op, entity_type: 'task', entity_id: created.id, title: created.title };
+  }
+
+  if (op === 'update_task') {
+    const id = command.id ?? command.task_id ?? null;
+    if (!id) throw new Error(`Command ${index + 1}: update_task requires id`);
+    const patch = buildAutomationTaskPatch(command);
+    const hasParentChange = patch.parent_id !== undefined || command.new_parent_id !== undefined;
+    if (hasParentChange) {
+      const parentId = command.new_parent_id !== undefined ? command.new_parent_id : patch.parent_id;
+      await reparentTaskRecord(id, parentId ?? null);
+      delete patch.parent_id;
+    }
+    const patchKeys = Object.keys(patch);
+    if (patchKeys.length) {
+      await updateTaskRecord(id, patch);
+    }
+    appendCrudEvent({
+      source: 'automation',
+      event: 'update_task',
+      entity_type: 'task',
+      entity_id: id,
+      data: { fields: patchKeys }
+    });
+    return { op, entity_type: 'task', entity_id: id, updated_fields: patchKeys };
+  }
+
+  if (op === 'delete_task') {
+    const id = command.id ?? command.task_id ?? null;
+    if (!id) throw new Error(`Command ${index + 1}: delete_task requires id`);
+    await deleteTaskRecord(id);
+    appendCrudEvent({
+      source: 'automation',
+      event: 'delete_task',
+      entity_type: 'task',
+      entity_id: id
+    });
+    return { op, entity_type: 'task', entity_id: id };
+  }
+
+  if (op === 'create_project') {
+    const name = normalizeTitleInput(command.name ?? command.title ?? '');
+    if (!name) throw new Error(`Command ${index + 1}: create_project requires name`);
+    const project = await createProjectRecord(name);
+    if (!project) throw new Error(`Command ${index + 1}: create_project failed`);
+    appendCrudEvent({
+      source: 'automation',
+      event: 'create_project',
+      entity_type: 'project',
+      entity_id: project.id,
+      data: { name: project.name }
+    });
+    return { op, entity_type: 'project', entity_id: project.id, name: project.name };
+  }
+
+  if (op === 'update_project') {
+    const id = command.id ?? command.project_id ?? null;
+    if (!id) throw new Error(`Command ${index + 1}: update_project requires id`);
+    const patch = (command.patch && typeof command.patch === 'object')
+      ? { ...command.patch }
+      : {};
+    if (command.name !== undefined && patch.name === undefined) {
+      patch.name = command.name;
+    }
+    const updated = await updateProjectRecord(id, patch);
+    if (!updated) throw new Error(`Command ${index + 1}: update_project failed`);
+    appendCrudEvent({
+      source: 'automation',
+      event: 'update_project',
+      entity_type: 'project',
+      entity_id: id,
+      data: { fields: Object.keys(patch) }
+    });
+    return { op, entity_type: 'project', entity_id: id, updated_fields: Object.keys(patch) };
+  }
+
+  if (op === 'create_notice') {
+    const title = normalizeTitleInput(command.title ?? command.name ?? '');
+    if (!title) throw new Error(`Command ${index + 1}: create_notice requires title`);
+    const notice = await createNoticeRecord({
+      title,
+      notify_at: normalizeAutomationDateInput(command.notify_at ?? command.scheduled_for) ?? nowIso(),
+      notice_type: command.notice_type ?? command.type_key ?? 'general'
+    });
+    if (!notice) throw new Error(`Command ${index + 1}: create_notice failed`);
+    appendCrudEvent({
+      source: 'automation',
+      event: 'create_notice',
+      entity_type: 'notice',
+      entity_id: notice.id,
+      data: { title: notice.title }
+    });
+    return { op, entity_type: 'notice', entity_id: notice.id, title: notice.title };
+  }
+
+  if (op === 'create_shopping_list') {
+    const name = normalizeTitleInput(command.name ?? command.title ?? '');
+    if (!name) throw new Error(`Command ${index + 1}: create_shopping_list requires name`);
+    const list = await createShoppingListRecord({
+      name,
+      store_name: command.store_name ?? null,
+      event_date: command.event_date ?? null
+    });
+    if (!list) throw new Error(`Command ${index + 1}: create_shopping_list failed`);
+    const items = Array.isArray(command.items)
+      ? command.items.filter(Boolean).map(item => ({ name: String(item) }))
+      : [];
+    if (items.length) {
+      await createShoppingItemsRecord(list.id, items);
+    }
+    appendCrudEvent({
+      source: 'automation',
+      event: 'create_shopping_list',
+      entity_type: 'shopping_list',
+      entity_id: list.id,
+      data: { name: list.name, item_count: items.length }
+    });
+    return { op, entity_type: 'shopping_list', entity_id: list.id, name: list.name, item_count: items.length };
+  }
+
+  if (op === 'set_view') {
+    const view = String(command.view ?? '').trim();
+    if (!view) throw new Error(`Command ${index + 1}: set_view requires view`);
+    setActiveView(view);
+    return { op, view };
+  }
+
+  throw new Error(`Command ${index + 1}: unsupported op "${op}"`);
+}
+
+function getAutomationSyntaxGuideText() {
+  return [
+    'BrianHub Automation Console JSON syntax',
+    '',
+    'Accepted root formats:',
+    '1) Single command object',
+    '2) Array of command objects',
+    '3) {"commands":[ ... ]}',
+    '',
+    'Command envelope:',
+    '- Use "op" (or alias "action")',
+    '- Commands run in sequence',
+    '- Failed commands are reported, and later commands still run',
+    '',
+    'Supported ops:',
+    '- create_task',
+    '  Required: title (or name)',
+    '  Optional: description_md, status, priority, project_id, parent_id, type_label, group_label, start_at, due_at, reminder_offset_days',
+    '- update_task',
+    '  Required: id (or task_id)',
+    '  Optional direct fields: title, description_md, status, priority, project_id, parent_id, type_label, group_label, start_at, due_at, reminder_offset_days, recurrence_interval, recurrence_unit',
+    '  Optional aliases: new_parent_id (reparent), patch { ... }',
+    '- delete_task',
+    '  Required: id (or task_id)',
+    '- create_project',
+    '  Required: name (or title)',
+    '- update_project',
+    '  Required: id (or project_id)',
+    '  Optional: name, patch { ... }',
+    '- create_notice',
+    '  Required: title (or name)',
+    '  Optional: notify_at (or scheduled_for), notice_type (or type_key)',
+    '- create_shopping_list',
+    '  Required: name (or title)',
+    '  Optional: store_name, event_date, items (array of strings)',
+    '- set_view',
+    '  Required: view',
+    '  Allowed views: tasks, projects, shopping, notices, workflows, data-transfer, audit-log, automation, workspaces-manage, workspaces-archived',
+    '',
+    'Date/time inputs:',
+    '- start_at, due_at, notify_at accept ISO datetime (example: 2026-03-01T14:30:00-08:00)',
+    '- Date-only values (YYYY-MM-DD) are accepted and use current local time of day',
+    '',
+    'Example:',
+    '```json',
+    '{',
+    '  "commands": [',
+    '    { "op": "create_project", "name": "Client Work" },',
+    '    { "op": "create_task", "title": "Call client", "priority": "high", "status": "inbox" },',
+    '    { "op": "update_task", "id": "TASK_UUID", "due_at": "2026-03-02", "type_label": "Call" },',
+    '    { "op": "create_notice", "title": "Send estimate", "notify_at": "2026-03-02T09:00:00-08:00" },',
+    '    { "op": "set_view", "view": "tasks" }',
+    '  ]',
+    '}',
+    '```'
+  ].join('\n');
+}
+
+async function copyAutomationSyntaxGuide() {
+  const guide = getAutomationSyntaxGuideText();
+  await copyTextToClipboard(guide);
+}
+
+function setAutomationOutputText(value) {
+  if (!automationOutput) return;
+  automationOutput.value = value;
+}
+
+async function runAutomationCommandsFromInput() {
+  if (!automationInput) return;
+  const raw = automationInput.value.trim();
+  if (!raw) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Automation input must be valid JSON.');
+  }
+  let commands;
+  if (Array.isArray(parsed)) {
+    commands = parsed;
+  } else if (parsed && Array.isArray(parsed.commands)) {
+    commands = parsed.commands;
+  } else if (parsed && typeof parsed === 'object') {
+    commands = [parsed];
+  } else {
+    throw new Error('Automation input must be a JSON object, an array, or { "commands": [...] }.');
+  }
+  if (!commands.length) {
+    throw new Error('Automation command list is empty.');
+  }
+
+  const results = [];
+  let hasSuccess = false;
+  for (let i = 0; i < commands.length; i += 1) {
+    try {
+      const result = await runAutomationCommand(commands[i], i);
+      results.push({ index: i, ok: true, result });
+      hasSuccess = true;
+    } catch (err) {
+      results.push({ index: i, ok: false, error: err?.message ?? 'Unknown automation error' });
+    }
+  }
+
+  setAutomationOutputText(JSON.stringify({
+    ok: results.every(item => item.ok),
+    command_count: commands.length,
+    results
+  }, null, 2));
+  if (hasSuccess) {
+    render();
+  }
+}
+
 function getNoticeTypeLabel(key) {
   const types = (state.noticeTypes ?? []).length ? state.noticeTypes : DEFAULT_NOTICE_TYPES;
   return types.find(type => type.key === key)?.label ?? 'General';
@@ -1456,18 +2811,6 @@ function getNoticeTypeLabel(key) {
 function isMobileViewport() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return window.matchMedia('(max-width: 980px)').matches;
-}
-
-function setMobileSidebarOpen(open) {
-  if (typeof document === 'undefined' || !document.body) return;
-  if (open && isMobileViewport()) {
-    // Mobile uses bottom navigation and top-menu actions; keep legacy sidebar disabled.
-  }
-  const shouldOpen = false;
-  document.body.classList.toggle('mobile-sidebar-open', shouldOpen);
-  if (mobileSidebarBackdrop) {
-    mobileSidebarBackdrop.classList.toggle('hidden', !shouldOpen);
-  }
 }
 
 function openMobileCreateSheet() {
@@ -1505,6 +2848,12 @@ function getViewLabel(view) {
       return 'Notices';
     case 'workflows':
       return 'Workflows';
+    case 'data-transfer':
+      return 'Import / Export';
+    case 'audit-log':
+      return 'Audit Log';
+    case 'automation':
+      return 'Automation Console';
     case 'workspaces-manage':
       return 'Workspaces';
     case 'workspaces-archived':
@@ -1513,6 +2862,29 @@ function getViewLabel(view) {
     default:
       return 'My Tasks';
   }
+}
+
+function singularizeLabel(label) {
+  const value = String(label ?? '').trim();
+  if (!value) return '';
+  const words = value.split(/\s+/);
+  const lastIndex = words.length - 1;
+  const lastWord = words[lastIndex];
+  let singular = lastWord;
+  if (/ies$/i.test(lastWord) && lastWord.length > 3) {
+    singular = `${lastWord.slice(0, -3)}y`;
+  } else if (/(ches|shes|xes|zes|ses)$/i.test(lastWord) && lastWord.length > 4) {
+    singular = lastWord.replace(/es$/i, '');
+  } else if (/s$/i.test(lastWord) && !/ss$/i.test(lastWord) && lastWord.length > 1) {
+    singular = lastWord.slice(0, -1);
+  }
+  words[lastIndex] = singular;
+  return words.join(' ');
+}
+
+function getWorkflowInstanceNoun(workflowName) {
+  const singular = singularizeLabel(workflowName);
+  return singular || 'Item';
 }
 
 function renderMobileNavigation() {
@@ -1576,20 +2948,131 @@ function handleMobileQuickAdd() {
   openMobileCreateSheet();
 }
 
+function normalizeNavigationView(view) {
+  return NAVIGABLE_VIEWS.has(view) ? view : 'tasks';
+}
+
+function buildNavigationStateSnapshot() {
+  return {
+    version: NAVIGATION_STATE_VERSION,
+    view: normalizeNavigationView(getActiveView()),
+    workflowViewMode: getWorkflowViewMode() === 'manage' ? 'manage' : 'runs',
+    workflowInstanceFilter: getWorkflowInstanceFilter() === 'completed' ? 'completed' : 'open',
+    shoppingPageMode: getShoppingPageMode() === 'list' ? 'list' : 'details',
+    mobileShoppingPanelMode: getMobileShoppingPanelMode() === 'details' ? 'details' : 'list',
+    mobileWorkflowPanelMode: getMobileWorkflowPanelMode() === 'instances' ? 'instances' : 'list',
+    activeProjectId: state.ui?.activeProjectId ?? null,
+    activeShoppingListId: state.ui?.activeShoppingListId ?? null,
+    activeWorkflowId: getActiveWorkflowId(),
+    activeWorkflowChecklistInstanceId: getActiveWorkflowChecklistInstanceId()
+  };
+}
+
+function getNavigationStateSignature(snapshot) {
+  return [
+    snapshot.version,
+    snapshot.view,
+    snapshot.workflowViewMode,
+    snapshot.workflowInstanceFilter,
+    snapshot.shoppingPageMode,
+    snapshot.mobileShoppingPanelMode,
+    snapshot.mobileWorkflowPanelMode,
+    snapshot.activeProjectId ?? '',
+    snapshot.activeShoppingListId ?? '',
+    snapshot.activeWorkflowId ?? '',
+    snapshot.activeWorkflowChecklistInstanceId ?? ''
+  ].join('|');
+}
+
+function normalizeNavigationStateSnapshot(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.version !== NAVIGATION_STATE_VERSION) return null;
+  const snapshot = {
+    version: NAVIGATION_STATE_VERSION,
+    view: normalizeNavigationView(raw.view),
+    workflowViewMode: raw.workflowViewMode === 'manage' ? 'manage' : 'runs',
+    workflowInstanceFilter: raw.workflowInstanceFilter === 'completed' ? 'completed' : 'open',
+    shoppingPageMode: raw.shoppingPageMode === 'list' ? 'list' : 'details',
+    mobileShoppingPanelMode: raw.mobileShoppingPanelMode === 'details' ? 'details' : 'list',
+    mobileWorkflowPanelMode: raw.mobileWorkflowPanelMode === 'instances' ? 'instances' : 'list',
+    activeProjectId: typeof raw.activeProjectId === 'string' && raw.activeProjectId ? raw.activeProjectId : null,
+    activeShoppingListId: typeof raw.activeShoppingListId === 'string' && raw.activeShoppingListId ? raw.activeShoppingListId : null,
+    activeWorkflowId: typeof raw.activeWorkflowId === 'string' && raw.activeWorkflowId ? raw.activeWorkflowId : null,
+    activeWorkflowChecklistInstanceId: typeof raw.activeWorkflowChecklistInstanceId === 'string' && raw.activeWorkflowChecklistInstanceId
+      ? raw.activeWorkflowChecklistInstanceId
+      : null
+  };
+  const currentWorkspaceId = state.workspace?.id ?? null;
+  if (snapshot.activeProjectId && !state.projects.some(project =>
+    project.id === snapshot.activeProjectId && (!currentWorkspaceId || project.workspace_id === currentWorkspaceId)
+  )) {
+    snapshot.activeProjectId = null;
+  }
+  if (snapshot.activeShoppingListId && !state.shoppingLists.some(list =>
+    list.id === snapshot.activeShoppingListId && (!currentWorkspaceId || list.workspace_id === currentWorkspaceId)
+  )) {
+    snapshot.activeShoppingListId = null;
+  }
+  if (snapshot.activeWorkflowId && !state.workflows.some(workflow =>
+    workflow.id === snapshot.activeWorkflowId && (!currentWorkspaceId || workflow.workspace_id === currentWorkspaceId)
+  )) {
+    snapshot.activeWorkflowId = null;
+  }
+  if (snapshot.activeWorkflowChecklistInstanceId && !state.workflowInstances.some(instance =>
+    instance.id === snapshot.activeWorkflowChecklistInstanceId && (!currentWorkspaceId || instance.workspace_id === currentWorkspaceId)
+  )) {
+    snapshot.activeWorkflowChecklistInstanceId = null;
+  }
+  return snapshot;
+}
+
+function applyNavigationStateSnapshot(raw) {
+  const snapshot = normalizeNavigationStateSnapshot(raw);
+  if (!snapshot) return false;
+  state.ui = state.ui ?? {};
+  state.ui.activeProjectId = snapshot.activeProjectId;
+  state.ui.activeShoppingListId = snapshot.activeShoppingListId;
+  setActiveWorkflowId(snapshot.activeWorkflowId);
+  setActiveWorkflowChecklistInstanceId(snapshot.activeWorkflowChecklistInstanceId);
+  setWorkflowViewMode(snapshot.workflowViewMode);
+  setWorkflowInstanceFilter(snapshot.workflowInstanceFilter);
+  setShoppingPageMode(snapshot.shoppingPageMode);
+  setMobileShoppingPanelMode(snapshot.mobileShoppingPanelMode);
+  setMobileWorkflowPanelMode(snapshot.mobileWorkflowPanelMode);
+  setActiveView(snapshot.view);
+  return true;
+}
+
+function syncNavigationHistory(options = {}) {
+  if (typeof window === 'undefined' || !window.history || navigationHistoryApplying) return;
+  const replace = Boolean(options.replace);
+  const snapshot = buildNavigationStateSnapshot();
+  const signature = getNavigationStateSignature(snapshot);
+  if (!navigationHistoryReady || replace) {
+    window.history.replaceState({ brianhubNav: snapshot }, '', window.location.href);
+    navigationHistoryReady = true;
+    navigationHistoryLastSignature = signature;
+    return;
+  }
+  if (signature === navigationHistoryLastSignature) return;
+  window.history.pushState({ brianhubNav: snapshot }, '', window.location.href);
+  navigationHistoryLastSignature = signature;
+}
+
 function getActiveView() {
   return state.ui?.activeView ?? 'tasks';
 }
 
 function setActiveView(view) {
+  const nextView = normalizeNavigationView(view);
   const previousView = getActiveView();
-  if (previousView === 'shopping' && view !== 'shopping') {
+  if (previousView === 'shopping' && nextView !== 'shopping') {
     void maybeArchiveCompletedShoppingListOnExit();
   }
   state.ui = state.ui ?? {};
-  state.ui.activeView = view;
+  state.ui.activeView = nextView;
   if (isMobileViewport()) {
     closeMobileTopMenu();
-    setMobileSidebarOpen(false);
     closeMobileCreateSheet();
   }
 }
@@ -1603,8 +3086,16 @@ function setTaskView(view) {
   state.ui.taskView = view;
 }
 
+function isWorkflowChecklistViewActive() {
+  return Boolean(getActiveWorkflowChecklistInstanceId());
+}
+
 function getTaskSortKey() {
-  return state.ui?.taskSort ?? 'default';
+  const key = state.ui?.taskSort ?? 'default';
+  if (isWorkflowChecklistViewActive() && key === 'ai-queue') {
+    return 'default';
+  }
+  return key;
 }
 
 function setTaskSortKey(key) {
@@ -1731,6 +3222,7 @@ function normalizeWorkflowPattern(pattern) {
   return {
     ...pattern,
     description: pattern.description ?? '',
+    if_applicable: Boolean(pattern.if_applicable),
     locked: Boolean(pattern.locked)
   };
 }
@@ -1914,6 +3406,11 @@ function getWorkflowInstances(workflowId) {
     .filter(instance => instance.workflow_id === workflowId)
     .map(normalizeWorkflowInstance)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+function getWorkflowInstanceById(id) {
+  const instance = (state.workflowInstances ?? []).find(item => item.id === id);
+  return instance ? normalizeWorkflowInstance(instance) : null;
 }
 
 function getWorkflowInstanceTasks(instanceId) {
@@ -2110,6 +3607,75 @@ function setWorkflowViewMode(mode) {
   state.ui.workflowViewMode = mode;
 }
 
+function enterWorkflowManageView() {
+  state.ui = state.ui ?? {};
+  const alreadyManage = getActiveView() === 'workflows' && getWorkflowViewMode() === 'manage' && !isMobileViewport();
+  if (!alreadyManage) {
+    state.ui.workflowManageReturn = {
+      view: getActiveView(),
+      workflowViewMode: getWorkflowViewMode(),
+      mobileWorkflowPanelMode: getMobileWorkflowPanelMode(),
+      workflowInstanceFilter: getWorkflowInstanceFilter()
+    };
+  }
+  setWorkflowViewMode(isMobileViewport() ? 'runs' : 'manage');
+  if (isMobileViewport()) {
+    setMobileWorkflowPanelMode('list');
+  }
+  setWorkflowInstanceFilter('open');
+  setActiveView('workflows');
+}
+
+function exitWorkflowManageView() {
+  const returnState = state.ui?.workflowManageReturn ?? null;
+  state.ui = state.ui ?? {};
+  state.ui.workflowManageReturn = null;
+  if (!returnState) {
+    setWorkflowViewMode('runs');
+    setActiveView('tasks');
+    return;
+  }
+  const nextView = returnState.view ?? 'tasks';
+  if (nextView === 'workflows') {
+    setActiveView('workflows');
+    setWorkflowViewMode(returnState.workflowViewMode ?? 'runs');
+    setWorkflowInstanceFilter(returnState.workflowInstanceFilter ?? 'open');
+    if (isMobileViewport()) {
+      setMobileWorkflowPanelMode(returnState.mobileWorkflowPanelMode ?? 'list');
+    }
+    return;
+  }
+  setActiveView(nextView);
+}
+
+function getActiveWorkflowChecklistInstanceId() {
+  return state.ui?.activeWorkflowChecklistInstanceId ?? null;
+}
+
+function setActiveWorkflowChecklistInstanceId(id) {
+  state.ui = state.ui ?? {};
+  state.ui.activeWorkflowChecklistInstanceId = id ?? null;
+}
+
+function clearActiveWorkflowChecklistInstanceId() {
+  setActiveWorkflowChecklistInstanceId(null);
+}
+
+function openWorkflowInstanceChecklist(instanceId) {
+  const instance = getWorkflowInstanceById(instanceId);
+  if (!instance) return;
+  const links = getWorkflowInstanceTasks(instanceId).filter(link => !link.dismissed_at);
+  if (!links.length) {
+    alert('No active checklist tasks for this workflow.');
+    return;
+  }
+  state.ui = state.ui ?? {};
+  state.ui.activeProjectId = null;
+  setActiveWorkflowChecklistInstanceId(instanceId);
+  setActiveView('tasks');
+  render();
+}
+
 function getMobileShoppingPanelMode() {
   return state.ui?.mobileShoppingPanelMode === 'details' ? 'details' : 'list';
 }
@@ -2117,6 +3683,15 @@ function getMobileShoppingPanelMode() {
 function setMobileShoppingPanelMode(mode) {
   state.ui = state.ui ?? {};
   state.ui.mobileShoppingPanelMode = mode === 'details' ? 'details' : 'list';
+}
+
+function getShoppingPageMode() {
+  return state.ui?.shoppingPageMode === 'list' ? 'list' : 'details';
+}
+
+function setShoppingPageMode(mode) {
+  state.ui = state.ui ?? {};
+  state.ui.shoppingPageMode = mode === 'list' ? 'list' : 'details';
 }
 
 function getMobileWorkflowPanelMode() {
@@ -2525,6 +4100,7 @@ function createWorkflowPatternRecord(name, description = '') {
     workspace_id: state.workspace.id,
     name: trimmed,
     description,
+    if_applicable: false,
     locked: false,
     sort_order: getNextWorkflowSortOrder(getWorkflowPatternsForWorkspace()),
     created_at: now,
@@ -2538,6 +4114,9 @@ function createWorkflowPatternRecord(name, description = '') {
 function updateWorkflowPatternRecord(id, patch) {
   if (patch.name !== undefined) {
     patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
+  if (patch.if_applicable !== undefined) {
+    patch = { ...patch, if_applicable: Boolean(patch.if_applicable) };
   }
   if (patch.locked !== undefined) {
     patch = { ...patch, locked: Boolean(patch.locked) };
@@ -2836,11 +4415,20 @@ async function scaffoldWorkflowInstance(instance, variantId) {
     return created.id;
   };
 
-  const expandPatternEntries = async ({ patternId, phaseId, templateTaskId, phaseSortCounter, activeChain = new Set() }) => {
+  const expandPatternEntries = async ({
+    patternId,
+    phaseId,
+    templateTaskId,
+    phaseSortCounter,
+    inheritedIfApplicable = false,
+    activeChain = new Set()
+  }) => {
     if (!patternId) return;
     if (activeChain.has(patternId)) return;
     const nextChain = new Set(activeChain);
     nextChain.add(patternId);
+    const pattern = getWorkflowPatternById(patternId);
+    const patternIfApplicable = Boolean(inheritedIfApplicable) || Boolean(pattern?.if_applicable);
     const patternEntries = getWorkflowPatternTasks(patternId);
     if (!patternEntries.length) return;
 
@@ -2852,6 +4440,7 @@ async function scaffoldWorkflowInstance(instance, variantId) {
           phaseId,
           templateTaskId,
           phaseSortCounter,
+          inheritedIfApplicable: patternIfApplicable || Boolean(entry.if_applicable),
           activeChain: nextChain
         });
         continue;
@@ -2862,7 +4451,7 @@ async function scaffoldWorkflowInstance(instance, variantId) {
         phaseId,
         templateTaskId,
         sortOrder: phaseSortCounter.next(),
-        ifApplicable: Boolean(entry.if_applicable)
+        ifApplicable: patternIfApplicable || Boolean(entry.if_applicable)
       });
       if (createdTaskId) {
         localTaskMap.set(entry.id, createdTaskId);
@@ -2898,6 +4487,7 @@ async function scaffoldWorkflowInstance(instance, variantId) {
           patternId: templateEntry.pattern_id,
           phaseId: phaseEntry.phase.id,
           templateTaskId: templateEntry.id,
+          inheritedIfApplicable: Boolean(templateEntry.if_applicable),
           phaseSortCounter
         });
         continue;
@@ -2959,13 +4549,37 @@ async function deleteTaskSection(label) {
   render();
 }
 
+function getProjectFilterKey() {
+  const key = state.ui?.projectFilter;
+  return ['open', 'closed', 'all'].includes(key) ? key : 'open';
+}
+
+function setProjectFilterKey(key) {
+  const next = ['open', 'closed', 'all'].includes(key) ? key : 'open';
+  state.ui = state.ui ?? {};
+  state.ui.projectFilter = next;
+}
+
+function getShoppingFilterKey() {
+  const key = state.ui?.shoppingFilter;
+  return ['open', 'closed', 'all'].includes(key) ? key : 'open';
+}
+
+function setShoppingFilterKey(key) {
+  const next = ['open', 'closed', 'all'].includes(key) ? key : 'open';
+  state.ui = state.ui ?? {};
+  state.ui.shoppingFilter = next;
+}
+
 function getNoticeFilterKey() {
-  return state.ui?.noticeFilter ?? 'all';
+  const key = state.ui?.noticeFilter;
+  return ['open', 'closed', 'all', 'upcoming', 'overdue', 'today'].includes(key) ? key : 'open';
 }
 
 function setNoticeFilterKey(key) {
+  const next = ['open', 'closed', 'all', 'upcoming', 'overdue', 'today'].includes(key) ? key : 'open';
   state.ui = state.ui ?? {};
-  state.ui.noticeFilter = key;
+  state.ui.noticeFilter = next;
 }
 
 function getNoticeSortKey() {
@@ -3405,6 +5019,49 @@ function formatNoticeRecurrence(rule) {
   return `every ${rule.interval} ${unitLabel}`;
 }
 
+function formatNoticeDateTimeDisplay(iso) {
+  if (!iso) return 'No date set';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso);
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function populateNoticeReadonlyView(notice) {
+  if (!notice) return;
+  if (noticeReadonlyTitle) noticeReadonlyTitle.textContent = notice.title ?? '';
+  if (noticeReadonlyType) noticeReadonlyType.textContent = getNoticeTypeLabel(notice.notice_type);
+  if (noticeReadonlyDatetime) noticeReadonlyDatetime.textContent = formatNoticeDateTimeDisplay(notice.notify_at);
+  if (noticeReadonlyRepeat) {
+    const recurrenceLabel = formatNoticeRecurrence(getNoticeRecurrenceRule(notice));
+    noticeReadonlyRepeat.textContent = recurrenceLabel ? recurrenceLabel : 'Does not repeat';
+  }
+}
+
+function setNoticeModalMode(mode, notice = null) {
+  const nextMode = mode === 'view' || mode === 'edit' ? mode : 'create';
+  noticeModalMode = nextMode;
+  const isView = nextMode === 'view';
+  const hasNotice = Boolean(notice?.id);
+  noticeReadonly?.classList.toggle('hidden', !isView);
+  noticeFormFields?.classList.toggle('hidden', isView);
+  if (noticeModalTitle) {
+    noticeModalTitle.textContent = nextMode === 'create' ? 'New Notice' : (isView ? 'Notice' : 'Edit Notice');
+  }
+  if (noticeSaveBtn) {
+    noticeSaveBtn.textContent = nextMode === 'create' ? 'Create' : (isView ? '✎ Edit' : 'Save');
+  }
+  if (noticeCancel) {
+    noticeCancel.textContent = isView ? 'Close' : 'Cancel';
+  }
+  noticeDismissBtn?.classList.toggle('hidden', !hasNotice);
+}
+
 function getProjectName(projectId) {
   if (!projectId) return null;
   const project = (state.projects ?? []).find(item => item.id === projectId);
@@ -3457,7 +5114,7 @@ function closeRecurrenceModal() {
 }
 
 function openNoticeModal() {
-  openNoticeModalWithNotice(null);
+  openNoticeModalWithNotice(null, { mode: 'create' });
 }
 
 function openNoticeTypeModal() {
@@ -3563,15 +5220,17 @@ function closeNoticeModal() {
   closeNoticeTypeModal({ restoreSelection: true });
   closeNoticeRecurrenceModal();
   activeNoticeId = null;
+  noticeModalMode = 'create';
   if (noticeDate) noticeDate.value = '';
   if (noticeTime) noticeTime.value = '';
   if (noticeRepeatPreset) noticeRepeatPreset.value = 'none';
   noticeRecurrenceDraft = null;
-  noticeDismissBtn?.classList.add('hidden');
+  setNoticeModalMode('create');
 }
 
-function openNoticeModalWithNotice(notice) {
+function openNoticeModalWithNotice(notice, options = {}) {
   if (!noticeModal) return;
+  const mode = options.mode ?? (notice ? 'view' : 'create');
   activeNoticeId = notice?.id ?? null;
   noticeTitle.value = notice?.title ?? '';
   noticeDate.value = notice?.notify_at ? toLocalDateValue(notice.notify_at) : new Date().toISOString().slice(0, 10);
@@ -3582,11 +5241,16 @@ function openNoticeModalWithNotice(notice) {
     noticeRepeatPreset.value = getNoticeRepeatPresetFromRule(rule, notice?.notify_at ?? null);
   }
   renderNoticeTypeSelect(notice?.notice_type ?? 'general');
-  noticeModal.querySelector('h2').textContent = notice ? 'Edit Notice' : 'New Notice';
-  if (noticeSaveBtn) noticeSaveBtn.textContent = notice ? 'Save' : 'Create';
-  noticeDismissBtn?.classList.toggle('hidden', !notice);
+  if (notice) {
+    populateNoticeReadonlyView(notice);
+  }
+  setNoticeModalMode(mode, notice);
   noticeModal.classList.remove('hidden');
-  noticeTitle.focus();
+  if (mode === 'view') {
+    noticeSaveBtn?.focus();
+  } else {
+    noticeTitle.focus();
+  }
 }
 
 function getCheckinExtendMinutes() {
@@ -3872,10 +5536,13 @@ function persistLocalData() {
   saveLocalData({
     localSeq: state.local?.localSeq ?? 0,
     pendingChanges: state.local?.pendingChanges ?? [],
+    auditLog: state.auditLog ?? [],
     workspaces: state.workspaces ?? [],
     projects: state.projects ?? [],
     statuses: state.statuses ?? [],
     taskTypes: state.taskTypes ?? [],
+    users: state.users ?? [],
+    workspaceMemberships: state.workspaceMemberships ?? [],
     taskSections: state.taskSections ?? [],
     tasks: state.tasks ?? {},
     taskDependencies: state.taskDependencies ?? [],
@@ -3904,6 +5571,16 @@ function queueLocalChange(change) {
   }, change);
   state.local.localSeq = updated.localSeq;
   state.local.pendingChanges = updated.pendingChanges;
+  appendAuditEvent({
+    source: 'local',
+    category: 'crud',
+    event: `${change?.action ?? 'change'}_queued`,
+    entity_type: change?.entity_type ?? null,
+    entity_id: change?.entity_id ?? null,
+    data: {
+      seq: updated.localSeq
+    }
+  });
 }
 
 function normalizePendingTaskCreatePayload(change) {
@@ -3934,10 +5611,13 @@ function normalizePendingTaskCreatePayload(change) {
 
 function snapshotLocalData() {
   return {
+    auditLog: state.auditLog ?? [],
     workspaces: state.workspaces ?? [],
     projects: state.projects ?? [],
     statuses: state.statuses ?? [],
     taskTypes: state.taskTypes ?? [],
+    users: state.users ?? [],
+    workspaceMemberships: state.workspaceMemberships ?? [],
     taskSections: state.taskSections ?? [],
     tasks: state.tasks ?? {},
     taskDependencies: state.taskDependencies ?? [],
@@ -3960,10 +5640,13 @@ function snapshotLocalData() {
 }
 
 function applyLocalDataSnapshot(data) {
+  state.auditLog = data.auditLog ?? [];
   state.workspaces = data.workspaces ?? [];
   state.projects = data.projects ?? [];
   state.statuses = data.statuses ?? [];
   state.taskTypes = data.taskTypes ?? [];
+  state.users = data.users ?? [];
+  state.workspaceMemberships = data.workspaceMemberships ?? [];
   state.taskSections = data.taskSections ?? [];
   state.tasks = data.tasks ?? {};
   state.taskDependencies = data.taskDependencies ?? [];
@@ -4106,6 +5789,36 @@ async function pushPendingChanges() {
         state.taskTypes = (state.taskTypes ?? []).filter(type => type.id !== change.entity_id);
       }
     }
+
+    if (change.entity_type === 'user') {
+      if (change.action === 'create') {
+        const created = await api.createUser(change.payload ?? {});
+        if (created) upsertUser(created);
+        return;
+      }
+      if (change.action === 'update') {
+        const updated = await api.updateUser(change.entity_id, change.payload ?? {});
+        if (updated) upsertUser(updated);
+        return;
+      }
+    }
+
+    if (change.entity_type === 'workspace_membership') {
+      if (change.action === 'create') {
+        const created = await api.createWorkspaceMembership(change.payload ?? {});
+        if (created) upsertWorkspaceMembership(created);
+        return;
+      }
+      if (change.action === 'update') {
+        const updated = await api.updateWorkspaceMembership(change.entity_id, change.payload ?? {});
+        if (updated) upsertWorkspaceMembership(updated);
+        return;
+      }
+      if (change.action === 'delete') {
+        await api.deleteWorkspaceMembership(change.entity_id);
+        state.workspaceMemberships = (state.workspaceMemberships ?? []).filter(item => item.id !== change.entity_id);
+      }
+    }
   });
 
   if (result.applied.length) {
@@ -4194,6 +5907,8 @@ async function loadWorkspaceData() {
       state.templates = (await api.listTemplates(state.workspace.id)).map(normalizeTemplate);
       state.statuses = (await api.listStatuses(state.workspace.id)).map(normalizeStatus);
       state.taskTypes = (await api.listTaskTypes(state.workspace.id)).map(normalizeTaskType);
+      state.users = (await api.listUsers({ workspaceId: state.workspace.id })).map(normalizeUser);
+      state.workspaceMemberships = (await api.listWorkspaceMemberships(state.workspace.id)).map(normalizeWorkspaceMembership);
       state.storeRules = (await api.listStoreRules(state.workspace.id)).map(normalizeStoreRule);
       state.noticeTypes = (await api.listNoticeTypes(state.workspace.id)).map(normalizeNoticeType);
       state.notices = (await api.listNotices(state.workspace.id)).map(normalizeNotice);
@@ -4236,6 +5951,7 @@ async function selectWorkspace(workspace) {
   state.workspace = workspace;
   state.ui.activeWorkspaceId = workspace.id;
   state.ui.activeProjectId = null;
+  clearActiveWorkflowChecklistInstanceId();
   state.ui.syncCursor = 0;
   state.ui.aiSuggestions = [];
   state.ui.aiSuggestionNotes = '';
@@ -4245,7 +5961,11 @@ async function selectWorkspace(workspace) {
 }
 
 function normalizeWorkspace(workspace) {
-  return { ...workspace, archived: Boolean(workspace.archived) };
+  return {
+    ...workspace,
+    org_id: workspace.org_id ?? DEFAULT_ORG_ID,
+    archived: Boolean(workspace.archived)
+  };
 }
 
 function normalizeProject(project) {
@@ -4268,6 +5988,20 @@ function normalizeTaskType(type) {
     ...type,
     is_default: Number(type.is_default) ? 1 : 0,
     archived: Number(type.archived) ? 1 : 0
+  };
+}
+
+function normalizeUser(user) {
+  return {
+    ...user,
+    archived: Number(user.archived) ? 1 : 0
+  };
+}
+
+function normalizeWorkspaceMembership(membership) {
+  return {
+    ...membership,
+    archived: Number(membership.archived) ? 1 : 0
   };
 }
 
@@ -4328,7 +6062,9 @@ function normalizeTask(task) {
     ...task,
     auto_debit: Number(task.auto_debit) ? 1 : 0,
     template_prompt_pending: Number(task.template_prompt_pending) ? 1 : 0,
-    group_label: task.group_label ?? null
+    group_label: task.group_label ?? null,
+    assignee_user_id: task.assignee_user_id ?? null,
+    assignee_label: task.assignee_label ?? null
   };
 }
 
@@ -4391,6 +6127,28 @@ function upsertTaskType(type) {
     state.taskTypes[index] = normalized;
   } else {
     state.taskTypes.push(normalized);
+  }
+}
+
+function upsertUser(user) {
+  state.users = state.users ?? [];
+  const normalized = normalizeUser(user);
+  const index = state.users.findIndex(item => item.id === normalized.id);
+  if (index >= 0) {
+    state.users[index] = normalized;
+  } else {
+    state.users.push(normalized);
+  }
+}
+
+function upsertWorkspaceMembership(membership) {
+  state.workspaceMemberships = state.workspaceMemberships ?? [];
+  const normalized = normalizeWorkspaceMembership(membership);
+  const index = state.workspaceMemberships.findIndex(item => item.id === normalized.id);
+  if (index >= 0) {
+    state.workspaceMemberships[index] = normalized;
+  } else {
+    state.workspaceMemberships.push(normalized);
   }
 }
 
@@ -4463,11 +6221,14 @@ async function createTaskRecord(payload) {
   const normalizedTitle = normalizeTitleInput(payload.title);
   const normalizedType = payload.type_label ? normalizeTitleInput(payload.type_label) : payload.type_label;
   const normalizedGroup = payload.group_label ? normalizeTitleInput(payload.group_label) : payload.group_label;
+  const normalizedAssigneeLabel = payload.assignee_label ? normalizeTitleInput(payload.assignee_label) : null;
   const taskPayload = {
     ...payload,
     title: normalizedTitle || 'Untitled task',
     type_label: normalizedType ?? null,
     group_label: normalizedGroup ?? null,
+    assignee_user_id: payload.assignee_user_id ?? null,
+    assignee_label: normalizedAssigneeLabel,
     sort_order: sortOrder,
     workspace_id: state.workspace.id
   };
@@ -4475,7 +6236,15 @@ async function createTaskRecord(payload) {
   if (canUseRemote) {
     try {
       const created = await api.createTask(taskPayload);
-      if (created) upsertTask(created);
+      if (created) {
+        upsertTask(created);
+        appendCrudEvent({
+          source: 'app',
+          event: 'task_created',
+          entity_type: 'task',
+          entity_id: created.id
+        });
+      }
       return created;
     } catch (err) {
       if (err?.status && err.status >= 400 && err.status < 500) {
@@ -4512,6 +6281,8 @@ async function createTaskRecord(payload) {
     template_lead_days: taskPayload.template_lead_days ?? null,
     template_defer_until: taskPayload.template_defer_until ?? null,
     template_prompt_pending: taskPayload.template_prompt_pending ? 1 : 0,
+    assignee_user_id: taskPayload.assignee_user_id ?? null,
+    assignee_label: taskPayload.assignee_label ?? null,
     start_at: taskPayload.start_at ?? null,
     due_at: taskPayload.due_at ?? null,
     completed_at: null,
@@ -4550,11 +6321,26 @@ async function updateTaskRecord(id, patch) {
   if (patch.group_label !== undefined) {
     patch = { ...patch, group_label: patch.group_label ? normalizeTitleInput(patch.group_label) : null };
   }
+  if (patch.assignee_user_id !== undefined) {
+    patch = { ...patch, assignee_user_id: patch.assignee_user_id || null };
+  }
+  if (patch.assignee_label !== undefined) {
+    patch = { ...patch, assignee_label: patch.assignee_label ? normalizeTitleInput(patch.assignee_label) : null };
+  }
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
     try {
       const updated = await api.updateTask(id, patch);
-      if (updated) upsertTask(updated);
+      if (updated) {
+        upsertTask(updated);
+        appendCrudEvent({
+          source: 'app',
+          event: 'task_updated',
+          entity_type: 'task',
+          entity_id: id,
+          data: { fields: Object.keys(patch ?? {}) }
+        });
+      }
       return updated;
     } catch {
       // fall back to local update
@@ -4631,6 +6417,14 @@ async function deleteTaskRecord(id) {
       } else if (result?.deleted) {
         delete state.tasks[id];
       }
+      if (result?.deleted) {
+        appendCrudEvent({
+          source: 'app',
+          event: 'task_deleted',
+          entity_type: 'task',
+          entity_id: id
+        });
+      }
       return result;
     } catch {
       // fall back to local delete
@@ -4649,6 +6443,76 @@ async function deleteTaskRecord(id) {
   return { deleted: 1, ids: allIds };
 }
 
+async function createUserRecord(payload) {
+  if (!state.workspace) return null;
+  const displayName = normalizeTitleInput(payload?.display_name ?? payload?.name ?? '');
+  if (!displayName) return null;
+  const orgId = state.workspace.org_id ?? DEFAULT_ORG_ID;
+  const created = await api.createUser({
+    ...payload,
+    display_name: displayName,
+    org_id: orgId,
+    workspace_id: state.workspace.id
+  });
+  if (created) {
+    upsertUser(created);
+    appendCrudEvent({
+      source: 'app',
+      event: 'user_created',
+      entity_type: 'user',
+      entity_id: created.id
+    });
+  }
+  return created;
+}
+
+async function createWorkspaceMembershipRecord(payload) {
+  if (!state.workspace) return null;
+  const created = await api.createWorkspaceMembership({
+    ...payload,
+    workspace_id: state.workspace.id
+  });
+  if (created) {
+    upsertWorkspaceMembership(created);
+    appendCrudEvent({
+      source: 'app',
+      event: 'workspace_membership_created',
+      entity_type: 'workspace_membership',
+      entity_id: created.id
+    });
+  }
+  return created;
+}
+
+async function updateWorkspaceMembershipRecord(id, patch) {
+  const updated = await api.updateWorkspaceMembership(id, patch);
+  if (updated) {
+    upsertWorkspaceMembership(updated);
+    appendCrudEvent({
+      source: 'app',
+      event: 'workspace_membership_updated',
+      entity_type: 'workspace_membership',
+      entity_id: id,
+      data: { fields: Object.keys(patch ?? {}) }
+    });
+  }
+  return updated;
+}
+
+async function deleteWorkspaceMembershipRecord(id) {
+  const result = await api.deleteWorkspaceMembership(id);
+  if (result?.deleted) {
+    state.workspaceMemberships = (state.workspaceMemberships ?? []).filter(item => item.id !== id);
+    appendCrudEvent({
+      source: 'app',
+      event: 'workspace_membership_deleted',
+      entity_type: 'workspace_membership',
+      entity_id: id
+    });
+  }
+  return result;
+}
+
 async function createProjectRecord(name) {
   if (!state.workspace) return null;
   const trimmed = normalizeTitleInput(name);
@@ -4657,7 +6521,15 @@ async function createProjectRecord(name) {
   if (canUseRemote) {
     try {
       const created = await api.createProject({ name: trimmed, workspace_id: state.workspace.id, kind: 'project' });
-      if (created) upsertProject(created);
+      if (created) {
+        upsertProject(created);
+        appendCrudEvent({
+          source: 'app',
+          event: 'project_created',
+          entity_type: 'project',
+          entity_id: created.id
+        });
+      }
       return created;
     } catch {
       // fall back to local create
@@ -4692,7 +6564,16 @@ async function updateProjectRecord(id, patch) {
   if (canUseRemote) {
     try {
       const updated = await api.updateProject(id, patch);
-      if (updated) upsertProject(updated);
+      if (updated) {
+        upsertProject(updated);
+        appendCrudEvent({
+          source: 'app',
+          event: 'project_updated',
+          entity_type: 'project',
+          entity_id: id,
+          data: { fields: Object.keys(patch ?? {}) }
+        });
+      }
       return updated;
     } catch {
       // fall back to local update
@@ -4730,6 +6611,12 @@ async function deleteProjectRecord(id) {
             task.project_id = null;
           }
         });
+        appendCrudEvent({
+          source: 'app',
+          event: 'project_deleted',
+          entity_type: 'project',
+          entity_id: id
+        });
       }
       return result;
     } catch {
@@ -4760,7 +6647,15 @@ async function createStatusRecord(label) {
   if (canUseRemote) {
     try {
       const created = await api.createStatus({ workspace_id: state.workspace.id, label: trimmed });
-      if (created) upsertStatus(created);
+      if (created) {
+        upsertStatus(created);
+        appendCrudEvent({
+          source: 'app',
+          event: 'status_created',
+          entity_type: 'status',
+          entity_id: created.id
+        });
+      }
       return created;
     } catch {
       // fall back to local create
@@ -4797,7 +6692,16 @@ async function updateStatusRecord(id, patch) {
   if (canUseRemote) {
     try {
       const updated = await api.updateStatus(id, patch);
-      if (updated) upsertStatus(updated);
+      if (updated) {
+        upsertStatus(updated);
+        appendCrudEvent({
+          source: 'app',
+          event: 'status_updated',
+          entity_type: 'status',
+          entity_id: id,
+          data: { fields: Object.keys(patch ?? {}) }
+        });
+      }
       return updated;
     } catch {
       // fall back to local update
@@ -4830,6 +6734,12 @@ async function deleteStatusRecord(id) {
       const result = await api.deleteStatus(id);
       if (result?.deleted) {
         state.statuses = (state.statuses ?? []).filter(status => status.id !== id);
+        appendCrudEvent({
+          source: 'app',
+          event: 'status_deleted',
+          entity_type: 'status',
+          entity_id: id
+        });
       }
       return result;
     } catch {
@@ -4869,7 +6779,15 @@ async function createTaskTypeRecord(name) {
   if (canUseRemote) {
     try {
       const created = await api.createTaskType({ workspace_id: state.workspace.id, name: trimmed });
-      if (created) upsertTaskType(created);
+      if (created) {
+        upsertTaskType(created);
+        appendCrudEvent({
+          source: 'app',
+          event: 'task_type_created',
+          entity_type: 'task_type',
+          entity_id: created.id
+        });
+      }
       return created;
     } catch {
       // fall back to local create
@@ -4904,7 +6822,16 @@ async function updateTaskTypeRecord(id, patch) {
   if (canUseRemote) {
     try {
       const updated = await api.updateTaskType(id, patch);
-      if (updated) upsertTaskType(updated);
+      if (updated) {
+        upsertTaskType(updated);
+        appendCrudEvent({
+          source: 'app',
+          event: 'task_type_updated',
+          entity_type: 'task_type',
+          entity_id: id,
+          data: { fields: Object.keys(patch ?? {}) }
+        });
+      }
       return updated;
     } catch {
       // fall back to local update
@@ -4945,6 +6872,12 @@ async function deleteTaskTypeRecord(id) {
       const result = await api.deleteTaskType(id);
       if (result?.deleted) {
         state.taskTypes = (state.taskTypes ?? []).filter(type => type.id !== id);
+        appendCrudEvent({
+          source: 'app',
+          event: 'task_type_deleted',
+          entity_type: 'task_type',
+          entity_id: id
+        });
       }
       return result;
     } catch {
@@ -4976,7 +6909,15 @@ async function createNoticeRecord(payload) {
   if (!state.workspace) return null;
   const title = payload?.title !== undefined ? normalizeTitleInput(payload.title) : payload?.title;
   const created = await api.createNotice({ ...payload, title, workspace_id: state.workspace.id });
-  if (created) upsertNotice(created);
+  if (created) {
+    upsertNotice(created);
+    appendCrudEvent({
+      source: 'app',
+      event: 'notice_created',
+      entity_type: 'notice',
+      entity_id: created.id
+    });
+  }
   return created;
 }
 
@@ -4984,7 +6925,15 @@ async function createNoticeTypeRecord(payload) {
   if (!state.workspace) return null;
   const label = payload?.label !== undefined ? normalizeTitleInput(payload.label) : payload?.label;
   const created = await api.createNoticeType({ ...payload, label, workspace_id: state.workspace.id });
-  if (created) upsertNoticeType(created);
+  if (created) {
+    upsertNoticeType(created);
+    appendCrudEvent({
+      source: 'app',
+      event: 'notice_type_created',
+      entity_type: 'notice_type',
+      entity_id: created.id
+    });
+  }
   return created;
 }
 
@@ -4993,7 +6942,16 @@ async function updateNoticeRecord(id, patch) {
     patch = { ...patch, title: normalizeTitleInput(patch.title) };
   }
   const updated = await api.updateNotice(id, patch);
-  if (updated) upsertNotice(updated);
+  if (updated) {
+    upsertNotice(updated);
+    appendCrudEvent({
+      source: 'app',
+      event: 'notice_updated',
+      entity_type: 'notice',
+      entity_id: id,
+      data: { fields: Object.keys(patch ?? {}) }
+    });
+  }
   return updated;
 }
 
@@ -5002,7 +6960,16 @@ async function updateNoticeTypeRecord(id, patch) {
     patch = { ...patch, label: normalizeTitleInput(patch.label) };
   }
   const updated = await api.updateNoticeType(id, patch);
-  if (updated) upsertNoticeType(updated);
+  if (updated) {
+    upsertNoticeType(updated);
+    appendCrudEvent({
+      source: 'app',
+      event: 'notice_type_updated',
+      entity_type: 'notice_type',
+      entity_id: id,
+      data: { fields: Object.keys(patch ?? {}) }
+    });
+  }
   return updated;
 }
 
@@ -5010,6 +6977,12 @@ async function deleteNoticeRecord(id) {
   const result = await api.deleteNotice(id);
   if (result?.deleted) {
     state.notices = (state.notices ?? []).filter(notice => notice.id !== id);
+    appendCrudEvent({
+      source: 'app',
+      event: 'notice_deleted',
+      entity_type: 'notice',
+      entity_id: id
+    });
   }
   return result;
 }
@@ -5018,6 +6991,12 @@ async function deleteNoticeTypeRecord(id) {
   const result = await api.deleteNoticeType(id);
   if (result?.deleted) {
     state.noticeTypes = (state.noticeTypes ?? []).filter(type => type.id !== id);
+    appendCrudEvent({
+      source: 'app',
+      event: 'notice_type_deleted',
+      entity_type: 'notice_type',
+      entity_id: id
+    });
   }
   return result;
 }
@@ -5026,7 +7005,15 @@ async function createStoreRuleRecord(payload) {
   if (!state.workspace) return null;
   const storeName = payload?.store_name !== undefined ? normalizeTitleInput(payload.store_name) : payload?.store_name;
   const created = await api.createStoreRule({ ...payload, store_name: storeName, workspace_id: state.workspace.id });
-  if (created) upsertStoreRule(created);
+  if (created) {
+    upsertStoreRule(created);
+    appendCrudEvent({
+      source: 'app',
+      event: 'store_rule_created',
+      entity_type: 'store_rule',
+      entity_id: created.id
+    });
+  }
   return created;
 }
 
@@ -5035,7 +7022,16 @@ async function updateStoreRuleRecord(id, patch) {
     patch = { ...patch, store_name: normalizeTitleInput(patch.store_name) };
   }
   const updated = await api.updateStoreRule(id, patch);
-  if (updated) upsertStoreRule(updated);
+  if (updated) {
+    upsertStoreRule(updated);
+    appendCrudEvent({
+      source: 'app',
+      event: 'store_rule_updated',
+      entity_type: 'store_rule',
+      entity_id: id,
+      data: { fields: Object.keys(patch ?? {}) }
+    });
+  }
   return updated;
 }
 
@@ -5043,6 +7039,12 @@ async function deleteStoreRuleRecord(id) {
   const result = await api.deleteStoreRule(id);
   if (result?.deleted) {
     state.storeRules = (state.storeRules ?? []).filter(rule => rule.id !== id);
+    appendCrudEvent({
+      source: 'app',
+      event: 'store_rule_deleted',
+      entity_type: 'store_rule',
+      entity_id: id
+    });
   }
   return result;
 }
@@ -5051,7 +7053,15 @@ async function createShoppingListRecord(payload) {
   if (!state.workspace) return null;
   const name = payload?.name !== undefined ? normalizeTitleInput(payload.name) : payload?.name;
   const created = await api.createShoppingList({ ...payload, name, workspace_id: state.workspace.id });
-  if (created) upsertShoppingList(created);
+  if (created) {
+    upsertShoppingList(created);
+    appendCrudEvent({
+      source: 'app',
+      event: 'shopping_list_created',
+      entity_type: 'shopping_list',
+      entity_id: created.id
+    });
+  }
   return created;
 }
 
@@ -5060,7 +7070,16 @@ async function updateShoppingListRecord(id, patch) {
     patch = { ...patch, name: normalizeTitleInput(patch.name) };
   }
   const updated = await api.updateShoppingList(id, patch);
-  if (updated) upsertShoppingList(updated);
+  if (updated) {
+    upsertShoppingList(updated);
+    appendCrudEvent({
+      source: 'app',
+      event: 'shopping_list_updated',
+      entity_type: 'shopping_list',
+      entity_id: id,
+      data: { fields: Object.keys(patch ?? {}) }
+    });
+  }
   return updated;
 }
 
@@ -5069,6 +7088,12 @@ async function deleteShoppingListRecord(id) {
   if (result?.deleted) {
     state.shoppingLists = (state.shoppingLists ?? []).filter(list => list.id !== id);
     removeShoppingItemsForList(id);
+    appendCrudEvent({
+      source: 'app',
+      event: 'shopping_list_deleted',
+      entity_type: 'shopping_list',
+      entity_id: id
+    });
   }
   return result;
 }
@@ -5082,6 +7107,15 @@ async function createShoppingItemsRecord(listId, items) {
   const result = await api.createShoppingItems(listId, normalizedItems);
   const createdItems = Array.isArray(result?.items) ? result.items : [];
   createdItems.forEach(item => upsertShoppingItem(item));
+  if (createdItems.length) {
+    appendCrudEvent({
+      source: 'app',
+      event: 'shopping_items_created',
+      entity_type: 'shopping_list',
+      entity_id: listId,
+      data: { count: createdItems.length }
+    });
+  }
   return createdItems;
 }
 
@@ -5090,7 +7124,16 @@ async function updateShoppingItemRecord(id, patch) {
     patch = { ...patch, name: normalizeTitleInput(patch.name) };
   }
   const updated = await api.updateShoppingItem(id, patch);
-  if (updated) upsertShoppingItem(updated);
+  if (updated) {
+    upsertShoppingItem(updated);
+    appendCrudEvent({
+      source: 'app',
+      event: 'shopping_item_updated',
+      entity_type: 'shopping_item',
+      entity_id: id,
+      data: { fields: Object.keys(patch ?? {}) }
+    });
+  }
   return updated;
 }
 
@@ -5098,6 +7141,12 @@ async function deleteShoppingItemRecord(id) {
   const result = await api.deleteShoppingItem(id);
   if (result?.deleted) {
     delete state.shoppingItems[id];
+    appendCrudEvent({
+      source: 'app',
+      event: 'shopping_item_deleted',
+      entity_type: 'shopping_item',
+      entity_id: id
+    });
   }
   return result;
 }
@@ -5341,6 +7390,12 @@ function buildTaskEditorPatch(task) {
   const dueAt = fromDatetimeLocal(editorDue?.value ?? '');
   const projectId = editorProject?.value || null;
   const priority = editorPriority?.value ?? task.priority ?? 'medium';
+  const assigneeSelection = editorAssignee?.value ?? ASSIGNEE_SELECT_NONE;
+  const assigneeLabelInput = editorAssigneeLabel?.value?.trim() ?? '';
+  const nextAssigneeUserId = assigneeSelection && assigneeSelection !== ASSIGNEE_SELECT_EXTERNAL
+    ? assigneeSelection
+    : null;
+  const nextAssigneeLabel = assigneeSelection === ASSIGNEE_SELECT_EXTERNAL ? assigneeLabelInput : null;
 
   const patch = {};
   if (title && title !== task.title) patch.title = title;
@@ -5348,6 +7403,12 @@ function buildTaskEditorPatch(task) {
   if ((typeLabel ?? null) !== (task.type_label ?? null)) patch.type_label = typeLabel;
   if (priority !== (task.priority ?? 'medium')) patch.priority = priority;
   if ((projectId ?? null) !== (task.project_id ?? null)) patch.project_id = projectId;
+  if ((nextAssigneeUserId ?? null) !== (task.assignee_user_id ?? null)) {
+    patch.assignee_user_id = nextAssigneeUserId;
+  }
+  if ((nextAssigneeLabel ?? null) !== (task.assignee_label ?? null)) {
+    patch.assignee_label = nextAssigneeLabel;
+  }
   if ((recurrence.interval ?? null) !== (task.recurrence_interval ?? null)) {
     patch.recurrence_interval = recurrence.interval ?? null;
   }
@@ -6088,6 +8149,7 @@ async function persistTaskOrder(container, parentId, statusKey, groupMeta) {
   const items = getDirectTaskItems(container);
   const normalizedGroup = groupMeta?.value !== undefined ? (groupMeta.value || null) : undefined;
   const mode = groupMeta?.mode ?? null;
+  let workflowLinksChanged = false;
   for (let index = 0; index < items.length; index += 1) {
     const id = items[index].dataset.taskId;
     const task = state.tasks[id];
@@ -6104,11 +8166,25 @@ async function persistTaskOrder(container, parentId, statusKey, groupMeta) {
       } else if (mode === 'priority') {
         const nextPriority = normalizedGroup ?? 'medium';
         if ((task.priority ?? 'medium') !== nextPriority) patch.priority = nextPriority;
+      } else if (mode === 'workflow-phase') {
+        const checklistInstanceId = getActiveWorkflowChecklistInstanceId();
+        const link = getWorkflowInstanceLinkByTaskId(task.id);
+        if (checklistInstanceId && link && link.workflow_instance_id === checklistInstanceId) {
+          if ((link.phase_id ?? null) !== normalizedGroup) {
+            link.phase_id = normalizedGroup;
+            link.updated_at = nowIso();
+            workflowLinksChanged = true;
+          }
+        }
       }
     }
     if (Object.keys(patch).length) {
       await updateTaskRecord(id, patch);
     }
+  }
+  if (workflowLinksChanged) {
+    state.workflowInstanceTasks = [...(state.workflowInstanceTasks ?? [])];
+    persistLocalData();
   }
   render();
 }
@@ -6859,6 +8935,7 @@ function getTaskSortComparator(tasks = null) {
 }
 
 function renderAiQueueBanner(tasks) {
+  if (isWorkflowChecklistViewActive()) return;
   if (getTaskSortKey() !== 'ai-queue') return;
   const banner = document.createElement('section');
   banner.className = 'ai-queue-banner';
@@ -7103,6 +9180,7 @@ function render() {
   renderProjectsPage();
   renderWorkflowList();
   renderTemplateList();
+  renderTeamMemberList();
   renderTaskTypeList();
   renderStoreRuleList();
   renderWorkspaceManageList();
@@ -7118,6 +9196,8 @@ function render() {
   renderTaskGroup();
   renderNoticeFilter();
   renderNoticeSort();
+  renderProjectFilter();
+  renderShoppingFilter();
   renderTaskViewToggle();
   renderBulkSelectionBar();
   if (activeTaskId && !state.tasks[activeTaskId]) {
@@ -7164,6 +9244,9 @@ function render() {
     renderNoticeTypeSelect(noticeType?.value ?? '');
   }
   renderNotificationStatus();
+  if ((settingsModal && !settingsModal.classList.contains('hidden')) || getActiveView() === 'audit-log') {
+    renderAuditLogOutput();
+  }
   if (checkinDefaultMinutesInput) {
     const activeEl = document.activeElement;
     if (activeEl !== checkinDefaultMinutesInput) {
@@ -7176,6 +9259,7 @@ function render() {
   updateTaskEditorScrollbar();
   syncCheckinModal();
   maybeShowCheckinModal();
+  syncNavigationHistory();
   saveState(state);
   persistLocalData();
 }
@@ -7187,6 +9271,9 @@ function renderView() {
   const showShopping = view === 'shopping';
   const showNotices = view === 'notices';
   const showWorkflows = view === 'workflows';
+  const showDataTransfer = view === 'data-transfer';
+  const showAuditLog = view === 'audit-log';
+  const showAutomation = view === 'automation';
   const showManageWorkspaces = view === 'workspaces-manage';
   const showArchivedWorkspaces = view === 'workspaces-archived';
 
@@ -7195,6 +9282,9 @@ function renderView() {
   shoppingPage?.classList.toggle('hidden', !showShopping);
   noticesPage?.classList.toggle('hidden', !showNotices);
   workflowsPage?.classList.toggle('hidden', !showWorkflows);
+  dataTransferPage?.classList.toggle('hidden', !showDataTransfer);
+  auditLogPage?.classList.toggle('hidden', !showAuditLog);
+  automationPage?.classList.toggle('hidden', !showAutomation);
   workspaceManagePage?.classList.toggle('hidden', !showManageWorkspaces);
   workspaceArchivedPage?.classList.toggle('hidden', !showArchivedWorkspaces);
 }
@@ -7204,16 +9294,113 @@ function getProjectsForWorkspace() {
   return (state.projects ?? []).filter(project => project.workspace_id === state.workspace.id && !project.archived);
 }
 
+function getWorkspaceMembershipsForCurrentWorkspace() {
+  if (!state.workspace) return [];
+  return (state.workspaceMemberships ?? [])
+    .filter(item => item.workspace_id === state.workspace.id && !item.archived);
+}
+
+function getUsersForCurrentWorkspace() {
+  if (!state.workspace) return [];
+  const workspaceMemberships = getWorkspaceMembershipsForCurrentWorkspace();
+  if (!workspaceMemberships.length) return [];
+  const userIds = new Set(workspaceMemberships.map(item => item.user_id));
+  return (state.users ?? [])
+    .filter(user => user.org_id === state.workspace.org_id && userIds.has(user.id) && !user.archived)
+    .sort((a, b) => String(a.display_name ?? '').localeCompare(String(b.display_name ?? '')));
+}
+
+function getUserDisplayName(userId) {
+  if (!userId) return '';
+  const user = (state.users ?? []).find(item => item.id === userId);
+  return user?.display_name ?? '';
+}
+
+function getTaskAssigneeDisplay(task) {
+  if (!task) return '';
+  if (task.assignee_user_id) {
+    return getUserDisplayName(task.assignee_user_id) || task.assignee_label || '';
+  }
+  return task.assignee_label || '';
+}
+
+const ASSIGNEE_SELECT_NONE = '';
+const ASSIGNEE_SELECT_EXTERNAL = '__external__';
+
+function getAssigneeSelectValue(assigneeUserId, assigneeLabel) {
+  if (assigneeUserId) return assigneeUserId;
+  if (assigneeLabel) return ASSIGNEE_SELECT_EXTERNAL;
+  return ASSIGNEE_SELECT_NONE;
+}
+
+function setAssigneeLabelInputVisibility(selectEl, labelRowEl, labelInputEl, selectedLabel = '') {
+  if (!selectEl || !labelRowEl || !labelInputEl) return;
+  const showExternal = selectEl.value === ASSIGNEE_SELECT_EXTERNAL;
+  labelRowEl.classList.toggle('hidden', !showExternal);
+  if (showExternal && !labelInputEl.value && selectedLabel) {
+    labelInputEl.value = selectedLabel;
+  }
+  if (!showExternal) {
+    labelInputEl.value = '';
+  }
+}
+
+function populateAssigneeSelect(selectEl, labelRowEl, labelInputEl, selectedUserId = null, selectedLabel = '') {
+  if (!selectEl) return;
+  const previousValue = selectEl.value;
+  const users = getUsersForCurrentWorkspace();
+  const selectedValue = getAssigneeSelectValue(selectedUserId, selectedLabel);
+  selectEl.innerHTML = '';
+
+  const noneOption = document.createElement('option');
+  noneOption.value = ASSIGNEE_SELECT_NONE;
+  noneOption.textContent = 'No assignee';
+  selectEl.appendChild(noneOption);
+
+  users.forEach((user) => {
+    const option = document.createElement('option');
+    option.value = user.id;
+    option.textContent = user.display_name;
+    selectEl.appendChild(option);
+  });
+  const hasSelectedUser = Boolean(selectedUserId) && users.some(user => user.id === selectedUserId);
+  if (selectedUserId && !hasSelectedUser) {
+    const unknownOption = document.createElement('option');
+    unknownOption.value = selectedUserId;
+    unknownOption.textContent = `Unknown user (${selectedUserId.slice(0, 8)})`;
+    selectEl.appendChild(unknownOption);
+  }
+
+  const externalOption = document.createElement('option');
+  externalOption.value = ASSIGNEE_SELECT_EXTERNAL;
+  externalOption.textContent = 'External person...';
+  selectEl.appendChild(externalOption);
+
+  const hasSelectedUserOption = Boolean(selectedUserId)
+    && Array.from(selectEl.options).some(option => option.value === selectedUserId);
+  if (hasSelectedUserOption || selectedValue === ASSIGNEE_SELECT_NONE || selectedValue === ASSIGNEE_SELECT_EXTERNAL) {
+    selectEl.value = selectedValue;
+  } else if (previousValue && Array.from(selectEl.options).some(option => option.value === previousValue)) {
+    selectEl.value = previousValue;
+  } else {
+    selectEl.value = ASSIGNEE_SELECT_NONE;
+  }
+  setAssigneeLabelInputVisibility(selectEl, labelRowEl, labelInputEl, selectedLabel);
+}
+
 function getActiveShoppingList() {
   if (!state.workspace) return null;
-  const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
-  const lists = (state.shoppingLists ?? []).filter(list =>
-    list.workspace_id === state.workspace.id && shouldShowShoppingListInSidebar(list, { showArchived })
-  );
+  const allLists = (state.shoppingLists ?? [])
+    .filter(list => list.workspace_id === state.workspace.id);
   const activeId = state.ui?.activeShoppingListId ?? null;
-  return lists.find(list => list.id === activeId)
-    ?? lists.find(list => !list.archived && !isShoppingListComplete(list.id))
-    ?? lists[0]
+  const explicitActive = allLists.find(list => list.id === activeId);
+  if (explicitActive) return explicitActive;
+  const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
+  const visibleLists = allLists.filter(list => shouldShowShoppingListInSidebar(list, { showArchived }));
+  return visibleLists.find(list => !list.archived && !isShoppingListComplete(list.id))
+    ?? visibleLists[0]
+    ?? allLists.find(list => !list.archived && !isShoppingListClosed(list))
+    ?? allLists[0]
     ?? null;
 }
 
@@ -7228,6 +9415,11 @@ function isShoppingListComplete(listId) {
   return items.every(item => item.is_checked);
 }
 
+function isShoppingListClosed(list) {
+  if (!list) return false;
+  return Boolean(list.archived) || isShoppingListComplete(list.id);
+}
+
 function shouldShowShoppingListInSidebar(list, { showArchived = false } = {}) {
   if (!list) return false;
   if (showArchived) return true;
@@ -7238,6 +9430,29 @@ function shouldShowShoppingListInSidebar(list, { showArchived = false } = {}) {
 function getFilteredTasks() {
   if (!state.workspace) return [];
   const tasks = Object.values(state.tasks).filter(task => task.workspace_id === state.workspace.id);
+  const checklistInstanceId = getActiveWorkflowChecklistInstanceId();
+  if (checklistInstanceId) {
+    const instance = getWorkflowInstanceById(checklistInstanceId);
+    if (!instance || instance.workspace_id !== state.workspace.id) {
+      clearActiveWorkflowChecklistInstanceId();
+    } else {
+      const workflowLinksByTaskId = new Map(
+        getWorkflowInstanceTasks(checklistInstanceId).map(link => [link.task_id, link])
+      );
+      return tasks.filter((task) => {
+        let current = task;
+        let guard = 0;
+        while (current && guard < 200) {
+          const workflowLink = workflowLinksByTaskId.get(current.id);
+          if (workflowLink) return true;
+          if (!current.parent_id) return false;
+          current = state.tasks?.[current.parent_id] ?? null;
+          guard += 1;
+        }
+        return false;
+      });
+    }
+  }
   const filter = state.ui?.activeProjectId ?? null;
   if (!filter) return tasks;
   if (filter === 'unassigned') {
@@ -7246,13 +9461,51 @@ function getFilteredTasks() {
   return tasks.filter(task => task.project_id === filter);
 }
 
+function getChecklistLinkForTask(taskId, checklistInstanceId) {
+  let currentId = taskId;
+  let guard = 0;
+  while (currentId && guard < 200) {
+    const link = getWorkflowInstanceLinkByTaskId(currentId);
+    if (link && (!checklistInstanceId || link.workflow_instance_id === checklistInstanceId)) {
+      return link;
+    }
+    currentId = state.tasks?.[currentId]?.parent_id ?? null;
+    guard += 1;
+  }
+  return null;
+}
+
 function renderTaskFilter() {
   if (!taskFilterButton || !taskFilterMenu) return;
   const label = getTaskFilterLabel();
+  const checklistViewActive = isWorkflowChecklistViewActive();
+  taskFilterButton.classList.toggle('task-filter-title', checklistViewActive);
+  if (checklistViewActive) {
+    taskFilterButton.textContent = label;
+    taskFilterButton.setAttribute('aria-haspopup', 'false');
+    taskFilterButton.setAttribute('aria-expanded', 'false');
+    taskFilterButton.title = label;
+    taskFilterMenu.classList.add('hidden');
+    if (openMenu === taskFilterMenu) {
+      openMenu = null;
+    }
+    return;
+  }
   taskFilterButton.textContent = `${label} ▾`;
+  taskFilterButton.setAttribute('aria-haspopup', 'menu');
+  taskFilterButton.setAttribute('aria-expanded', 'false');
+  taskFilterButton.removeAttribute('title');
 }
 
 function getTaskFilterLabel() {
+  const checklistInstanceId = getActiveWorkflowChecklistInstanceId();
+  if (checklistInstanceId) {
+    const instance = getWorkflowInstanceById(checklistInstanceId);
+    if (instance) {
+      return instance.title;
+    }
+    return 'Checklist';
+  }
   const active = state.ui?.activeProjectId ?? null;
   let label = 'All tasks';
   if (active === 'unassigned') {
@@ -7273,10 +9526,13 @@ function cycleTaskFilterSelection() {
   const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % cycle.length : 0;
   state.ui = state.ui ?? {};
   state.ui.activeProjectId = cycle[nextIndex] ?? null;
+  clearActiveWorkflowChecklistInstanceId();
 }
 
 function cycleTaskSortSelection() {
-  const cycle = ['default', 'due-asc', 'due-desc', 'ai-queue'];
+  const cycle = isWorkflowChecklistViewActive()
+    ? ['default', 'due-asc', 'due-desc']
+    : ['default', 'due-asc', 'due-desc', 'ai-queue'];
   const current = getTaskSortKey();
   const currentIndex = cycle.indexOf(current);
   const next = cycle[(currentIndex + 1) % cycle.length] ?? 'default';
@@ -7303,9 +9559,18 @@ function cycleTaskViewSelection() {
 function renderTaskTools() {
   if (!taskToolsToggleQuickAdd) return;
   const mobile = isMobileViewport();
+  const checklistViewActive = isWorkflowChecklistViewActive();
+  const taskToolsWrapper = taskToolsButton?.closest('.task-tools');
+  taskToolsWrapper?.classList.toggle('hidden', checklistViewActive);
+  if (checklistViewActive) {
+    taskToolsMenu?.classList.add('hidden');
+    if (openMenu === taskToolsMenu) {
+      openMenu = null;
+    }
+  }
   taskToolsToggleQuickAdd.classList.toggle('hidden', mobile);
   taskToolsToggleQuickAdd.textContent = `${getTaskQuickAddVisible() ? 'Hide' : 'Show'} quick add`;
-  taskToolsMobileFilter?.classList.toggle('hidden', !mobile);
+  taskToolsMobileFilter?.classList.toggle('hidden', !mobile || checklistViewActive);
   taskToolsMobileSort?.classList.toggle('hidden', !mobile);
   taskToolsMobileGroup?.classList.toggle('hidden', !mobile);
   taskToolsMobileView?.classList.toggle('hidden', !mobile);
@@ -7339,6 +9604,16 @@ function renderTaskTools() {
     taskToolsMobileView.textContent = `View: ${viewLabelMap[getTaskView()] ?? 'List'}`;
   }
   if (taskAiButton) {
+    const aiWrapper = taskAiButton.closest('.task-ai');
+    aiWrapper?.classList.toggle('hidden', checklistViewActive);
+    if (checklistViewActive) {
+      taskAiMenu?.classList.add('hidden');
+      if (openMenu === taskAiMenu) openMenu = null;
+      taskAiButton.classList.remove('has-count');
+      taskAiButton.dataset.count = '';
+      taskAiButton.title = 'AI suggestions';
+      return;
+    }
     const pending = getAiSuggestions().filter(item => item?.task_id && item.decision !== 'rejected').length;
     taskAiButton.classList.toggle('has-count', pending > 0);
     taskAiButton.dataset.count = pending > 0 ? String(pending) : '';
@@ -7348,6 +9623,11 @@ function renderTaskTools() {
 
 function renderTaskSort() {
   if (!taskSortButton || !taskSortMenu) return;
+  const checklistViewActive = isWorkflowChecklistViewActive();
+  const aiSortItem = taskSortMenu.querySelector('[data-sort="ai-queue"]');
+  if (aiSortItem instanceof HTMLElement) {
+    aiSortItem.classList.toggle('hidden', checklistViewActive);
+  }
   const key = getTaskSortKey();
   const labelMap = {
     default: 'Sort',
@@ -7374,12 +9654,36 @@ function renderNoticeFilter() {
   if (!noticeFilterButton || !noticeFilterMenu) return;
   const key = getNoticeFilterKey();
   const labelMap = {
+    open: 'Open notices',
+    closed: 'Closed notices',
     all: 'All notices',
     upcoming: 'Upcoming',
     overdue: 'Overdue',
     today: 'Today'
   };
   noticeFilterButton.textContent = `${labelMap[key] ?? 'All notices'} ▾`;
+}
+
+function renderProjectFilter() {
+  if (!projectFilterButton || !projectFilterMenu) return;
+  const key = getProjectFilterKey();
+  const labelMap = {
+    open: 'Open projects',
+    closed: 'Closed projects',
+    all: 'All projects'
+  };
+  projectFilterButton.textContent = `${labelMap[key] ?? 'Open projects'} ▾`;
+}
+
+function renderShoppingFilter() {
+  if (!shoppingFilterButton || !shoppingFilterMenu) return;
+  const key = getShoppingFilterKey();
+  const labelMap = {
+    open: 'Open lists',
+    closed: 'Completed lists',
+    all: 'All lists'
+  };
+  shoppingFilterButton.textContent = `${labelMap[key] ?? 'Open lists'} ▾`;
 }
 
 function renderNoticeSort() {
@@ -7453,6 +9757,7 @@ function renderProjectList() {
     selectBtn.addEventListener('click', () => {
       state.ui = state.ui ?? {};
       state.ui.activeProjectId = project.id;
+      clearActiveWorkflowChecklistInstanceId();
       setActiveView('tasks');
       render();
     });
@@ -7555,11 +9860,25 @@ function renderProjectsPage() {
     projectsMobileList.appendChild(empty);
     return;
   }
-  const projects = getProjectsForWorkspace();
+  const filterKey = getProjectFilterKey();
+  let projects = (state.projects ?? [])
+    .filter(project => project.workspace_id === state.workspace.id);
+  if (filterKey === 'open') {
+    projects = projects.filter(project => !project.archived);
+  } else if (filterKey === 'closed') {
+    projects = projects.filter(project => Boolean(project.archived));
+  }
+  projects.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
   if (!projects.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = 'No projects yet.';
+    if (filterKey === 'closed') {
+      empty.textContent = 'No closed projects yet.';
+    } else if (filterKey === 'all') {
+      empty.textContent = 'No projects yet.';
+    } else {
+      empty.textContent = 'No open projects yet.';
+    }
     projectsMobileList.appendChild(empty);
     return;
   }
@@ -7571,15 +9890,21 @@ function renderProjectsPage() {
     selectBtn.type = 'button';
     selectBtn.className = 'workspace-select';
     selectBtn.textContent = project.name;
-    selectBtn.addEventListener('click', () => {
-      state.ui = state.ui ?? {};
-      state.ui.activeProjectId = project.id;
-      setActiveView('tasks');
-      render();
-    });
+    if (project.archived) {
+      selectBtn.disabled = true;
+      selectBtn.title = 'Closed project';
+    } else {
+      selectBtn.addEventListener('click', () => {
+        state.ui = state.ui ?? {};
+        state.ui.activeProjectId = project.id;
+        clearActiveWorkflowChecklistInstanceId();
+        setActiveView('tasks');
+        render();
+      });
+    }
     const badge = document.createElement('span');
     badge.className = 'project-badge';
-    badge.textContent = 'Project';
+    badge.textContent = project.archived ? 'Closed' : 'Project';
     row.appendChild(selectBtn);
     row.appendChild(badge);
     projectsMobileList.appendChild(row);
@@ -7779,6 +10104,64 @@ function renderTemplateList() {
     row.appendChild(selectBtn);
     row.appendChild(menuWrapper);
     templateListEl.appendChild(row);
+  });
+}
+
+function renderTeamMemberList() {
+  if (!teamMemberListEl) return;
+  if (!state.workspace) {
+    teamMemberListEl.innerHTML = '';
+    return;
+  }
+  teamMemberListEl.innerHTML = '';
+  const users = getUsersForCurrentWorkspace();
+  if (!users.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'No members yet.';
+    teamMemberListEl.appendChild(empty);
+    return;
+  }
+  users.forEach((user) => {
+    const membership = (state.workspaceMemberships ?? [])
+      .find(item => item.workspace_id === state.workspace.id && item.user_id === user.id && !item.archived);
+    if (!membership) return;
+    const row = document.createElement('div');
+    row.className = 'workspace-row';
+
+    const summary = document.createElement('div');
+    summary.className = 'workspace-select';
+    const emailText = user.email ? ` · ${user.email}` : '';
+    summary.textContent = `${user.display_name}${emailText}`;
+
+    const roleSelect = document.createElement('select');
+    roleSelect.className = 'setting-input';
+    roleSelect.innerHTML = [
+      '<option value="member">Member</option>',
+      '<option value="manager">Manager</option>'
+    ].join('');
+    roleSelect.value = membership.role ?? 'member';
+    roleSelect.addEventListener('change', async () => {
+      await updateWorkspaceMembershipRecord(membership.id, { role: roleSelect.value });
+      render();
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'icon-button';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Remove member';
+    removeBtn.addEventListener('click', async () => {
+      const confirmed = confirm(`Remove ${user.display_name} from this workspace?`);
+      if (!confirmed) return;
+      await deleteWorkspaceMembershipRecord(membership.id);
+      render();
+    });
+
+    row.appendChild(summary);
+    row.appendChild(roleSelect);
+    row.appendChild(removeBtn);
+    teamMemberListEl.appendChild(row);
   });
 }
 
@@ -7982,7 +10365,7 @@ function renderNoticeSidebarList() {
       event.stopPropagation();
       menu.classList.add('hidden');
       openMenu = null;
-      openNoticeModalWithNotice(notice);
+      openNoticeModalWithNotice(notice, { mode: 'edit' });
     });
 
     const dismissItem = document.createElement('button');
@@ -8054,7 +10437,16 @@ function renderWorkflowsPage() {
   }
   const variants = workflow ? getWorkflowVariants(workflow.id) : [];
 
-  workflowInstanceAddBtn?.classList.toggle('hidden', !isManageView);
+  if (workflowInstanceAddBtn) {
+    workflowInstanceAddBtn.classList.toggle('hidden', !isManageView);
+    if (isManageView) {
+      workflowInstanceAddBtn.textContent = '✕';
+      workflowInstanceAddBtn.title = 'Close manage workflows';
+    } else {
+      workflowInstanceAddBtn.textContent = '＋';
+      workflowInstanceAddBtn.title = 'New workflow blueprint';
+    }
+  }
   workflowMenuButton?.classList.add('hidden');
   workflowMenu?.classList.add('hidden');
   if (workflowPageTitle) {
@@ -8068,7 +10460,9 @@ function renderWorkflowsPage() {
     } else if (isMobileWorkflows && mobilePanelMode === 'list') {
       workflowPageSubtitle.textContent = 'Choose a workflow to view open and completed instances.';
     } else {
-      workflowPageSubtitle.textContent = workflow ? 'Workflow runs' : 'Select a workflow to view runs.';
+      workflowPageSubtitle.textContent = workflow
+        ? `Open and completed ${workflow.name.toLowerCase()}.`
+        : 'Select a workflow to view runs.';
     }
   }
 
@@ -8524,6 +10918,14 @@ function renderWorkflowsPage() {
             patternLabel.textContent = task.title;
             row.appendChild(kindBadge);
             row.appendChild(patternLabel);
+            const referencedPattern = task.pattern_id ? getWorkflowPatternById(task.pattern_id) : null;
+            if (referencedPattern?.if_applicable) {
+              const patternOptionalBadge = document.createElement('span');
+              patternOptionalBadge.className = 'workflow-optional-badge';
+              patternOptionalBadge.textContent = 'IA';
+              patternOptionalBadge.title = 'If applicable';
+              row.appendChild(patternOptionalBadge);
+            }
           } else {
             const titleInput = document.createElement('input');
             titleInput.type = 'text';
@@ -8894,6 +11296,24 @@ function renderWorkflowsPage() {
           patternHeader.appendChild(lockBtn);
         }
 
+        const patternOptionalLabel = document.createElement('label');
+        patternOptionalLabel.className = 'workflow-optional-toggle';
+        patternOptionalLabel.dataset.tooltip = 'If applicable';
+        const patternOptionalInput = document.createElement('input');
+        patternOptionalInput.type = 'checkbox';
+        patternOptionalInput.checked = Boolean(pattern.if_applicable);
+        patternOptionalInput.disabled = locked;
+        patternOptionalInput.addEventListener('change', () => {
+          updateWorkflowPatternRecord(pattern.id, { if_applicable: patternOptionalInput.checked });
+          render();
+        });
+        const patternOptionalText = document.createElement('span');
+        patternOptionalText.className = 'workflow-optional-badge';
+        patternOptionalText.textContent = 'IA';
+        patternOptionalLabel.appendChild(patternOptionalInput);
+        patternOptionalLabel.appendChild(patternOptionalText);
+        patternHeader.appendChild(patternOptionalLabel);
+
         const deletePatternBtn = document.createElement('button');
         deletePatternBtn.type = 'button';
         deletePatternBtn.className = 'icon-button';
@@ -8948,6 +11368,13 @@ function renderWorkflowsPage() {
             label.textContent = referenced?.name ?? task.title;
             row.appendChild(kindBadge);
             row.appendChild(label);
+            if (referenced?.if_applicable) {
+              const patternOptionalBadge = document.createElement('span');
+              patternOptionalBadge.className = 'workflow-optional-badge';
+              patternOptionalBadge.textContent = 'IA';
+              patternOptionalBadge.title = 'If applicable';
+              row.appendChild(patternOptionalBadge);
+            }
           } else {
             const titleInput = document.createElement('input');
             titleInput.type = 'text';
@@ -9109,38 +11536,36 @@ function renderWorkflowsPage() {
     });
     instanceHeader.appendChild(backBtn);
   }
-  const instanceTitle = document.createElement('h3');
-  instanceTitle.textContent = 'Workflows';
+  const instanceNoun = getWorkflowInstanceNoun(workflow.name);
   const runBtn = document.createElement('button');
   runBtn.type = 'button';
   runBtn.className = 'subtle-button';
-  runBtn.textContent = `New ${workflow.name}`;
+  runBtn.textContent = `New ${instanceNoun}`;
   runBtn.disabled = !isWorkflowUsable(workflow.id);
-  runBtn.title = runBtn.disabled ? 'Add a type with tasks to run this blueprint.' : 'Start a workflow';
+  runBtn.title = runBtn.disabled
+    ? 'Add a type with tasks before creating new items.'
+    : `Start a new ${instanceNoun.toLowerCase()}`;
   runBtn.addEventListener('click', () => {
     openWorkflowInstanceModal();
   });
   const filterGroup = document.createElement('div');
   filterGroup.className = 'workflow-instance-filters';
-  const openFilterBtn = document.createElement('button');
-  openFilterBtn.type = 'button';
-  openFilterBtn.className = `subtle-button${getWorkflowInstanceFilter() === 'open' ? ' is-active' : ''}`;
-  openFilterBtn.textContent = 'Open';
-  openFilterBtn.addEventListener('click', () => {
-    setWorkflowInstanceFilter('open');
+  const filterSelect = document.createElement('select');
+  filterSelect.className = 'workflow-instance-filter-select';
+  const openOption = document.createElement('option');
+  openOption.value = 'open';
+  openOption.textContent = 'Open';
+  const completedOption = document.createElement('option');
+  completedOption.value = 'completed';
+  completedOption.textContent = 'Completed';
+  filterSelect.appendChild(openOption);
+  filterSelect.appendChild(completedOption);
+  filterSelect.value = getWorkflowInstanceFilter() === 'completed' ? 'completed' : 'open';
+  filterSelect.addEventListener('change', () => {
+    setWorkflowInstanceFilter(filterSelect.value === 'completed' ? 'completed' : 'open');
     render();
   });
-  const completedFilterBtn = document.createElement('button');
-  completedFilterBtn.type = 'button';
-  completedFilterBtn.className = `subtle-button${getWorkflowInstanceFilter() === 'completed' ? ' is-active' : ''}`;
-  completedFilterBtn.textContent = 'Completed';
-  completedFilterBtn.addEventListener('click', () => {
-    setWorkflowInstanceFilter('completed');
-    render();
-  });
-  filterGroup.appendChild(openFilterBtn);
-  filterGroup.appendChild(completedFilterBtn);
-  instanceHeader.appendChild(instanceTitle);
+  filterGroup.appendChild(filterSelect);
   instanceHeader.appendChild(filterGroup);
   instanceHeader.appendChild(runBtn);
   instanceSection.appendChild(instanceHeader);
@@ -9153,12 +11578,26 @@ function renderWorkflowsPage() {
   if (!visibleInstances.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = filter === 'completed' ? 'No completed workflows yet.' : 'No open workflows yet.';
+    const pluralLabel = workflow.name.toLowerCase();
+    empty.textContent = filter === 'completed'
+      ? `No completed ${pluralLabel} yet.`
+      : `No open ${pluralLabel} yet.`;
     instanceSection.appendChild(empty);
   } else {
     visibleInstances.forEach(instance => {
       const row = document.createElement('div');
       row.className = 'workflow-instance-row';
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', `Open checklist for ${instance.title}`);
+      row.addEventListener('click', () => {
+        openWorkflowInstanceChecklist(instance.id);
+      });
+      row.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openWorkflowInstanceChecklist(instance.id);
+      });
       const info = document.createElement('div');
       const title = document.createElement('div');
       title.textContent = instance.title;
@@ -9177,7 +11616,14 @@ function renderWorkflowsPage() {
 
       const actionRow = document.createElement('div');
       actionRow.className = 'workflow-instance-actions';
+      actionRow.addEventListener('click', (event) => {
+        event.stopPropagation();
+      });
+      actionRow.addEventListener('keydown', (event) => {
+        event.stopPropagation();
+      });
       const hasOptionalEntries = links.some(link => link.if_applicable || link.dismissed_at);
+
       const manageApplicabilityBtn = document.createElement('button');
       manageApplicabilityBtn.type = 'button';
       manageApplicabilityBtn.className = 'subtle-button';
@@ -9219,14 +11665,18 @@ function renderNoticesPageList() {
   }
   noticesListEl.innerHTML = '';
   const now = new Date();
-  let notices = (state.notices ?? [])
-    .filter(notice => notice.workspace_id === state.workspace.id && !notice.dismissed_at);
-
   const filterKey = getNoticeFilterKey();
+  let notices = (state.notices ?? [])
+    .filter(notice => notice.workspace_id === state.workspace.id);
   notices = notices.filter(notice => {
-    if (!notice.notify_at) return filterKey === 'all';
+    const isDismissed = Boolean(notice.dismissed_at);
+    if (filterKey === 'open') return !isDismissed;
+    if (filterKey === 'closed') return isDismissed;
+    if (filterKey === 'all') return true;
+    if (isDismissed) return false;
+    if (!notice.notify_at) return false;
     const notifyAt = new Date(notice.notify_at);
-    if (Number.isNaN(notifyAt.getTime())) return filterKey === 'all';
+    if (Number.isNaN(notifyAt.getTime())) return false;
     const isToday = notifyAt.toDateString() === now.toDateString();
     if (filterKey === 'today') return isToday;
     if (filterKey === 'overdue') return notifyAt < now && !isToday;
@@ -9247,7 +11697,15 @@ function renderNoticesPageList() {
   if (!notices.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = 'No notices yet.';
+    if (filterKey === 'closed') {
+      empty.textContent = 'No closed notices.';
+    } else if (filterKey === 'all') {
+      empty.textContent = 'No notices yet.';
+    } else if (filterKey === 'open') {
+      empty.textContent = 'No open notices.';
+    } else {
+      empty.textContent = 'No matching notices.';
+    }
     noticesListEl.appendChild(empty);
     return;
   }
@@ -9289,18 +11747,22 @@ function renderNoticesPageList() {
       event.stopPropagation();
       menu.classList.add('hidden');
       openMenu = null;
-      openNoticeModalWithNotice(notice);
+      openNoticeModalWithNotice(notice, { mode: 'edit' });
     });
 
     const dismissItem = document.createElement('button');
     dismissItem.type = 'button';
     dismissItem.className = 'workspace-menu-item';
-    dismissItem.textContent = 'Dismiss';
+    dismissItem.textContent = notice.dismissed_at ? 'Reopen' : 'Dismiss';
     dismissItem.addEventListener('click', async (event) => {
       event.stopPropagation();
       menu.classList.add('hidden');
       openMenu = null;
-      await dismissNoticeWithUndo(notice);
+      if (notice.dismissed_at) {
+        await updateNoticeRecord(notice.id, { dismissed_at: null });
+      } else {
+        await dismissNoticeWithUndo(notice);
+      }
     });
 
     menu.appendChild(editItem);
@@ -9446,6 +11908,8 @@ function renderShoppingListList() {
       state.ui.activeShoppingListId = list.id;
       if (isMobileViewport()) {
         setMobileShoppingPanelMode('details');
+      } else {
+        setShoppingPageMode('details');
       }
       setActiveView('shopping');
       render();
@@ -9459,16 +11923,18 @@ function renderShoppingListList() {
 function renderShoppingPanel() {
   if (!shoppingPage) return;
   const isMobileShopping = isMobileViewport();
+  const desktopMode = getShoppingPageMode();
   const mobileMode = isMobileShopping ? getMobileShoppingPanelMode() : 'details';
+  const showListMode = (isMobileShopping && mobileMode === 'list') || (!isMobileShopping && desktopMode === 'list');
   const isShoppingView = getActiveView() === 'shopping';
   const activeList = getActiveShoppingList();
-  const showMobileBack = isShoppingView && isMobileShopping && mobileMode === 'details';
+  const showMobileBack = isShoppingView && isMobileShopping && mobileMode === 'details' && !showListMode;
   shoppingMobileBackRow?.classList.toggle('hidden', !showMobileBack);
   if (shoppingMobileBack) {
     shoppingMobileBack.classList.toggle('hidden', !showMobileBack);
   }
 
-  if (isMobileShopping && mobileMode === 'list') {
+  if (showListMode) {
     shoppingPage.classList.remove('is-empty');
     shoppingListTitle.textContent = 'Shopping Lists';
     shoppingListSubtitle.textContent = 'Select a list to view its checklist.';
@@ -9476,17 +11942,28 @@ function renderShoppingPanel() {
     shoppingListMenu?.classList.add('hidden');
     shoppingCompleteBtn?.classList.add('hidden');
     shoppingAddBtn?.classList.add('hidden');
+    shoppingFilterButton?.classList.remove('hidden');
     shoppingListItemsEl.innerHTML = '';
-    const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
+    const filterKey = getShoppingFilterKey();
     const lists = (state.shoppingLists ?? [])
-      .filter(list =>
-        list.workspace_id === state.workspace?.id && shouldShowShoppingListInSidebar(list, { showArchived })
-      )
+      .filter(list => list.workspace_id === state.workspace?.id)
+      .filter((list) => {
+        const closed = isShoppingListClosed(list);
+        if (filterKey === 'open') return !closed;
+        if (filterKey === 'closed') return closed;
+        return true;
+      })
       .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
     if (!lists.length) {
       const empty = document.createElement('div');
       empty.className = 'sidebar-note';
-      empty.textContent = 'No shopping lists yet.';
+      if (filterKey === 'closed') {
+        empty.textContent = 'No completed lists.';
+      } else if (filterKey === 'all') {
+        empty.textContent = 'No shopping lists yet.';
+      } else {
+        empty.textContent = 'No open lists.';
+      }
       shoppingListItemsEl.appendChild(empty);
       return;
     }
@@ -9501,18 +11978,29 @@ function renderShoppingPanel() {
       const meta = document.createElement('span');
       meta.className = 'shopping-mobile-row-meta';
       const itemCount = getShoppingItemsForList(list.id).length;
-      meta.textContent = `${itemCount} item${itemCount === 1 ? '' : 's'}`;
+      const closed = isShoppingListClosed(list);
+      meta.textContent = `${itemCount} item${itemCount === 1 ? '' : 's'}${closed ? ' · complete' : ''}`;
       row.appendChild(name);
       row.appendChild(meta);
       row.addEventListener('click', () => {
         state.ui = state.ui ?? {};
         state.ui.activeShoppingListId = list.id;
-        setMobileShoppingPanelMode('details');
+        if (isMobileShopping) {
+          setMobileShoppingPanelMode('details');
+        } else {
+          setShoppingPageMode('details');
+        }
         render();
       });
       shoppingListItemsEl.appendChild(row);
     });
     return;
+  }
+
+  shoppingFilterButton?.classList.add('hidden');
+  shoppingFilterMenu?.classList.add('hidden');
+  if (openMenu === shoppingFilterMenu) {
+    openMenu = null;
   }
 
   if (isMobileShopping && !activeList) {
@@ -9610,7 +12098,10 @@ function renderNotificationStatus() {
 function renderTaskList(roots) {
   const inlineAddDisabled = isMobileViewport();
   const quickAddVisible = getTaskQuickAddVisible();
-  const groupMode = getTaskSortKey() === 'ai-queue' ? 'none' : getTaskGroupMode();
+  const checklistInstanceId = getActiveWorkflowChecklistInstanceId();
+  const groupMode = checklistInstanceId
+    ? 'workflow-phase'
+    : (getTaskSortKey() === 'ai-queue' ? 'none' : getTaskGroupMode());
   if (groupMode === 'none') {
     const topDropzone = document.createElement('div');
     topDropzone.className = 'task-root-dropzone';
@@ -9786,6 +12277,105 @@ function renderTaskList(roots) {
     }
     if (!inlineAddDisabled) {
       list.appendChild(addSectionRow);
+    }
+  } else if (groupMode === 'workflow-phase') {
+    const phaseOrder = new Map();
+    const instance = checklistInstanceId ? getWorkflowInstanceById(checklistInstanceId) : null;
+    if (instance?.variant_id) {
+      getWorkflowVariantPhases(instance.variant_id).forEach((entry, index) => {
+        phaseOrder.set(entry.phase.id, { label: entry.phase.name, sort: index });
+      });
+    }
+
+    const grouped = new Map();
+    const ungrouped = [];
+    const getPhaseInfoForTask = (taskId) => {
+      let currentId = taskId;
+      let guard = 0;
+      while (currentId && guard < 200) {
+        const link = getWorkflowInstanceLinkByTaskId(currentId);
+        if (link && link.workflow_instance_id === checklistInstanceId) {
+          const phaseId = link.phase_id ?? null;
+          if (!phaseId) return null;
+          const known = phaseOrder.get(phaseId);
+          if (known) {
+            return {
+              id: phaseId,
+              label: known.label,
+              sort: known.sort
+            };
+          }
+          const phase = getWorkflowPhaseById(phaseId);
+          return {
+            id: phaseId,
+            label: phase?.name ?? 'Phase',
+            sort: Number.MAX_SAFE_INTEGER
+          };
+        }
+        currentId = state.tasks?.[currentId]?.parent_id ?? null;
+        guard += 1;
+      }
+      return null;
+    };
+
+    roots.forEach(task => {
+      const phaseInfo = getPhaseInfoForTask(task.id);
+      if (!phaseInfo) {
+        ungrouped.push(task);
+        return;
+      }
+      if (!grouped.has(phaseInfo.id)) {
+        grouped.set(phaseInfo.id, { ...phaseInfo, tasks: [] });
+      }
+      grouped.get(phaseInfo.id).tasks.push(task);
+    });
+
+    phaseOrder.forEach((meta, phaseId) => {
+      if (!grouped.has(phaseId)) {
+        grouped.set(phaseId, {
+          id: phaseId,
+          label: meta.label,
+          sort: meta.sort,
+          tasks: []
+        });
+      }
+    });
+
+    const groups = Array.from(grouped.values()).sort((a, b) => {
+      const sortDiff = (a.sort ?? Number.MAX_SAFE_INTEGER) - (b.sort ?? Number.MAX_SAFE_INTEGER);
+      if (sortDiff !== 0) return sortDiff;
+      return a.label.localeCompare(b.label);
+    });
+
+    groups.forEach(group => {
+      const section = document.createElement('div');
+      section.className = 'task-group-section';
+      section.dataset.groupMode = 'workflow-phase';
+      section.dataset.groupValue = group.id ?? '';
+
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'task-group-header';
+      sectionHeader.textContent = group.label;
+      section.appendChild(sectionHeader);
+
+      const groupList = document.createElement('div');
+      groupList.className = 'task-group-list';
+      attachTaskDropzone(groupList, {
+        parentId: null,
+        groupMode: 'workflow-phase',
+        groupValue: group.id
+      });
+      group.tasks.forEach(node => groupList.appendChild(renderTask(node)));
+      section.appendChild(groupList);
+      list.appendChild(section);
+    });
+
+    if (ungrouped.length) {
+      const ungroupedList = document.createElement('div');
+      ungroupedList.className = 'task-group-list task-ungrouped-list';
+      attachTaskDropzone(ungroupedList, { parentId: null });
+      ungrouped.forEach(node => ungroupedList.appendChild(renderTask(node)));
+      list.appendChild(ungroupedList);
     }
   } else if (groupMode !== 'none') {
     const grouped = new Map();
@@ -10536,23 +13126,36 @@ function renderTask(task) {
   const menuButton = node.querySelector('.task-menu-button');
   const menu = node.querySelector('.task-menu');
   const menuItems = node.querySelectorAll('.task-menu-item');
+  const taskActions = node.querySelector('.task-actions');
+  const taskMenuWrapper = node.querySelector('.task-menu-wrapper');
   const childrenEl = node.querySelector('.task-children');
   const hasChildren = task.children && task.children.length > 0;
   const collapsedMap = state.ui?.collapsedTasks ?? {};
   const isCollapsed = Boolean(collapsedMap[task.id]);
   const statusKey = task.status ?? getDefaultStatusKey();
+  const checklistViewActive = isWorkflowChecklistViewActive();
+  const checklistInstanceId = checklistViewActive ? getActiveWorkflowChecklistInstanceId() : null;
+  const workflowLink = checklistViewActive ? getChecklistLinkForTask(task.id, checklistInstanceId) : null;
+  const isChecklistIa = Boolean(workflowLink?.if_applicable);
+  const isChecklistDismissed = Boolean(workflowLink?.dismissed_at);
+  const isChecklistRowDisabled = checklistViewActive && isChecklistDismissed;
 
   titleEl.textContent = task.title;
   titleEl.addEventListener('click', (event) => {
     event.stopPropagation();
     if (event.button !== 0) return;
     if (suppressTaskClick) return;
+    if (isChecklistRowDisabled) return;
     beginInlineTaskEdit(task, item, titleEl);
   });
   item.dataset.status = statusKey;
-  attachTaskDragHandlers(item, task);
+  if (!isChecklistRowDisabled) {
+    attachTaskDragHandlers(item, task);
+  }
   item.classList.toggle('is-selected', isTaskSelected(task.id));
+  item.classList.toggle('workflow-ia-muted', isChecklistRowDisabled);
   item.style.borderLeft = `3px solid ${getStatusColor(statusKey)}`;
+  item.setAttribute('aria-disabled', isChecklistRowDisabled ? 'true' : 'false');
   if (statusTag) {
     statusTag.textContent = getStatusLabel(statusKey);
     statusTag.style.background = `${getStatusColor(statusKey)}33`;
@@ -10584,9 +13187,44 @@ function renderTask(task) {
     item.classList.add('completed');
   }
 
+  if (isChecklistIa && taskActions) {
+    const iaToggle = document.createElement('button');
+    iaToggle.type = 'button';
+    iaToggle.className = 'task-ia-toggle';
+    if (isChecklistDismissed) {
+      iaToggle.classList.add('is-off');
+    }
+    iaToggle.textContent = 'N/A';
+    iaToggle.title = isChecklistDismissed
+      ? 'Not applicable right now. Click to keep this task active.'
+      : 'If applicable is active. Click to mark this task as not applicable.';
+    iaToggle.setAttribute(
+      'aria-label',
+      isChecklistDismissed
+        ? `Mark "${task.title}" applicable`
+        : `Mark "${task.title}" not applicable`
+    );
+    iaToggle.setAttribute('aria-pressed', isChecklistDismissed ? 'false' : 'true');
+    iaToggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isChecklistDismissed) {
+        restoreWorkflowTask(task.id);
+      } else {
+        dismissWorkflowTask(task.id);
+      }
+      render();
+    });
+    taskActions.insertBefore(iaToggle, taskMenuWrapper ?? null);
+  }
+
+  completeButton.disabled = isChecklistRowDisabled;
+  menuButton.disabled = isChecklistRowDisabled;
+
   item.addEventListener('click', (event) => {
     if (suppressTaskClick) return;
     if (event.button !== 0) return;
+    if (isChecklistRowDisabled) return;
     if (event.target.closest('button')) return;
     if (event.target.closest('.task-drag-handle')) return;
     const selected = getSelectedTaskIds();
@@ -10601,12 +13239,14 @@ function renderTask(task) {
 
   item.addEventListener('dblclick', (event) => {
     if (suppressTaskClick) return;
+    if (isChecklistRowDisabled) return;
     if (event.target.closest('button')) return;
     if (getSelectedTaskIds().length) return;
     openTaskEditor(task.id);
   });
 
   item.addEventListener('contextmenu', (event) => {
+    if (isChecklistRowDisabled) return;
     event.preventDefault();
     event.stopPropagation();
     showTaskContextMenu(task.id, event.clientX, event.clientY);
@@ -10628,9 +13268,12 @@ function renderTask(task) {
     toggleBtn.classList.add('hidden');
   }
 
-  attachTaskDropzone(childrenEl, { parentId: task.id });
+  if (!isChecklistRowDisabled) {
+    attachTaskDropzone(childrenEl, { parentId: task.id });
+  }
 
   completeButton.addEventListener('click', async () => {
+    if (isChecklistRowDisabled) return;
     const isDone = isDoneStatusKey(statusKey);
     if (!isDone && hasIncompleteDependencies(task.id)) {
       alert('This task has incomplete dependencies. Complete them first.');
@@ -11029,15 +13672,11 @@ function renderWorkflowList() {
     selectBtn.className = 'workspace-select';
     selectBtn.textContent = workflow.name;
     selectBtn.addEventListener('click', () => {
-      const usable = isWorkflowUsable(workflow.id);
-      setWorkflowViewMode(usable ? 'runs' : 'manage');
+      setWorkflowViewMode('runs');
       setWorkflowInstanceFilter('open');
       setActiveWorkflowId(workflow.id);
       setActiveView('workflows');
       render();
-      if (usable) {
-        openWorkflowInstanceModal();
-      }
     });
 
     row.appendChild(selectBtn);
@@ -11131,10 +13770,27 @@ function closeWorkflowInstanceModal() {
 
 function openSettings() {
   settingsModal?.classList.remove('hidden');
+  renderAuditLogOutput();
 }
 
 function closeSettings() {
   settingsModal?.classList.add('hidden');
+}
+
+function openSettingsLinkedPage(view) {
+  state.ui = state.ui ?? {};
+  state.ui.settingsReturnView = getActiveView();
+  closeSettings();
+  setActiveView(view);
+  render();
+}
+
+function returnFromSettingsLinkedPage() {
+  state.ui = state.ui ?? {};
+  const returnView = state.ui.settingsReturnView ?? 'tasks';
+  setActiveView(returnView);
+  openSettings();
+  render();
 }
 
 function openProfile() {
@@ -11658,6 +14314,14 @@ function populateTaskEditor(task) {
     editorPriority.value = task.priority ?? 'medium';
     populateProjectSelect(editorProject, task.project_id ?? '', true);
     populateParentSelect(editorParent, task.id, task.parent_id ?? null);
+    if (editorAssigneeLabel) editorAssigneeLabel.value = task.assignee_label ?? '';
+    populateAssigneeSelect(
+      editorAssignee,
+      editorAssigneeLabelRow,
+      editorAssigneeLabel,
+      task.assignee_user_id ?? null,
+      task.assignee_label ?? ''
+    );
     setRecurrenceState('editor', task.recurrence_interval ?? null, task.recurrence_unit ?? 'month');
     editorReminder.value = task.reminder_offset_days ?? '';
     populateStatusSelect(editorStatus, task.status ?? getDefaultStatusKey());
@@ -12068,6 +14732,13 @@ async function checkNotices() {
       body: `${task.title} is due soon.`,
       tag: task.id
     });
+    appendAuditEvent({
+      source: 'app',
+      category: 'notification',
+      event: 'task_reminder_sent',
+      entity_type: 'task',
+      entity_id: task.id
+    });
     await updateTaskRecord(task.id, { reminder_sent_at: nowIso() });
   }
   for (const notice of state.notices ?? []) {
@@ -12075,6 +14746,13 @@ async function checkNotices() {
     new Notification('BrianHub Notice', {
       body: notice.title,
       tag: notice.id
+    });
+    appendAuditEvent({
+      source: 'app',
+      category: 'notification',
+      event: 'notice_sent',
+      entity_type: 'notice',
+      entity_id: notice.id
     });
     const recurrenceRule = getNoticeRecurrenceRule(notice);
     const nextNotifyAt = getNextNoticeNotifyAt(notice);
@@ -12126,6 +14804,16 @@ function openTaskModal(defaults = {}) {
   modalDesc.value = '';
   const defaultType = taskModalDefaults.type_label ?? getDefaultTaskTypeName();
   populateTaskTypeSelect(modalType, defaultType);
+  const defaultAssigneeUserId = taskModalDefaults.assignee_user_id ?? null;
+  const defaultAssigneeLabel = taskModalDefaults.assignee_label ?? '';
+  if (modalAssigneeLabel) modalAssigneeLabel.value = defaultAssigneeLabel;
+  populateAssigneeSelect(
+    modalAssignee,
+    modalAssigneeLabelRow,
+    modalAssigneeLabel,
+    defaultAssigneeUserId,
+    defaultAssigneeLabel
+  );
   modalReminder.value = '';
   const nextInterval = taskModalDefaults.recurrence_interval ?? null;
   const nextUnit = taskModalDefaults.recurrence_unit ?? 'month';
@@ -12142,6 +14830,9 @@ function closeTaskModal() {
 
 modalCancel.addEventListener('click', closeTaskModal);
 taskModal.querySelector('.modal-backdrop').addEventListener('click', closeTaskModal);
+modalAssignee?.addEventListener('change', () => {
+  setAssigneeLabelInputVisibility(modalAssignee, modalAssigneeLabelRow, modalAssigneeLabel);
+});
 
 newShoppingListBtn?.addEventListener('click', openShoppingListModal);
 shoppingListCancel?.addEventListener('click', closeShoppingListModal);
@@ -12329,6 +15020,117 @@ settingsOpen?.addEventListener('click', () => {
 });
 settingsClose?.addEventListener('click', closeSettings);
 settingsModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeSettings);
+settingsOpenDataTransfer?.addEventListener('click', () => {
+  openSettingsLinkedPage('data-transfer');
+});
+settingsOpenAuditLog?.addEventListener('click', () => {
+  openSettingsLinkedPage('audit-log');
+});
+settingsOpenAutomation?.addEventListener('click', () => {
+  openSettingsLinkedPage('automation');
+});
+teamMemberAddBtn?.addEventListener('click', async () => {
+  if (!state.workspace) return;
+  const name = teamMemberNameInput?.value?.trim() ?? '';
+  if (!name) return;
+  const email = teamMemberEmailInput?.value?.trim() ?? '';
+  const role = teamMemberRoleSelect?.value ?? 'member';
+  try {
+    let user = null;
+    const existingUsers = getUsersForCurrentWorkspace();
+    if (email) {
+      user = existingUsers.find(entry => String(entry.email ?? '').toLowerCase() === email.toLowerCase()) ?? null;
+    }
+    if (!user) {
+      user = existingUsers.find(entry => entry.display_name === name) ?? null;
+    }
+    if (!user) {
+      user = await createUserRecord({ display_name: name, email: email || null });
+    }
+    if (!user) return;
+    const existingMembership = (state.workspaceMemberships ?? []).find(item =>
+      item.workspace_id === state.workspace.id && item.user_id === user.id && !item.archived
+    );
+    if (existingMembership) {
+      await updateWorkspaceMembershipRecord(existingMembership.id, { role });
+    } else {
+      await createWorkspaceMembershipRecord({ user_id: user.id, role });
+    }
+    if (teamMemberNameInput) teamMemberNameInput.value = '';
+    if (teamMemberEmailInput) teamMemberEmailInput.value = '';
+    if (teamMemberRoleSelect) teamMemberRoleSelect.value = 'member';
+    render();
+  } catch (err) {
+    alert(err?.message ?? 'Unable to add member.');
+  }
+});
+dataTransferBack?.addEventListener('click', returnFromSettingsLinkedPage);
+auditLogBack?.addEventListener('click', returnFromSettingsLinkedPage);
+automationBack?.addEventListener('click', returnFromSettingsLinkedPage);
+dataExportDownload?.addEventListener('click', exportCurrentWorkspaceData);
+dataImportApply?.addEventListener('click', async () => {
+  const file = dataImportFile?.files?.[0];
+  if (!file) {
+    alert('Choose a JSON export file first.');
+    return;
+  }
+  const replaceExisting = Boolean(dataImportReplace?.checked);
+  if (replaceExisting) {
+    const confirmed = confirm('Replace all data for the imported workspace ID with file contents?');
+    if (!confirmed) return;
+  }
+  try {
+    await importWorkspaceFromJsonFile(file, { replaceExisting });
+    syncStatus.textContent = 'Import completed (local)';
+    if (dataImportFile) dataImportFile.value = '';
+  } catch (err) {
+    alert(err?.message ?? 'Import failed.');
+  }
+});
+auditLogFilter?.addEventListener('change', renderAuditLogOutput);
+auditLogRefresh?.addEventListener('click', renderAuditLogOutput);
+auditLogCopy?.addEventListener('click', async () => {
+  try {
+    await copyAuditLogOutput();
+  } catch (err) {
+    alert(err?.message ?? 'Could not copy audit log.');
+  }
+});
+auditLogClear?.addEventListener('click', () => {
+  const confirmed = confirm('Clear all audit log entries?');
+  if (!confirmed) return;
+  clearAuditLogOutput();
+});
+automationRun?.addEventListener('click', async () => {
+  try {
+    await runAutomationCommandsFromInput();
+  } catch (err) {
+    const message = err?.message ?? 'Automation failed.';
+    setAutomationOutputText(JSON.stringify({ ok: false, error: message }, null, 2));
+    appendAuditEvent({
+      source: 'automation',
+      category: 'error',
+      event: 'batch_failed',
+      data: { message }
+    });
+  }
+});
+automationClear?.addEventListener('click', () => {
+  if (automationInput) automationInput.value = '';
+  setAutomationOutputText('');
+});
+automationCopyGuide?.addEventListener('click', async () => {
+  const originalLabel = automationCopyGuide.textContent || 'Copy syntax';
+  try {
+    await copyAutomationSyntaxGuide();
+    automationCopyGuide.textContent = 'Copied';
+    setTimeout(() => {
+      if (automationCopyGuide) automationCopyGuide.textContent = originalLabel;
+    }, 1200);
+  } catch {
+    alert('Could not copy syntax instructions.');
+  }
+});
 profileOpen?.addEventListener('click', () => {
   accountMenu?.classList.add('hidden');
   openMenu = null;
@@ -12380,6 +15182,11 @@ editorTitle?.addEventListener('blur', () => scheduleTaskEditorAutosave('title-bl
 editorType?.addEventListener('change', () => scheduleTaskEditorAutosave('type', 300));
 editorPriority?.addEventListener('change', () => scheduleTaskEditorAutosave('priority', 300));
 editorProject?.addEventListener('change', () => scheduleTaskEditorAutosave('project', 300));
+editorAssignee?.addEventListener('change', () => {
+  setAssigneeLabelInputVisibility(editorAssignee, editorAssigneeLabelRow, editorAssigneeLabel);
+  scheduleTaskEditorAutosave('assignee', 300);
+});
+editorAssigneeLabel?.addEventListener('input', () => scheduleTaskEditorAutosave('assignee-label', 400));
 editorParent?.addEventListener('change', () => scheduleTaskEditorAutosave('parent', 300));
 editorReminder?.addEventListener('input', () => scheduleTaskEditorAutosave('reminder', 500));
 editorReminder?.addEventListener('change', () => scheduleTaskEditorAutosave('reminder', 300));
@@ -12496,12 +15303,21 @@ taskEditorForm?.addEventListener('submit', async (event) => {
   const typeLabel = editorType.value ? editorType.value.trim() : null;
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
   const startAt = editorStart ? fromDatetimeLocal(editorStart.value) : null;
+  const assigneeSelection = editorAssignee?.value ?? ASSIGNEE_SELECT_NONE;
+  const assigneeUserId = assigneeSelection && assigneeSelection !== ASSIGNEE_SELECT_EXTERNAL
+    ? assigneeSelection
+    : null;
+  const assigneeLabel = assigneeSelection === ASSIGNEE_SELECT_EXTERNAL
+    ? (editorAssigneeLabel?.value?.trim() ?? '')
+    : null;
   const patch = {
     type_label: typeLabel,
     title,
     description_md: description,
     priority: editorPriority.value,
     project_id: editorProject.value || null,
+    assignee_user_id: assigneeUserId,
+    assignee_label: assigneeLabel || null,
     recurrence_interval: recurrence.interval ?? null,
     recurrence_unit: recurrence.interval ? recurrence.unit : null,
     reminder_offset_days: parseInt(editorReminder.value, 10) || null,
@@ -12615,10 +15431,19 @@ taskModalForm.addEventListener('submit', async (event) => {
   const activeProjectId = state.ui?.activeProjectId;
   const projectId = activeProjectId && activeProjectId !== 'unassigned' ? activeProjectId : null;
   const recurrence = modalRecurrence ?? { interval: null, unit: null };
+  const assigneeSelection = modalAssignee?.value ?? ASSIGNEE_SELECT_NONE;
+  const assigneeUserId = assigneeSelection && assigneeSelection !== ASSIGNEE_SELECT_EXTERNAL
+    ? assigneeSelection
+    : null;
+  const assigneeLabel = assigneeSelection === ASSIGNEE_SELECT_EXTERNAL
+    ? (modalAssigneeLabel?.value?.trim() ?? '')
+    : null;
   await createTaskRecord({
     title,
     parent_id: parentId,
     project_id: projectId,
+    assignee_user_id: assigneeUserId,
+    assignee_label: assigneeLabel || null,
     priority: modalPriority.value,
     status: modalStatus.value,
     type_label: typeLabel,
@@ -12722,32 +15547,6 @@ workflowApplicabilityForm?.addEventListener('submit', (event) => {
   render();
 });
 
-syncBtn.addEventListener('click', async () => {
-  if (!state.workspace) return;
-  resetSyncBackoff();
-  syncStatus.textContent = 'Syncing...';
-  try {
-    if (hasPendingLocalChanges()) {
-      if (!navigator.onLine) {
-        syncStatus.textContent = 'Local changes pending (offline)';
-        return;
-      }
-      const pushResult = await pushPendingChanges();
-      if (pushResult.error || pushResult.remaining.length) {
-        syncStatus.textContent = 'Local changes pending (offline)';
-        return;
-      }
-    }
-    await refreshWorkspace();
-    await primeSyncCursor();
-    resetSyncBackoff();
-    syncStatus.textContent = 'Synced (local)';
-  } catch (err) {
-    registerSyncFailure();
-    syncStatus.textContent = 'Sync failed (offline OK)';
-  }
-});
-
 newWorkspaceBtn.addEventListener('click', async () => {
   workspaceMenu?.classList.add('hidden');
   openMenu = null;
@@ -12795,6 +15594,7 @@ newProjectBtn?.addEventListener('click', async () => {
   if (!project) return;
   state.ui = state.ui ?? {};
   state.ui.activeProjectId = project.id;
+  clearActiveWorkflowChecklistInstanceId();
   render();
 });
 
@@ -12816,12 +15616,23 @@ enableNotificationsBtn?.addEventListener('change', async () => {
   if (!enableNotificationsBtn.checked) {
     state.ui = state.ui ?? {};
     state.ui.notificationsEnabled = false;
+    appendAuditEvent({
+      source: 'app',
+      category: 'notification',
+      event: 'notifications_disabled'
+    });
     render();
     return;
   }
   const permission = await Notification.requestPermission();
   state.ui = state.ui ?? {};
   state.ui.notificationsEnabled = permission === 'granted';
+  appendAuditEvent({
+    source: 'app',
+    category: 'notification',
+    event: state.ui.notificationsEnabled ? 'notifications_enabled' : 'notifications_blocked',
+    data: { permission }
+  });
   render();
 });
 
@@ -12829,9 +15640,49 @@ setInterval(checkNotices, 60 * 1000);
 setInterval(maybeShowCheckinModal, 60 * 1000);
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', (event) => {
+    const snapshot = event?.state?.brianhubNav;
+    if (!snapshot) return;
+    const applied = applyNavigationStateSnapshot(snapshot);
+    if (!applied) return;
+    navigationHistoryApplying = true;
+    try {
+      render();
+    } finally {
+      navigationHistoryApplying = false;
+      navigationHistoryReady = true;
+      navigationHistoryLastSignature = getNavigationStateSignature(buildNavigationStateSnapshot());
+    }
+  });
+
+  window.addEventListener('error', (event) => {
+    appendAuditEvent({
+      source: 'app',
+      category: 'error',
+      event: 'window_error',
+      data: {
+        message: event?.message ?? 'Unknown error',
+        file: event?.filename ?? null,
+        line: event?.lineno ?? null,
+        column: event?.colno ?? null
+      }
+    });
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event?.reason;
+    appendAuditEvent({
+      source: 'app',
+      category: 'error',
+      event: 'unhandled_rejection',
+      data: {
+        message: reason?.message ?? String(reason ?? 'Unhandled rejection')
+      }
+    });
+  });
+
   window.addEventListener('resize', () => {
     if (!isMobileViewport()) {
-      setMobileSidebarOpen(false);
       closeMobileCreateSheet();
       closeMobileTopMenu();
     }

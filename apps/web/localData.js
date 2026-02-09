@@ -4,10 +4,13 @@ function defaultData() {
   return {
     localSeq: 0,
     pendingChanges: [],
+    auditLog: [],
     workspaces: [],
     projects: [],
     statuses: [],
     taskTypes: [],
+    users: [],
+    workspaceMemberships: [],
     tasks: {},
     taskDependencies: [],
     taskSections: [],
@@ -37,6 +40,8 @@ function normalizeData(data) {
   if (!Array.isArray(next.projects)) next.projects = [];
   if (!Array.isArray(next.statuses)) next.statuses = [];
   if (!Array.isArray(next.taskTypes)) next.taskTypes = [];
+  if (!Array.isArray(next.users)) next.users = [];
+  if (!Array.isArray(next.workspaceMemberships)) next.workspaceMemberships = [];
   if (!Array.isArray(next.taskDependencies)) next.taskDependencies = [];
   if (!Array.isArray(next.taskSections)) next.taskSections = [];
   if (!Array.isArray(next.templates)) next.templates = [];
@@ -64,6 +69,7 @@ function normalizeData(data) {
     }
   }
   if (!Array.isArray(next.pendingChanges)) next.pendingChanges = [];
+  if (!Array.isArray(next.auditLog)) next.auditLog = [];
   if (!Number.isFinite(next.localSeq)) next.localSeq = 0;
   return next;
 }

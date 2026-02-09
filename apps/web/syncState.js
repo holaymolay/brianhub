@@ -6,6 +6,8 @@ function normalizeData(data = {}) {
   if (!Array.isArray(next.projects)) next.projects = [];
   if (!Array.isArray(next.statuses)) next.statuses = [];
   if (!Array.isArray(next.taskTypes)) next.taskTypes = [];
+  if (!Array.isArray(next.users)) next.users = [];
+  if (!Array.isArray(next.workspaceMemberships)) next.workspaceMemberships = [];
   if (!next.tasks || typeof next.tasks !== 'object') next.tasks = {};
   if (!Array.isArray(next.taskDependencies)) next.taskDependencies = [];
   if (!Array.isArray(next.templates)) next.templates = [];
@@ -165,6 +167,10 @@ export function applyRemoteChange(data, change, context = {}) {
       return applyArrayChange(nextData, change, 'statuses');
     case 'task_type':
       return applyArrayChange(nextData, change, 'taskTypes');
+    case 'user':
+      return applyArrayChange(nextData, change, 'users');
+    case 'workspace_membership':
+      return applyArrayChange(nextData, change, 'workspaceMemberships');
     case 'template':
       return applyArrayChange(nextData, change, 'templates');
     case 'notice':

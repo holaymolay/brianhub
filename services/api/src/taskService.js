@@ -35,6 +35,21 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function normalizeEmail(value) {
+  const text = String(value ?? '').trim().toLowerCase();
+  return text || null;
+}
+
+function normalizeRole(value) {
+  const role = String(value ?? '').trim().toLowerCase();
+  return role || 'member';
+}
+
+function normalizeAssigneeLabel(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
 function assertUuid(value, fieldName = 'id') {
   if (!UUID_V4_RE.test(String(value ?? ''))) {
     throw new Error(`Invalid ${fieldName}`);
@@ -132,11 +147,16 @@ async function getRows(db, sql, params = []) {
   return db.query(sql, params);
 }
 
-async function assertWorkspaceExists(db, workspaceId) {
+async function getWorkspaceRow(db, workspaceId) {
   const id = assertUuid(workspaceId, 'workspace_id');
-  const row = await getRow(db, 'SELECT id FROM workspaces WHERE id = ?', [id]);
+  const row = await getRow(db, 'SELECT id, org_id FROM workspaces WHERE id = ?', [id]);
   if (!row) throw new Error('Workspace not found');
-  return id;
+  return row;
+}
+
+async function assertWorkspaceExists(db, workspaceId) {
+  const row = await getWorkspaceRow(db, workspaceId);
+  return row.id;
 }
 
 async function assertTaskBelongsToWorkspace(db, taskId, workspaceId, fieldName = 'task_id') {
@@ -167,6 +187,47 @@ async function assertTemplateBelongsToWorkspace(db, templateId, workspaceId, fie
     throw new Error(`${fieldName} must belong to the same workspace`);
   }
   return id;
+}
+
+async function getUserById(db, userId) {
+  const id = assertUuid(userId, 'user_id');
+  return getRow(db, 'SELECT * FROM users WHERE id = ?', [id]);
+}
+
+async function assertUserAssignableToWorkspace(db, userId, workspaceId) {
+  const safeUserId = assertUuid(userId, 'assignee_user_id');
+  const workspace = await getWorkspaceRow(db, workspaceId);
+  const user = await getUserById(db, safeUserId);
+  if (!user || Number(user.archived)) {
+    throw new Error('Assignee user not found');
+  }
+  if (user.org_id !== workspace.org_id) {
+    throw new Error('Assignee user must belong to the same organization');
+  }
+  const membership = await getRow(
+    db,
+    'SELECT id FROM workspace_memberships WHERE workspace_id = ? AND user_id = ? AND archived = 0',
+    [workspace.id, safeUserId]
+  );
+  if (!membership) {
+    throw new Error('Assignee user must be a member of this workspace');
+  }
+  return safeUserId;
+}
+
+async function normalizeTaskAssignee(db, workspaceId, assigneeUserId, assigneeLabel) {
+  const safeUserId = optionalUuid(assigneeUserId, 'assignee_user_id');
+  if (safeUserId) {
+    await assertUserAssignableToWorkspace(db, safeUserId, workspaceId);
+    return {
+      assignee_user_id: safeUserId,
+      assignee_label: null
+    };
+  }
+  return {
+    assignee_user_id: null,
+    assignee_label: normalizeAssigneeLabel(assigneeLabel)
+  };
 }
 
 export async function recordChange(db, workspaceId, entityType, entityId, action, payload, clientId = null) {
@@ -210,6 +271,225 @@ export async function createWorkspace(db, { id: providedId, name, type, org_id: 
 export async function listWorkspaces(db, orgId = DEFAULT_ORG_ID) {
   const safeOrgId = assertUuid(orgId ?? DEFAULT_ORG_ID, 'org_id');
   return getRows(db, 'SELECT * FROM workspaces WHERE org_id = ?', [safeOrgId]);
+}
+
+export async function listOrgs(db) {
+  return getRows(db, 'SELECT * FROM orgs ORDER BY name ASC');
+}
+
+export async function createOrg(db, data, clientId = null) {
+  const id = ensureUuid(data?.id, 'org id');
+  const existing = await getRow(db, 'SELECT * FROM orgs WHERE id = ?', [id]);
+  if (existing) return existing;
+  const timestamp = nowIso();
+  const org = {
+    id,
+    name: String(data?.name ?? '').trim() || 'Organization',
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+  await run(
+    db,
+    'INSERT INTO orgs (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+    [org.id, org.name, org.created_at, org.updated_at]
+  );
+  if (clientId) {
+    // Org records are global, so only log when a workspace context is supplied by caller.
+    const workspaceId = optionalUuid(data?.workspace_id, 'workspace_id');
+    if (workspaceId) {
+      await recordChange(db, workspaceId, 'org', org.id, 'create', org, clientId);
+    }
+  }
+  return org;
+}
+
+export async function listUsers(db, orgId, workspaceId = null) {
+  let safeOrgId = orgId ? assertUuid(orgId, 'org_id') : null;
+  const safeWorkspaceId = optionalUuid(workspaceId, 'workspace_id');
+  if (safeWorkspaceId) {
+    const workspace = await getWorkspaceRow(db, safeWorkspaceId);
+    if (safeOrgId && workspace.org_id !== safeOrgId) {
+      throw new Error('workspace_id does not belong to org_id');
+    }
+    safeOrgId = safeOrgId ?? workspace.org_id;
+    return getRows(
+      db,
+      `SELECT u.*
+         FROM users u
+         JOIN workspace_memberships wm ON wm.user_id = u.id
+        WHERE u.org_id = ? AND wm.workspace_id = ? AND wm.archived = 0
+        ORDER BY u.display_name ASC`,
+      [safeOrgId, safeWorkspaceId]
+    );
+  }
+  if (!safeOrgId) {
+    throw new Error('org_id required');
+  }
+  return getRows(db, 'SELECT * FROM users WHERE org_id = ? ORDER BY display_name ASC', [safeOrgId]);
+}
+
+export async function createUser(db, data, clientId = null) {
+  const orgId = assertUuid(data?.org_id ?? DEFAULT_ORG_ID, 'org_id');
+  const providedId = optionalUuid(data?.id, 'user id');
+  const email = normalizeEmail(data?.email);
+  const displayName = String(data?.display_name ?? data?.name ?? '').trim();
+  if (!displayName) {
+    throw new Error('display_name required');
+  }
+  await ensureOrg(db, orgId);
+  if (providedId) {
+    const existing = await getRow(db, 'SELECT * FROM users WHERE id = ?', [providedId]);
+    if (existing) return existing;
+  }
+  if (email) {
+    const byEmail = await getRow(db, 'SELECT * FROM users WHERE org_id = ? AND email = ?', [orgId, email]);
+    if (byEmail) return byEmail;
+  }
+  const id = providedId ?? randomUUID();
+  const timestamp = nowIso();
+  const user = {
+    id,
+    org_id: orgId,
+    display_name: displayName,
+    email,
+    archived: data?.archived ? 1 : 0,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+  await run(
+    db,
+    `INSERT INTO users
+      (id, org_id, display_name, email, archived, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [user.id, user.org_id, user.display_name, user.email, user.archived, user.created_at, user.updated_at]
+  );
+  const workspaceId = optionalUuid(data?.workspace_id, 'workspace_id');
+  if (workspaceId) {
+    await recordChange(db, workspaceId, 'user', user.id, 'create', user, clientId);
+  }
+  return user;
+}
+
+export async function updateUser(db, id, patch, clientId = null) {
+  const userId = assertUuid(id, 'user id');
+  const existing = await getRow(db, 'SELECT * FROM users WHERE id = ?', [userId]);
+  if (!existing) return null;
+  const next = {
+    ...existing,
+    display_name: patch.display_name !== undefined ? String(patch.display_name).trim() || existing.display_name : existing.display_name,
+    email: patch.email !== undefined ? normalizeEmail(patch.email) : existing.email,
+    archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : Number(existing.archived) ? 1 : 0,
+    updated_at: nowIso()
+  };
+  await run(
+    db,
+    'UPDATE users SET display_name = ?, email = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.display_name, next.email, next.archived, next.updated_at, userId]
+  );
+  const workspaceId = optionalUuid(patch.workspace_id, 'workspace_id');
+  if (workspaceId) {
+    await recordChange(db, workspaceId, 'user', userId, 'update', patch, clientId);
+  }
+  return getRow(db, 'SELECT * FROM users WHERE id = ?', [userId]);
+}
+
+export async function listWorkspaceMemberships(db, workspaceId) {
+  if (!workspaceId) return [];
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  return getRows(
+    db,
+    `SELECT wm.*, u.display_name AS user_display_name, u.email AS user_email, u.archived AS user_archived, u.org_id
+       FROM workspace_memberships wm
+       JOIN users u ON u.id = wm.user_id
+      WHERE wm.workspace_id = ?
+      ORDER BY wm.archived ASC, u.display_name ASC`,
+    [safeWorkspaceId]
+  );
+}
+
+export async function createWorkspaceMembership(db, data, clientId = null) {
+  const workspace = await getWorkspaceRow(db, data?.workspace_id);
+  const userId = assertUuid(data?.user_id, 'user_id');
+  const user = await getUserById(db, userId);
+  if (!user || Number(user.archived)) {
+    throw new Error('User not found');
+  }
+  if (user.org_id !== workspace.org_id) {
+    throw new Error('User must belong to the same organization');
+  }
+  const existing = await getRow(
+    db,
+    'SELECT * FROM workspace_memberships WHERE workspace_id = ? AND user_id = ?',
+    [workspace.id, userId]
+  );
+  const timestamp = nowIso();
+  if (existing) {
+    const role = normalizeRole(data?.role ?? existing.role);
+    const archived = data?.archived !== undefined ? (data.archived ? 1 : 0) : 0;
+    await run(
+      db,
+      'UPDATE workspace_memberships SET role = ?, archived = ?, updated_at = ? WHERE id = ?',
+      [role, archived, timestamp, existing.id]
+    );
+    const updated = await getRow(db, 'SELECT * FROM workspace_memberships WHERE id = ?', [existing.id]);
+    await recordChange(db, workspace.id, 'workspace_membership', updated.id, 'update', updated, clientId);
+    return updated;
+  }
+  const id = ensureUuid(data?.id, 'membership id');
+  const membership = {
+    id,
+    workspace_id: workspace.id,
+    user_id: userId,
+    role: normalizeRole(data?.role),
+    archived: data?.archived ? 1 : 0,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+  await run(
+    db,
+    `INSERT INTO workspace_memberships
+      (id, workspace_id, user_id, role, archived, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      membership.id,
+      membership.workspace_id,
+      membership.user_id,
+      membership.role,
+      membership.archived,
+      membership.created_at,
+      membership.updated_at
+    ]
+  );
+  await recordChange(db, workspace.id, 'workspace_membership', membership.id, 'create', membership, clientId);
+  return membership;
+}
+
+export async function updateWorkspaceMembership(db, id, patch, clientId = null) {
+  const membershipId = assertUuid(id, 'membership id');
+  const existing = await getRow(db, 'SELECT * FROM workspace_memberships WHERE id = ?', [membershipId]);
+  if (!existing) return null;
+  const next = {
+    ...existing,
+    role: patch.role !== undefined ? normalizeRole(patch.role) : existing.role,
+    archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : Number(existing.archived) ? 1 : 0,
+    updated_at: nowIso()
+  };
+  await run(
+    db,
+    'UPDATE workspace_memberships SET role = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.role, next.archived, next.updated_at, membershipId]
+  );
+  await recordChange(db, existing.workspace_id, 'workspace_membership', membershipId, 'update', patch, clientId);
+  return getRow(db, 'SELECT * FROM workspace_memberships WHERE id = ?', [membershipId]);
+}
+
+export async function deleteWorkspaceMembership(db, id, clientId = null) {
+  const membershipId = assertUuid(id, 'membership id');
+  const existing = await getRow(db, 'SELECT * FROM workspace_memberships WHERE id = ?', [membershipId]);
+  if (!existing) return { deleted: 0 };
+  await run(db, 'DELETE FROM workspace_memberships WHERE id = ?', [membershipId]);
+  await recordChange(db, existing.workspace_id, 'workspace_membership', membershipId, 'delete', {}, clientId);
+  return { deleted: 1 };
 }
 
 export async function updateWorkspace(db, id, patch, clientId = null) {
@@ -1273,6 +1553,12 @@ export async function createTask(db, data, clientId = null) {
   if (templateId) {
     await assertTemplateBelongsToWorkspace(db, templateId, workspaceId, 'template_id');
   }
+  const assignee = await normalizeTaskAssignee(
+    db,
+    workspaceId,
+    data.assignee_user_id ?? null,
+    data.assignee_label ?? null
+  );
 
   const task = {
     id,
@@ -1296,6 +1582,8 @@ export async function createTask(db, data, clientId = null) {
     template_lead_days: data.template_lead_days ?? null,
     template_defer_until: data.template_defer_until ?? null,
     template_prompt_pending: data.template_prompt_pending ? 1 : 0,
+    assignee_user_id: assignee.assignee_user_id,
+    assignee_label: assignee.assignee_label,
     status,
     priority,
     urgency,
@@ -1344,6 +1632,8 @@ export async function createTask(db, data, clientId = null) {
       'template_lead_days',
       'template_defer_until',
       'template_prompt_pending',
+      'assignee_user_id',
+      'assignee_label',
       'start_at',
       'due_at',
       'completed_at',
@@ -1379,6 +1669,8 @@ export async function createTask(db, data, clientId = null) {
       task.template_lead_days,
       task.template_defer_until,
       task.template_prompt_pending,
+      task.assignee_user_id,
+      task.assignee_label,
       task.start_at,
       task.due_at,
       task.completed_at,
@@ -1452,6 +1744,16 @@ export async function updateTask(db, id, patch, clientId = null) {
       await assertTaskBelongsToWorkspace(db, next.recurrence_parent_id, existing.workspace_id, 'recurrence_parent_id');
     }
   }
+  if ('assignee_user_id' in patch || 'assignee_label' in patch) {
+    const assignee = await normalizeTaskAssignee(
+      db,
+      existing.workspace_id,
+      ('assignee_user_id' in patch) ? patch.assignee_user_id : existing.assignee_user_id,
+      ('assignee_label' in patch) ? patch.assignee_label : existing.assignee_label
+    );
+    next.assignee_user_id = assignee.assignee_user_id;
+    next.assignee_label = assignee.assignee_label;
+  }
 
   if ('urgency' in patch) next.urgency = patch.urgency ? 1 : 0;
   if ('auto_debit' in patch) next.auto_debit = patch.auto_debit ? 1 : 0;
@@ -1483,6 +1785,7 @@ export async function updateTask(db, id, patch, clientId = null) {
     'title', 'description_md', 'type_label', 'recurrence_interval', 'recurrence_unit', 'reminder_offset_days',
     'auto_debit', 'reminder_sent_at', 'recurrence_parent_id', 'recurrence_generated_at',
     'template_id', 'template_state', 'template_event_date', 'template_lead_days', 'template_defer_until', 'template_prompt_pending',
+    'assignee_user_id', 'assignee_label',
     'status', 'priority', 'urgency', 'start_at', 'due_at', 'completed_at',
     'waiting_followup_at', 'next_checkin_at', 'sort_order', 'task_type', 'project_id', 'group_label'
   ];

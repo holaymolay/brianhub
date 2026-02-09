@@ -3,6 +3,15 @@ import { openDb, migrate } from './db.js';
 import {
   createWorkspace,
   listWorkspaces,
+  listOrgs,
+  createOrg,
+  listUsers,
+  createUser,
+  updateUser,
+  listWorkspaceMemberships,
+  createWorkspaceMembership,
+  updateWorkspaceMembership,
+  deleteWorkspaceMembership,
   updateWorkspace,
   deleteWorkspace,
   createProject,
@@ -84,6 +93,106 @@ server.post('/workspaces', async (request, reply) => {
 server.get('/workspaces', async (request) => {
   const { org_id } = request.query ?? {};
   return await listWorkspaces(db, org_id);
+});
+
+server.get('/orgs', async () => {
+  return await listOrgs(db);
+});
+
+server.post('/orgs', async (request, reply) => {
+  const { name } = request.body ?? {};
+  if (!name) return reply.code(400).send({ error: 'name required' });
+  try {
+    return await createOrg(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/users', async (request, reply) => {
+  const { org_id, workspace_id } = request.query ?? {};
+  if (!org_id && !workspace_id) {
+    return reply.code(400).send({ error: 'org_id or workspace_id required' });
+  }
+  try {
+    const orgId = org_id ?? null;
+    return await listUsers(db, orgId, workspace_id ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/users', async (request, reply) => {
+  const { org_id, display_name, name, workspace_id } = request.body ?? {};
+  if (!org_id || !(display_name || name)) {
+    return reply.code(400).send({ error: 'org_id and display_name required' });
+  }
+  try {
+    return await createUser(
+      db,
+      { ...(request.body ?? {}), workspace_id: workspace_id ?? null },
+      request.headers['x-client-id'] ?? null
+    );
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/users/:id', async (request, reply) => {
+  try {
+    const updated = await updateUser(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return updated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/workspace-memberships', async (request, reply) => {
+  const { workspace_id } = request.query ?? {};
+  if (!workspace_id) return reply.code(400).send({ error: 'workspace_id required' });
+  try {
+    return await listWorkspaceMemberships(db, workspace_id);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/workspace-memberships', async (request, reply) => {
+  const { workspace_id, user_id } = request.body ?? {};
+  if (!workspace_id || !user_id) {
+    return reply.code(400).send({ error: 'workspace_id and user_id required' });
+  }
+  try {
+    return await createWorkspaceMembership(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/workspace-memberships/:id', async (request, reply) => {
+  try {
+    const updated = await updateWorkspaceMembership(
+      db,
+      request.params.id,
+      request.body ?? {},
+      request.headers['x-client-id'] ?? null
+    );
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return updated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.delete('/workspace-memberships/:id', async (request, reply) => {
+  try {
+    const result = await deleteWorkspaceMembership(db, request.params.id, request.headers['x-client-id'] ?? null);
+    if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
+    return result;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
 });
 
 server.patch('/workspaces/:id', async (request, reply) => {

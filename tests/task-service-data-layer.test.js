@@ -5,6 +5,8 @@ import { applyMigrations } from '../concepts/data-layer/migrations/runner.js';
 import {
   createWorkspace,
   createTask,
+  createUser,
+  createWorkspaceMembership,
   createProject,
   createStatus,
   createTaskType,
@@ -93,6 +95,51 @@ test('create APIs reject invalid ids', async () => {
     await assert.rejects(
       () => createProject(db, { id: 'proj-local', workspace_id: workspace.id, name: 'Project' }),
       /Invalid project id/
+    );
+  });
+});
+
+test('task assignment enforces workspace membership', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Team', type: 'personal' });
+    const member = await createUser(db, {
+      org_id: workspace.org_id,
+      display_name: 'Member User',
+      email: 'member@example.com'
+    });
+    await createWorkspaceMembership(db, {
+      workspace_id: workspace.id,
+      user_id: member.id,
+      role: 'member'
+    });
+
+    const assigned = await createTask(db, {
+      workspace_id: workspace.id,
+      title: 'Assigned task',
+      assignee_user_id: member.id
+    });
+    assert.equal(assigned.assignee_user_id, member.id);
+    assert.equal(assigned.assignee_label, null);
+
+    const external = await createTask(db, {
+      workspace_id: workspace.id,
+      title: 'External task',
+      assignee_label: 'Field Contractor'
+    });
+    assert.equal(external.assignee_user_id, null);
+    assert.equal(external.assignee_label, 'Field Contractor');
+
+    const nonMember = await createUser(db, {
+      org_id: workspace.org_id,
+      display_name: 'No Membership'
+    });
+    await assert.rejects(
+      () => createTask(db, {
+        workspace_id: workspace.id,
+        title: 'Should fail',
+        assignee_user_id: nonMember.id
+      }),
+      /Assignee user must be a member of this workspace/
     );
   });
 });

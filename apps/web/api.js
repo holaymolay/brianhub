@@ -2,22 +2,61 @@ import { getClientId } from './clientId.js';
 
 const API_BASE = 'http://localhost:3000';
 
+function emitApiEvent(detail) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  window.dispatchEvent(new CustomEvent('brianhub:api', { detail }));
+}
+
 async function request(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Client-Id': getClientId(),
-      ...(options.headers ?? {})
-    },
-    ...options
-  });
+  const method = options.method ?? 'GET';
+  const startedAt = Date.now();
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Client-Id': getClientId(),
+        ...(options.headers ?? {})
+      },
+      ...options
+    });
+  } catch (error) {
+    emitApiEvent({
+      method,
+      path,
+      ok: false,
+      status: null,
+      duration_ms: Date.now() - startedAt,
+      error: error?.message ?? 'Network request failed'
+    });
+    throw error;
+  }
+
+  const durationMs = Date.now() - startedAt;
   if (!res.ok) {
     const text = await res.text();
+    emitApiEvent({
+      method,
+      path,
+      ok: false,
+      status: res.status,
+      duration_ms: durationMs,
+      error: (text || `Request failed: ${res.status}`).slice(0, 1000)
+    });
     const err = new Error(text || `Request failed: ${res.status}`);
     err.status = res.status;
     err.body = text;
     throw err;
   }
+
+  emitApiEvent({
+    method,
+    path,
+    ok: true,
+    status: res.status,
+    duration_ms: durationMs
+  });
+
   if (res.status === 204) return null;
   return res.json();
 }
@@ -28,6 +67,45 @@ export function listWorkspaces() {
 
 export function createWorkspace(data) {
   return request('/workspaces', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function listOrgs() {
+  return request('/orgs');
+}
+
+export function createOrg(data) {
+  return request('/orgs', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function listUsers({ orgId = null, workspaceId = null } = {}) {
+  const params = new URLSearchParams();
+  if (orgId) params.set('org_id', orgId);
+  if (workspaceId) params.set('workspace_id', workspaceId);
+  return request(`/users?${params.toString()}`);
+}
+
+export function createUser(data) {
+  return request('/users', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateUser(id, patch) {
+  return request(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+
+export function listWorkspaceMemberships(workspaceId) {
+  return request(`/workspace-memberships?workspace_id=${encodeURIComponent(workspaceId)}`);
+}
+
+export function createWorkspaceMembership(data) {
+  return request('/workspace-memberships', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateWorkspaceMembership(id, patch) {
+  return request(`/workspace-memberships/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+
+export function deleteWorkspaceMembership(id) {
+  return request(`/workspace-memberships/${id}`, { method: 'DELETE' });
 }
 
 export function updateWorkspace(id, patch) {
