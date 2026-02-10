@@ -115,7 +115,12 @@ function buildApiConfig(env = process.env) {
     errors.push('BRIANHUB_OWNER_EMAIL must be a valid email');
   }
 
-  const exposeInviteToken = parseBoolean('BRIANHUB_EXPOSE_INVITE_TOKEN', env.BRIANHUB_EXPOSE_INVITE_TOKEN, false, errors);
+  const exposeInviteToken = parseBoolean(
+    'BRIANHUB_EXPOSE_INVITE_TOKEN',
+    env.BRIANHUB_EXPOSE_INVITE_TOKEN,
+    nodeEnv !== 'production',
+    errors
+  );
   const requireAuth = parseBoolean('BRIANHUB_REQUIRE_AUTH', env.BRIANHUB_REQUIRE_AUTH, false, errors);
   const allowHeaderActorAuth = parseBoolean(
     'BRIANHUB_ALLOW_HEADER_ACTOR_AUTH',
