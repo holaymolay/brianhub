@@ -27,13 +27,10 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 - Task API + check‑in endpoint: ✅
 - Change log + sync cursor: ✅
 - Basic web UI: ✅
-- Tests (state machine + tree invariants): ✅
+- Tests (state machine + tree invariants + edge cases): ✅
 
 ## Gaps to Close
-1) Text search UI wiring (`/tasks/search`)
-2) Inbox-focused filter in list view
-3) Urgency decision (remove from M1 or re-introduce in UI)
-4) Workflow assignee model parity (user + free-text person)
+1) None blocking for M1 (all previously identified M1 gaps have been closed)
 
 ## Task Tracking (M1)
 
@@ -53,8 +50,8 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 - [x] Add AI suggestions UI (stub)
   - [x] Call `/ai/suggest` and display suggestions
   - [x] Explicit accept/reject (no auto‑mutations)
-- [ ] Add search/filter UI
-  - [ ] Text search via `/tasks/search`
+- [x] Add search/filter UI
+  - [x] Text search via `/tasks/search`
   - [x] Inline filter controls (list view)
 - [x] Add workflow templates + instances
   - [x] Define workflow template (variants + phases + tasks)
@@ -62,17 +59,17 @@ This is the execution checklist for M1. It is intentionally focused only on Task
   - [x] Scaffold tasks from template with phase grouping
   - [x] Track instance open/closed based on linked task completion
   - [x] Support task dependencies inside workflow scaffold
-  - [ ] Support assignees (user id or free‑text person)
+  - [x] Support assignees (user id or free‑text person)
 
 ### P1 — Usability polish
-- [ ] Add Inbox view/filter
-- [ ] Confirm urgency decision (remove vs re‑introduce)
+- [x] Add Inbox view/filter
+- [x] Confirm urgency decision (remove from M1)
 - [x] Ensure “Add task” input never loses focus while typing
 
 ### P2 — Tests & correctness
-- [ ] Add tests for reparenting correctness (server + client)
-- [ ] Add tests for check‑in behavior edge cases
-- [ ] Add tests for waiting follow‑up scheduling
+- [x] Add tests for reparenting correctness (server + client)
+- [x] Add tests for check‑in behavior edge cases
+- [x] Add tests for waiting follow‑up scheduling
 
 ## Acceptance Criteria (M1 complete)
 - Works fully offline; no data loss if backend is down
@@ -86,3 +83,4 @@ This is the execution checklist for M1. It is intentionally focused only on Task
 ## Progress Log
 - YYYY‑MM‑DD: Created M1 plan and gap list
 - 2026-02-08: Closed P0 items for offline storage, check-ins, waiting follow-up UX, AI stub UI, and workflow template/instance scaffolding.
+- 2026-02-10: Closed remaining M1 gaps for `/tasks/search` UI wiring, Inbox filter, workflow assignee parity, and additional tree/check-in/waiting edge-case tests.

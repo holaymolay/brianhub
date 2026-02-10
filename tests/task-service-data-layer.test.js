@@ -11,8 +11,11 @@ import {
   createStatus,
   createTaskType,
   listTasks,
-  getTask
+  getTask,
+  reparentTask,
+  applyTaskCheckIn
 } from '../services/api/src/taskService.js';
+import { TaskStatus } from '../packages/core/taskState.js';
 
 const migrationsDir = 'services/api/db/migrations';
 const IDS = {
@@ -141,5 +144,92 @@ test('task assignment enforces workspace membership', async () => {
       }),
       /Assignee user must be a member of this workspace/
     );
+  });
+});
+
+test('server reparent updates parent linkage and closure edges', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Reparent Workspace', type: 'personal' });
+    const parentA = await createTask(db, { workspace_id: workspace.id, title: 'Parent A' });
+    const parentC = await createTask(db, { workspace_id: workspace.id, title: 'Parent C' });
+    const childB = await createTask(db, { workspace_id: workspace.id, title: 'Child B', parent_id: parentA.id });
+
+    const moved = await reparentTask(db, childB.id, parentC.id);
+    assert.equal(moved.parent_id, parentC.id);
+
+    const newEdge = await db.query(
+      'SELECT depth FROM task_edges WHERE ancestor_id = ? AND descendant_id = ?',
+      [parentC.id, childB.id]
+    );
+    assert.equal(newEdge.length, 1);
+    assert.equal(newEdge[0].depth, 1);
+
+    const oldEdge = await db.query(
+      'SELECT depth FROM task_edges WHERE ancestor_id = ? AND descendant_id = ?',
+      [parentA.id, childB.id]
+    );
+    assert.equal(oldEdge.length, 0);
+  });
+});
+
+test('check-in "no" reschedules subtree and updates status', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Checkin Workspace', type: 'personal' });
+    const root = await createTask(db, {
+      workspace_id: workspace.id,
+      title: 'Root',
+      status: TaskStatus.PLANNED,
+      due_at: '2026-02-10T10:00:00.000Z'
+    });
+    const child = await createTask(db, {
+      workspace_id: workspace.id,
+      title: 'Child',
+      parent_id: root.id,
+      status: TaskStatus.PLANNED,
+      due_at: '2026-02-10T11:00:00.000Z'
+    });
+
+    const updated = await applyTaskCheckIn(db, root.id, 'no');
+    assert.equal(updated.status, TaskStatus.PLANNED);
+    assert.ok(updated.next_checkin_at);
+
+    const refreshedRoot = await getTask(db, root.id);
+    const refreshedChild = await getTask(db, child.id);
+    assert.equal(
+      refreshedRoot.due_at,
+      '2026-02-11T10:00:00.000Z'
+    );
+    assert.equal(
+      refreshedChild.due_at,
+      '2026-02-11T11:00:00.000Z'
+    );
+  });
+});
+
+test('service waiting tasks set next_checkin_at on create', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Waiting Workspace', type: 'personal' });
+
+    const autoFollowup = await createTask(db, {
+      workspace_id: workspace.id,
+      title: 'Waiting auto',
+      status: TaskStatus.WAITING
+    });
+    assert.ok(autoFollowup.next_checkin_at);
+
+    const explicitFollowup = await createTask(db, {
+      workspace_id: workspace.id,
+      title: 'Waiting explicit',
+      status: TaskStatus.WAITING,
+      waiting_followup_at: '2026-03-05T14:00:00.000Z'
+    });
+    assert.equal(explicitFollowup.next_checkin_at, '2026-03-05T14:00:00.000Z');
+  });
+});
+
+test('applyTaskCheckIn returns null when task does not exist', async () => {
+  await withDb(async (db) => {
+    const result = await applyTaskCheckIn(db, '99999999-9999-4999-8999-999999999999', 'yes');
+    assert.equal(result, null);
   });
 });

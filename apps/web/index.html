@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>BrianHub Task MVP</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg?v=3" />
+    <link rel="shortcut icon" type="image/svg+xml" href="./favicon.svg?v=3" />
     <link rel="stylesheet" href="/apps/web/styles.css" />
   </head>
   <body>
@@ -33,61 +35,54 @@
             <span class="account-caret">▾</span>
           </button>
           <div id="account-menu" class="account-menu hidden">
-            <div class="account-menu-grid">
-              <div class="account-menu-left">
-                <div class="account-menu-title">Account</div>
-                <button class="account-list-item is-active" type="button">
-                  <span class="account-avatar small" id="account-list-avatar">BJ</span>
-                  <span class="account-list-name" id="account-list-name">Organization</span>
-                  <span class="account-list-dot"></span>
-                  <span class="account-list-check">✓</span>
-                </button>
-                <button id="account-add" class="account-list-item subtle" type="button">＋ Add another account</button>
-                <button id="account-logout" class="account-list-item subtle" type="button">→ Log out</button>
+            <div class="account-menu-body">
+              <div class="account-menu-title">Account</div>
+              <div class="account-profile">
+                <span class="account-avatar large" id="account-profile-avatar">BJ</span>
+                <div class="account-profile-name" id="account-profile-name">Organization</div>
+                <div class="account-profile-email" id="account-profile-email">you@example.com</div>
               </div>
-              <div class="account-menu-right">
-                <div class="account-profile">
-                  <span class="account-avatar large" id="account-profile-avatar">BJ</span>
-                  <div class="account-profile-name" id="account-profile-name">Organization</div>
-                  <div class="account-profile-email" id="account-profile-email">you@example.com</div>
-                </div>
-                <div class="account-divider"></div>
-                <div class="account-workspaces">
-                  <div class="account-menu-title">Workspaces</div>
-                  <div class="account-workspace-row">
-                    <div class="workspace-dropdown">
-                      <button id="workspace-dropdown-button" class="workspace-dropdown-button" type="button">
-                        Workspaces
-                      </button>
-                      <div id="workspace-list" class="workspace-list workspace-dropdown-list hidden"></div>
-                    </div>
-                    <div class="workspace-menu-wrapper">
-                      <button id="workspace-menu-button" class="icon-button menu-icon workspace-menu-button" type="button" title="Workspace settings">⋯</button>
-                      <div id="workspace-menu" class="workspace-menu hidden">
-                        <button id="new-workspace-btn" class="workspace-menu-item" type="button">New</button>
-                        <button id="manage-workspaces-btn" class="workspace-menu-item" type="button">Manage</button>
-                        <button id="archived-workspaces-btn" class="workspace-menu-item" type="button">Archive</button>
-                      </div>
+              <div class="account-divider"></div>
+              <div class="account-workspaces">
+                <div class="account-menu-title">Workspaces</div>
+                <div class="account-workspace-row">
+                  <div class="workspace-dropdown">
+                    <button id="workspace-dropdown-button" class="workspace-dropdown-button" type="button">
+                      Workspaces
+                    </button>
+                    <div id="workspace-list" class="workspace-list workspace-dropdown-list hidden"></div>
+                  </div>
+                  <div class="workspace-menu-wrapper">
+                    <button id="workspace-menu-button" class="icon-button menu-icon workspace-menu-button" type="button" title="Workspace settings">⋯</button>
+                    <div id="workspace-menu" class="workspace-menu hidden">
+                      <button id="new-workspace-btn" class="workspace-menu-item" type="button">New</button>
+                      <button id="manage-workspaces-btn" class="workspace-menu-item" type="button">Manage</button>
+                      <button id="archived-workspaces-btn" class="workspace-menu-item" type="button">Archive</button>
                     </div>
                   </div>
                 </div>
-                <div class="account-action-list">
-                  <button id="account-admin" class="account-action" type="button">Admin console</button>
-                  <button id="account-new-workspace" class="account-action" type="button">New workspace</button>
-                  <button id="account-invite" class="account-action" type="button">Invite to BrianHub</button>
-                  <button id="account-upgrade" class="account-action account-upgrade" type="button">Upgrade</button>
-                </div>
-                <div class="account-divider"></div>
-                <div class="account-action-list">
-                  <button id="profile-open" class="account-action" type="button">Profile</button>
-                  <button id="settings-open" class="account-action" type="button">Settings</button>
-                </div>
+              </div>
+              <div class="account-action-list">
+                <button id="account-admin" class="account-action" type="button">Admin console</button>
+              </div>
+              <div class="account-divider"></div>
+              <div class="account-action-list">
+                <button id="profile-open" class="account-action" type="button">Profile</button>
+                <button id="settings-open" class="account-action" type="button">Settings</button>
+                <button id="account-logout" class="account-action" type="button">Log out</button>
               </div>
             </div>
           </div>
         </div>
       </div>
     </header>
+    <nav class="module-navbar" aria-label="Application modules">
+      <div class="module-navbar-inner">
+        <button id="module-nav-todo" class="module-nav-item is-active" type="button" aria-current="page">Tasks</button>
+        <button class="module-nav-item" type="button" disabled title="Coming soon">CRM</button>
+        <button class="module-nav-item" type="button" disabled title="Coming soon">Knowledge</button>
+      </div>
+    </nav>
 
     <main class="app-main">
       <div class="app-layout">
@@ -144,7 +139,11 @@
             <div class="task-filter">
               <button id="task-filter-button" class="subtle-button" type="button">All tasks ▾</button>
               <div id="task-filter-menu" class="workspace-menu hidden">
+                <label class="task-filter-search">
+                  <input id="task-filter-search-input" type="search" placeholder="Search tasks..." autocomplete="off" />
+                </label>
                 <button class="workspace-menu-item" type="button" data-filter="all">All tasks</button>
+                <button class="workspace-menu-item" type="button" data-filter="inbox">Inbox</button>
                 <button class="workspace-menu-item" type="button" data-filter="unassigned">Unassigned</button>
               </div>
             </div>
@@ -374,6 +373,86 @@
                 <button id="automation-clear" class="subtle-button" type="button">Clear</button>
               </div>
               <textarea id="automation-output" class="audit-log-output" rows="8" readonly placeholder="Results will appear here"></textarea>
+            </div>
+          </section>
+          <section id="admin-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Admin Console</h2>
+              <button id="admin-page-back" class="subtle-button" type="button">← Back</button>
+            </div>
+            <div class="settings-page-grid">
+              <div class="settings-section">
+                <h3>Invite user</h3>
+                <label>
+                  Email
+                  <input id="admin-invite-email" class="setting-input admin-invite-input" type="email" placeholder="name@company.com" />
+                </label>
+                <label>
+                  Workspace
+                  <select id="admin-invite-workspace" class="setting-input admin-invite-input"></select>
+                </label>
+                <label>
+                  Role
+                  <select id="admin-invite-role" class="setting-input admin-invite-input">
+                    <option value="member">Member</option>
+                    <option value="manager">Manager</option>
+                    <option value="owner">Owner</option>
+                  </select>
+                </label>
+                <div class="modal-actions profile-actions">
+                  <button id="admin-invite-send" type="button">Send invite</button>
+                </div>
+                <div id="admin-invite-status" class="sidebar-note"></div>
+              </div>
+              <div class="settings-section">
+                <h3>Pending invites</h3>
+                <div class="setting-row audit-controls">
+                  <button id="admin-invites-refresh" class="subtle-button" type="button">Refresh</button>
+                </div>
+                <div id="admin-invites-list" class="workspace-list"></div>
+              </div>
+            </div>
+          </section>
+          <section id="profile-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Profile</h2>
+              <button id="profile-page-back" class="subtle-button" type="button">← Back</button>
+            </div>
+            <div class="settings-page-grid">
+              <div class="settings-section">
+                <h3>Account</h3>
+                <div class="profile-account-row">
+                  <span id="profile-page-avatar" class="account-avatar large">BH</span>
+                  <div class="profile-account-summary">
+                    <div id="profile-page-summary-name" class="account-profile-name">BrianHub User</div>
+                    <div id="profile-page-summary-email" class="account-profile-email">you@example.com</div>
+                  </div>
+                </div>
+                <div class="profile-form-grid">
+                  <label>
+                    Display name
+                    <input id="profile-page-name" class="setting-input" type="text" placeholder="Your name" />
+                  </label>
+                  <label>
+                    Email
+                    <input id="profile-page-email" class="setting-input" type="email" placeholder="you@example.com" />
+                  </label>
+                </div>
+                <div class="modal-actions profile-actions">
+                  <button id="profile-page-save" type="button">Save profile</button>
+                </div>
+              </div>
+              <div class="settings-section">
+                <h3>Workspace context</h3>
+                <div class="setting-row">
+                  <div class="setting-label">Active workspace</div>
+                  <div id="profile-page-workspace" class="sidebar-note"></div>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">Workspace type</div>
+                  <div id="profile-page-workspace-type" class="sidebar-note"></div>
+                </div>
+              </div>
             </div>
           </section>
           <section id="workspace-manage-page" class="workspace-panel hidden">
@@ -832,17 +911,6 @@
         </div>
         <div class="modal-actions">
           <button type="button" id="settings-close">Close</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="profile-modal" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-card">
-        <h2>Profile</h2>
-        <div class="sidebar-note">Profile settings coming soon.</div>
-        <div class="modal-actions">
-          <button type="button" id="profile-close">Close</button>
         </div>
       </div>
     </div>

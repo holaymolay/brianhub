@@ -62,6 +62,8 @@ const DEFAULT_TASK_TYPE_DEFS = [
   { name: 'Bill Due', is_default: 1 }
 ];
 const DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000001';
+const TASK_FILTER_UNASSIGNED = 'unassigned';
+const TASK_FILTER_INBOX = '__inbox__';
 
 function normalizeTitleInput(value) {
   const text = String(value ?? '').trim();
@@ -71,6 +73,7 @@ function normalizeTitleInput(value) {
 const taskTreeEl = document.getElementById('task-tree');
 const taskFilterButton = document.getElementById('task-filter-button');
 const taskFilterMenu = document.getElementById('task-filter-menu');
+const taskFilterSearchInput = document.getElementById('task-filter-search-input');
 const taskToolsButton = document.getElementById('task-tools-button');
 const taskToolsMenu = document.getElementById('task-tools-menu');
 const taskToolsToggleQuickAdd = document.getElementById('task-tools-toggle-quick-add');
@@ -525,6 +528,11 @@ let taskEditorScrollbarDragStart = 0;
 let taskEditorScrollbarScrollStart = 0;
 let undoToastTimer = null;
 let undoToastEl = null;
+let taskSearchDebounceTimer = null;
+let taskSearchRequestSeq = 0;
+let taskSearchResultIds = null;
+let taskSearchResultKey = '';
+let taskSearchInFlightKey = '';
 
 const SYNC_POLL_INTERVAL_MS = 5000;
 const SYNC_BACKOFF_STEPS_MS = [30000, 60000, 120000, 300000];
@@ -763,13 +771,36 @@ taskFilterMenu?.addEventListener('click', (event) => {
   if (!(target instanceof HTMLElement)) return;
   const filter = target.dataset.filter;
   if (!filter) return;
-  state.ui = state.ui ?? {};
-  state.ui.activeProjectId = filter === 'all' ? null : 'unassigned';
+  setActiveTaskFilter(filter);
   clearActiveWorkflowChecklistInstanceId();
   setActiveView('tasks');
   taskFilterMenu.classList.add('hidden');
   openMenu = null;
+  scheduleTaskSearchRefresh(true);
   render();
+});
+
+taskFilterSearchInput?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+
+taskFilterSearchInput?.addEventListener('input', () => {
+  state.ui = state.ui ?? {};
+  state.ui.taskSearchText = taskFilterSearchInput.value;
+  scheduleTaskSearchRefresh();
+  render();
+});
+
+taskFilterSearchInput?.addEventListener('keydown', (event) => {
+  event.stopPropagation();
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    taskFilterSearchInput.value = '';
+    state.ui = state.ui ?? {};
+    state.ui.taskSearchText = '';
+    scheduleTaskSearchRefresh(true);
+    render();
+  }
 });
 
 taskToolsButton?.addEventListener('click', (event) => {
@@ -3033,9 +3064,14 @@ function normalizeNavigationStateSnapshot(raw) {
       : null
   };
   const currentWorkspaceId = state.workspace?.id ?? null;
-  if (snapshot.activeProjectId && !state.projects.some(project =>
-    project.id === snapshot.activeProjectId && (!currentWorkspaceId || project.workspace_id === currentWorkspaceId)
-  )) {
+  if (
+    snapshot.activeProjectId
+    && snapshot.activeProjectId !== TASK_FILTER_UNASSIGNED
+    && snapshot.activeProjectId !== TASK_FILTER_INBOX
+    && !state.projects.some(project =>
+      project.id === snapshot.activeProjectId && (!currentWorkspaceId || project.workspace_id === currentWorkspaceId)
+    )
+  ) {
     snapshot.activeProjectId = null;
   }
   if (snapshot.activeShoppingListId && !state.shoppingLists.some(list =>
@@ -3244,7 +3280,9 @@ function normalizeWorkflowPhaseTask(task) {
     pattern_id: task.pattern_id ?? null,
     if_applicable: Boolean(task.if_applicable),
     description_md: task.description_md ?? '',
-    depends_on_ids: Array.isArray(task.depends_on_ids) ? task.depends_on_ids : []
+    depends_on_ids: Array.isArray(task.depends_on_ids) ? task.depends_on_ids : [],
+    assignee_user_id: task.assignee_user_id ?? null,
+    assignee_label: task.assignee_label ?? null
   };
 }
 
@@ -3265,7 +3303,9 @@ function normalizeWorkflowPatternTask(task) {
     referenced_pattern_id: task.referenced_pattern_id ?? null,
     if_applicable: Boolean(task.if_applicable),
     description_md: task.description_md ?? '',
-    depends_on_ids: Array.isArray(task.depends_on_ids) ? task.depends_on_ids : []
+    depends_on_ids: Array.isArray(task.depends_on_ids) ? task.depends_on_ids : [],
+    assignee_user_id: task.assignee_user_id ?? null,
+    assignee_label: task.assignee_label ?? null
   };
 }
 
@@ -3983,7 +4023,9 @@ function copyWorkflowPhaseToBlueprint({ sourceWorkflowId, phaseId, targetWorkflo
     const created = createWorkflowPhaseTaskRecord(newPhase.id, task.title, {
       item_kind: task.item_kind,
       pattern_id: task.pattern_id ?? null,
-      if_applicable: Boolean(task.if_applicable)
+      if_applicable: Boolean(task.if_applicable),
+      assignee_user_id: task.assignee_user_id ?? null,
+      assignee_label: task.assignee_label ?? null
     });
     if (!created) return;
     taskIdMap.set(task.id, created.id);
@@ -4042,6 +4084,8 @@ function createWorkflowPhaseTaskRecord(phaseId, title, options = {}) {
   const now = nowIso();
   const itemKind = options.item_kind === 'pattern' ? 'pattern' : 'task';
   const patternId = itemKind === 'pattern' ? (options.pattern_id ?? null) : null;
+  const assigneeUserId = itemKind === 'pattern' ? null : (options.assignee_user_id ?? null);
+  const assigneeLabel = itemKind === 'pattern' ? null : (options.assignee_label ? normalizeTitleInput(options.assignee_label) : null);
   const task = normalizeWorkflowPhaseTask({
     id: createId(),
     phase_id: phaseId,
@@ -4051,6 +4095,8 @@ function createWorkflowPhaseTaskRecord(phaseId, title, options = {}) {
     if_applicable: Boolean(options.if_applicable),
     description_md: itemKind === 'pattern' ? '' : '',
     depends_on_ids: itemKind === 'pattern' ? [] : [],
+    assignee_user_id: assigneeUserId,
+    assignee_label: assigneeLabel,
     sort_order: getNextWorkflowSortOrder(tasks.filter(item => item.phase_id === phaseId)),
     created_at: now,
     updated_at: now
@@ -4076,6 +4122,18 @@ function updateWorkflowPhaseTaskRecord(id, patch) {
       if_applicable: Boolean(patch.if_applicable)
     };
   }
+  if (patch.assignee_user_id !== undefined) {
+    patch = {
+      ...patch,
+      assignee_user_id: patch.assignee_user_id || null
+    };
+  }
+  if (patch.assignee_label !== undefined) {
+    patch = {
+      ...patch,
+      assignee_label: patch.assignee_label ? normalizeTitleInput(patch.assignee_label) : null
+    };
+  }
   const tasks = state.workflowPhaseTasks ?? [];
   const index = tasks.findIndex(item => item.id === id);
   if (index < 0) return null;
@@ -4090,8 +4148,17 @@ function updateWorkflowPhaseTaskRecord(id, patch) {
     normalizedPatch.description_md = '';
     normalizedPatch.depends_on_ids = [];
     normalizedPatch.if_applicable = false;
+    normalizedPatch.assignee_user_id = null;
+    normalizedPatch.assignee_label = null;
   } else if (normalizedPatch.pattern_id === undefined) {
     normalizedPatch.pattern_id = null;
+  }
+  if (itemKind !== 'pattern') {
+    if ('assignee_user_id' in normalizedPatch && normalizedPatch.assignee_user_id) {
+      normalizedPatch.assignee_label = null;
+    } else if ('assignee_label' in normalizedPatch && normalizedPatch.assignee_label) {
+      normalizedPatch.assignee_user_id = null;
+    }
   }
   const next = normalizeWorkflowPhaseTask({
     ...tasks[index],
@@ -4201,6 +4268,8 @@ function createWorkflowPatternTaskRecord(patternId, title, options = {}) {
   const now = nowIso();
   const itemKind = options.item_kind === 'pattern' ? 'pattern' : 'task';
   const referencedPatternId = itemKind === 'pattern' ? (options.referenced_pattern_id ?? null) : null;
+  const assigneeUserId = itemKind === 'pattern' ? null : (options.assignee_user_id ?? null);
+  const assigneeLabel = itemKind === 'pattern' ? null : (options.assignee_label ? normalizeTitleInput(options.assignee_label) : null);
   const patternTasks = tasks
     .map(normalizeWorkflowPatternTask)
     .filter(item => item.pattern_id === patternId);
@@ -4213,6 +4282,8 @@ function createWorkflowPatternTaskRecord(patternId, title, options = {}) {
     if_applicable: Boolean(options.if_applicable),
     description_md: itemKind === 'pattern' ? '' : '',
     depends_on_ids: itemKind === 'pattern' ? [] : [],
+    assignee_user_id: assigneeUserId,
+    assignee_label: assigneeLabel,
     sort_order: getNextWorkflowSortOrder(patternTasks),
     created_at: now,
     updated_at: now
@@ -4238,6 +4309,18 @@ function updateWorkflowPatternTaskRecord(id, patch) {
       if_applicable: Boolean(patch.if_applicable)
     };
   }
+  if (patch.assignee_user_id !== undefined) {
+    patch = {
+      ...patch,
+      assignee_user_id: patch.assignee_user_id || null
+    };
+  }
+  if (patch.assignee_label !== undefined) {
+    patch = {
+      ...patch,
+      assignee_label: patch.assignee_label ? normalizeTitleInput(patch.assignee_label) : null
+    };
+  }
   const tasks = state.workflowPatternTasks ?? [];
   const index = tasks.findIndex(item => item.id === id);
   if (index < 0) return null;
@@ -4252,8 +4335,17 @@ function updateWorkflowPatternTaskRecord(id, patch) {
     normalizedPatch.description_md = '';
     normalizedPatch.depends_on_ids = [];
     normalizedPatch.if_applicable = false;
+    normalizedPatch.assignee_user_id = null;
+    normalizedPatch.assignee_label = null;
   } else if (normalizedPatch.referenced_pattern_id === undefined) {
     normalizedPatch.referenced_pattern_id = null;
+  }
+  if (itemKind !== 'pattern') {
+    if ('assignee_user_id' in normalizedPatch && normalizedPatch.assignee_user_id) {
+      normalizedPatch.assignee_label = null;
+    } else if ('assignee_label' in normalizedPatch && normalizedPatch.assignee_label) {
+      normalizedPatch.assignee_user_id = null;
+    }
   }
   const next = normalizeWorkflowPatternTask({
     ...tasks[index],
@@ -4295,7 +4387,9 @@ function createPatternFromPhase(workflowId, phaseId, preferredName = null) {
     const created = createWorkflowPatternTaskRecord(pattern.id, task.title, {
       item_kind: task.item_kind,
       referenced_pattern_id: task.pattern_id ?? null,
-      if_applicable: Boolean(task.if_applicable)
+      if_applicable: Boolean(task.if_applicable),
+      assignee_user_id: task.assignee_user_id ?? null,
+      assignee_label: task.assignee_label ?? null
     });
     if (!created) return;
     idMap.set(task.id, created.id);
@@ -4424,11 +4518,15 @@ async function scaffoldWorkflowInstance(instance, variantId) {
     phaseId,
     templateTaskId,
     sortOrder,
-    ifApplicable = false
+    ifApplicable = false,
+    assigneeUserId = null,
+    assigneeLabel = null
   }) => {
     const created = await createTaskRecord({
       title,
-      description_md: description_md ?? ''
+      description_md: description_md ?? '',
+      assignee_user_id: assigneeUserId ?? null,
+      assignee_label: assigneeLabel ?? null
     });
     if (!created) return null;
     links.push({
@@ -4481,7 +4579,9 @@ async function scaffoldWorkflowInstance(instance, variantId) {
         phaseId,
         templateTaskId,
         sortOrder: phaseSortCounter.next(),
-        ifApplicable: patternIfApplicable || Boolean(entry.if_applicable)
+        ifApplicable: patternIfApplicable || Boolean(entry.if_applicable),
+        assigneeUserId: entry.assignee_user_id ?? null,
+        assigneeLabel: entry.assignee_label ?? null
       });
       if (createdTaskId) {
         localTaskMap.set(entry.id, createdTaskId);
@@ -4528,7 +4628,9 @@ async function scaffoldWorkflowInstance(instance, variantId) {
         phaseId: phaseEntry.phase.id,
         templateTaskId: templateEntry.id,
         sortOrder: phaseSortCounter.next(),
-        ifApplicable: Boolean(templateEntry.if_applicable)
+        ifApplicable: Boolean(templateEntry.if_applicable),
+        assigneeUserId: templateEntry.assignee_user_id ?? null,
+        assigneeLabel: templateEntry.assignee_label ?? null
       });
       if (!createdTaskId) continue;
       taskMap.set(templateEntry.id, createdTaskId);
@@ -9455,6 +9557,62 @@ function populateAssigneeSelect(selectEl, labelRowEl, labelInputEl, selectedUser
   setAssigneeLabelInputVisibility(selectEl, labelRowEl, labelInputEl, selectedLabel);
 }
 
+function createWorkflowTemplateAssigneeEditor(task, { locked = false, onSave }) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'workflow-assignee-editor';
+
+  const select = document.createElement('select');
+  select.className = 'workflow-task-assignee';
+  select.disabled = locked;
+
+  const labelRow = document.createElement('span');
+  labelRow.className = 'workflow-assignee-label hidden';
+  const labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.placeholder = 'External assignee';
+  labelInput.disabled = locked;
+  labelRow.appendChild(labelInput);
+
+  populateAssigneeSelect(
+    select,
+    labelRow,
+    labelInput,
+    task.assignee_user_id ?? null,
+    task.assignee_label ?? ''
+  );
+
+  const persistAssignee = () => {
+    const selection = select.value ?? ASSIGNEE_SELECT_NONE;
+    const assigneeUserId = selection && selection !== ASSIGNEE_SELECT_EXTERNAL
+      ? selection
+      : null;
+    const assigneeLabel = selection === ASSIGNEE_SELECT_EXTERNAL
+      ? (labelInput.value?.trim() ?? '')
+      : null;
+    onSave({
+      assignee_user_id: assigneeUserId,
+      assignee_label: assigneeLabel || null
+    });
+  };
+
+  select.addEventListener('change', () => {
+    setAssigneeLabelInputVisibility(select, labelRow, labelInput, task.assignee_label ?? '');
+    if (select.value !== ASSIGNEE_SELECT_EXTERNAL) {
+      persistAssignee();
+    }
+  });
+  labelInput.addEventListener('change', persistAssignee);
+  labelInput.addEventListener('blur', () => {
+    if (select.value === ASSIGNEE_SELECT_EXTERNAL) {
+      persistAssignee();
+    }
+  });
+
+  wrapper.appendChild(select);
+  wrapper.appendChild(labelRow);
+  return wrapper;
+}
+
 function getActiveShoppingList() {
   if (!state.workspace) return null;
   const allLists = (state.shoppingLists ?? [])
@@ -9494,6 +9652,116 @@ function shouldShowShoppingListInSidebar(list, { showArchived = false } = {}) {
   return !isShoppingListComplete(list.id);
 }
 
+function getActiveTaskFilter() {
+  return state.ui?.activeProjectId ?? null;
+}
+
+function setActiveTaskFilter(filter) {
+  state.ui = state.ui ?? {};
+  if (!filter || filter === 'all') {
+    state.ui.activeProjectId = null;
+    return;
+  }
+  if (filter === 'inbox') {
+    state.ui.activeProjectId = TASK_FILTER_INBOX;
+    return;
+  }
+  if (filter === TASK_FILTER_UNASSIGNED) {
+    state.ui.activeProjectId = TASK_FILTER_UNASSIGNED;
+    return;
+  }
+  state.ui.activeProjectId = filter;
+}
+
+function getProjectIdFromTaskFilter(activeFilter = getActiveTaskFilter()) {
+  if (!activeFilter) return null;
+  if (activeFilter === TASK_FILTER_UNASSIGNED) return null;
+  if (activeFilter === TASK_FILTER_INBOX) return null;
+  return activeFilter;
+}
+
+function getTaskSearchText() {
+  return String(state.ui?.taskSearchText ?? '').trim();
+}
+
+function getTaskSearchStatusFilter() {
+  const activeFilter = getActiveTaskFilter();
+  if (activeFilter !== TASK_FILTER_INBOX) return null;
+  return getStatusKeyByKind(TaskStatus.INBOX) ?? TaskStatus.INBOX;
+}
+
+function taskMatchesSearchText(task, query) {
+  const needle = String(query ?? '').trim().toLowerCase();
+  if (!needle) return true;
+  const haystack = `${task.title ?? ''} ${task.description_md ?? ''}`.toLowerCase();
+  return haystack.includes(needle);
+}
+
+function getTaskSearchResultKey(workspaceId, text, status) {
+  return `${workspaceId ?? ''}|${String(text ?? '').trim().toLowerCase()}|${status ?? ''}`;
+}
+
+function clearTaskSearchResult() {
+  taskSearchResultIds = null;
+  taskSearchResultKey = '';
+  taskSearchInFlightKey = '';
+}
+
+async function refreshTaskSearchResults() {
+  const workspaceId = state.workspace?.id ?? null;
+  const text = getTaskSearchText();
+  const status = getTaskSearchStatusFilter();
+  const queryKey = getTaskSearchResultKey(workspaceId, text, status);
+  if (!workspaceId || !text) {
+    clearTaskSearchResult();
+    return;
+  }
+
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (!canUseRemote) {
+    clearTaskSearchResult();
+    return;
+  }
+
+  const requestSeq = ++taskSearchRequestSeq;
+  taskSearchInFlightKey = queryKey;
+  try {
+    const rows = await api.searchTasks({
+      workspaceId,
+      text,
+      status
+    });
+    if (requestSeq !== taskSearchRequestSeq) return;
+    const ids = new Set((rows ?? []).map(item => item.id).filter(Boolean));
+    taskSearchResultIds = ids;
+    taskSearchResultKey = queryKey;
+  } catch {
+    if (requestSeq !== taskSearchRequestSeq) return;
+    clearTaskSearchResult();
+    return;
+  }
+  taskSearchInFlightKey = '';
+}
+
+function scheduleTaskSearchRefresh(immediate = false) {
+  if (taskSearchDebounceTimer) {
+    clearTimeout(taskSearchDebounceTimer);
+    taskSearchDebounceTimer = null;
+  }
+  const run = async () => {
+    taskSearchDebounceTimer = null;
+    await refreshTaskSearchResults();
+    render();
+  };
+  if (immediate) {
+    void run();
+    return;
+  }
+  taskSearchDebounceTimer = setTimeout(() => {
+    void run();
+  }, 250);
+}
+
 function getFilteredTasks() {
   if (!state.workspace) return [];
   const tasks = Object.values(state.tasks).filter(task => task.workspace_id === state.workspace.id);
@@ -9521,12 +9789,33 @@ function getFilteredTasks() {
     }
   }
   const nonWorkflowTasks = tasks.filter(task => !getChecklistLinkForTask(task.id, null));
-  const filter = state.ui?.activeProjectId ?? null;
-  if (!filter) return nonWorkflowTasks;
-  if (filter === 'unassigned') {
-    return nonWorkflowTasks.filter(task => !task.project_id);
+  const filter = getActiveTaskFilter();
+  let filtered = nonWorkflowTasks;
+  if (filter === TASK_FILTER_UNASSIGNED) {
+    filtered = filtered.filter(task => !task.project_id);
+  } else if (filter === TASK_FILTER_INBOX) {
+    filtered = filtered.filter(task => isInboxStatusKey(task.status ?? getDefaultStatusKey()));
+  } else if (filter) {
+    filtered = filtered.filter(task => task.project_id === filter);
   }
-  return nonWorkflowTasks.filter(task => task.project_id === filter);
+
+  const query = getTaskSearchText();
+  if (!query) return filtered;
+  const queryKey = getTaskSearchResultKey(state.workspace.id, query, getTaskSearchStatusFilter());
+  if (
+    navigator.onLine
+    && !hasPendingLocalChanges()
+    && taskSearchResultKey !== queryKey
+    && taskSearchInFlightKey !== queryKey
+    && !taskSearchDebounceTimer
+  ) {
+    scheduleTaskSearchRefresh();
+  }
+  const localFiltered = filtered.filter(task => taskMatchesSearchText(task, query));
+  if (taskSearchResultKey === queryKey && taskSearchResultIds instanceof Set) {
+    return localFiltered.filter(task => taskSearchResultIds.has(task.id));
+  }
+  return localFiltered;
 }
 
 function getChecklistLinkForTask(taskId, checklistInstanceId) {
@@ -9547,6 +9836,10 @@ function renderTaskFilter() {
   if (!taskFilterButton || !taskFilterMenu) return;
   const label = getTaskFilterLabel();
   const checklistViewActive = isWorkflowChecklistViewActive();
+  if (taskFilterSearchInput) {
+    taskFilterSearchInput.value = getTaskSearchText();
+    taskFilterSearchInput.disabled = checklistViewActive;
+  }
   taskFilterButton.classList.toggle('task-filter-title', checklistViewActive);
   if (checklistViewActive) {
     taskFilterButton.textContent = label;
@@ -9574,10 +9867,12 @@ function getTaskFilterLabel() {
     }
     return 'Checklist';
   }
-  const active = state.ui?.activeProjectId ?? null;
+  const active = getActiveTaskFilter();
   let label = 'All tasks';
-  if (active === 'unassigned') {
+  if (active === TASK_FILTER_UNASSIGNED) {
     return 'Unassigned';
+  } else if (active === TASK_FILTER_INBOX) {
+    return 'Inbox';
   } else if (active) {
     const project = (state.projects ?? []).find(item => item.id === active);
     label = project?.name ?? 'All tasks';
@@ -9587,14 +9882,15 @@ function getTaskFilterLabel() {
 
 function cycleTaskFilterSelection() {
   const projectIds = getProjectsForWorkspace().map(project => project.id);
-  const cycle = [null, 'unassigned', ...projectIds];
-  const active = state.ui?.activeProjectId ?? null;
+  const cycle = [null, TASK_FILTER_INBOX, TASK_FILTER_UNASSIGNED, ...projectIds];
+  const active = getActiveTaskFilter();
   const activeKey = active === undefined ? null : active;
   const currentIndex = cycle.findIndex(item => item === activeKey);
   const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % cycle.length : 0;
   state.ui = state.ui ?? {};
   state.ui.activeProjectId = cycle[nextIndex] ?? null;
   clearActiveWorkflowChecklistInstanceId();
+  scheduleTaskSearchRefresh(true);
 }
 
 function cycleTaskSortSelection() {
@@ -10053,8 +10349,8 @@ function renderProjectList() {
     return;
   }
   projectListEl.innerHTML = '';
-  const active = state.ui?.activeProjectId ?? null;
-  if (active && active !== 'unassigned') {
+  const active = getProjectIdFromTaskFilter();
+  if (active) {
     const exists = (state.projects ?? []).some(project => project.id === active && project.workspace_id === state.workspace.id && !project.archived);
     if (!exists) {
       state.ui.activeProjectId = null;
@@ -10197,7 +10493,7 @@ function renderProjectsPage() {
     projectsMobileList.appendChild(empty);
     return;
   }
-  const active = state.ui?.activeProjectId ?? null;
+  const active = getProjectIdFromTaskFilter();
   projects.forEach(project => {
     const row = document.createElement('div');
     row.className = 'workspace-row project-row' + (project.id === active ? ' active' : '');
@@ -11279,6 +11575,15 @@ function renderWorkflowsPage() {
             });
             row.appendChild(depSelect);
 
+            const assigneeEditor = createWorkflowTemplateAssigneeEditor(task, {
+              locked,
+              onSave: (patch) => {
+                updateWorkflowPhaseTaskRecord(task.id, patch);
+                render();
+              }
+            });
+            row.appendChild(assigneeEditor);
+
             const optionalLabel = document.createElement('label');
             optionalLabel.className = 'workflow-optional-toggle';
             optionalLabel.dataset.tooltip = 'If applicable';
@@ -11727,6 +12032,15 @@ function renderWorkflowsPage() {
               render();
             });
             row.appendChild(depSelect);
+
+            const assigneeEditor = createWorkflowTemplateAssigneeEditor(task, {
+              locked,
+              onSave: (patch) => {
+                updateWorkflowPatternTaskRecord(task.id, patch);
+                render();
+              }
+            });
+            row.appendChild(assigneeEditor);
 
             const optionalLabel = document.createElement('label');
             optionalLabel.className = 'workflow-optional-toggle';
@@ -13176,8 +13490,7 @@ function renderKanban(roots) {
         const title = input.value.trim();
         if (!title) return;
         submitted = true;
-        const activeProjectId = state.ui?.activeProjectId ?? null;
-        const projectId = activeProjectId && activeProjectId !== 'unassigned' ? activeProjectId : null;
+        const projectId = getProjectIdFromTaskFilter();
         await createTaskRecord({ title, status: status.key, project_id: projectId });
         setKanbanQuickAdd(null);
         render();
@@ -15730,8 +16043,7 @@ taskModalForm.addEventListener('submit', async (event) => {
   const description = modalDesc.value ?? '';
   const typeLabel = modalType.value ? modalType.value.trim() : null;
   const parentId = taskModalDefaults.parent_id ?? null;
-  const activeProjectId = state.ui?.activeProjectId;
-  const projectId = activeProjectId && activeProjectId !== 'unassigned' ? activeProjectId : null;
+  const projectId = getProjectIdFromTaskFilter();
   const recurrence = modalRecurrence ?? { interval: null, unit: null };
   const assigneeSelection = modalAssignee?.value ?? ASSIGNEE_SELECT_NONE;
   const assigneeUserId = assigneeSelection && assigneeSelection !== ASSIGNEE_SELECT_EXTERNAL

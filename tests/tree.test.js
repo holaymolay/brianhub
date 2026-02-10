@@ -32,3 +32,16 @@ test('reparent rejects cycles', () => {
   ];
   assert.throws(() => reparent(tasks, 'a', 'b'));
 });
+
+test('reparent moves a task under a new parent without mutating siblings', () => {
+  const tasks = [
+    { id: 'a', parent_id: null },
+    { id: 'b', parent_id: 'a' },
+    { id: 'c', parent_id: null }
+  ];
+  const updated = reparent(tasks, 'b', 'c');
+  const moved = updated.find(task => task.id === 'b');
+  const unchanged = updated.find(task => task.id === 'a');
+  assert.equal(moved.parent_id, 'c');
+  assert.equal(unchanged.parent_id, null);
+});

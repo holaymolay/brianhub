@@ -34,3 +34,23 @@ test('waiting follow-up schedules next check-in', () => {
   const updated = applyWaitingFollowup({ ...baseTask, status: TaskStatus.WAITING }, new Date('2026-01-30T00:00:00Z'), 3);
   assert.ok(updated.next_checkin_at);
 });
+
+test('check-in rejects unsupported responses', () => {
+  assert.throws(
+    () => applyCheckIn({ ...baseTask, status: TaskStatus.IN_PROGRESS }, 'later', new Date('2026-01-30T00:00:00Z')),
+    /Unsupported check-in response/
+  );
+});
+
+test('waiting follow-up prefers explicit waiting_followup_at', () => {
+  const updated = applyWaitingFollowup(
+    {
+      ...baseTask,
+      status: TaskStatus.WAITING,
+      waiting_followup_at: '2026-02-05T10:30:00.000Z'
+    },
+    new Date('2026-01-30T00:00:00Z'),
+    3
+  );
+  assert.equal(updated.next_checkin_at, '2026-02-05T10:30:00.000Z');
+});

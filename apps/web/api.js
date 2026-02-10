@@ -362,6 +362,18 @@ export function listTasks(workspaceId) {
   return request(`/tasks?workspace_id=${encodeURIComponent(workspaceId)}`);
 }
 
+export function searchTasks({ workspaceId, text = null, status = null, tag = null }) {
+  return request('/tasks/search', {
+    method: 'POST',
+    body: JSON.stringify({
+      workspace_id: workspaceId,
+      text: text ?? null,
+      status: status ?? null,
+      tag: tag ?? null
+    })
+  });
+}
+
 export function listTaskDependencies(workspaceId) {
   return request(`/task-dependencies?workspace_id=${encodeURIComponent(workspaceId)}`);
 }
