@@ -6065,6 +6065,10 @@ function ensureLocalWorkspaceDefaults(workspace) {
 }
 
 async function loadWorkspaces() {
+  if (isAuthGateEnabled() && !isAuthenticatedActor()) {
+    clearWorkspaceDomainData();
+    return;
+  }
   let workspaces = state.workspaces ?? [];
   const allowRemote = !hasPendingLocalChanges();
   if (allowRemote) {
@@ -6101,6 +6105,10 @@ async function loadWorkspaces() {
 }
 
 async function loadWorkspaceData() {
+  if (isAuthGateEnabled() && !isAuthenticatedActor()) {
+    clearWorkspaceDomainData();
+    return;
+  }
   if (!state.workspace) return;
   if (!hasPendingLocalChanges()) {
     try {
@@ -10138,12 +10146,17 @@ function getAuthState() {
   if (!state.ui.auth || typeof state.ui.auth !== 'object') {
     state.ui.auth = {
       authenticated: false,
+      requireAuth: false,
       user: null,
       session: null,
       workspaces: []
     };
   }
   return state.ui.auth;
+}
+
+function isAuthGateEnabled() {
+  return Boolean(getAuthState().requireAuth);
 }
 
 function isAuthenticatedActor() {
@@ -10211,6 +10224,9 @@ function applyAuthPayload(payload, { persistProfile = true } = {}) {
   const user = payload?.user && typeof payload.user === 'object' ? payload.user : null;
   const session = payload?.session && typeof payload.session === 'object' ? payload.session : null;
   const workspaces = Array.isArray(payload?.workspaces) ? payload.workspaces : [];
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'require_auth')) {
+    auth.requireAuth = Boolean(payload.require_auth);
+  }
   auth.authenticated = Boolean(payload?.authenticated && user?.id);
   auth.user = auth.authenticated ? {
     id: user.id,
@@ -10228,6 +10244,43 @@ function applyAuthPayload(payload, { persistProfile = true } = {}) {
       ? { name: auth.user.display_name, email: auth.user.email }
       : { name: '', email: '' };
   }
+}
+
+function clearWorkspaceDomainData() {
+  state.workspace = null;
+  state.workspaces = [];
+  state.projects = [];
+  state.templates = [];
+  state.workflows = [];
+  state.workflowVariants = [];
+  state.workflowPhases = [];
+  state.workflowVariantPhases = [];
+  state.workflowPhaseTasks = [];
+  state.workflowPatterns = [];
+  state.workflowPatternTasks = [];
+  state.workflowInstances = [];
+  state.workflowInstanceTasks = [];
+  state.statuses = [];
+  state.taskTypes = [];
+  state.users = [];
+  state.workspaceMemberships = [];
+  state.taskSections = [];
+  state.storeRules = [];
+  state.tasks = {};
+  state.taskDependencies = [];
+  state.notices = [];
+  state.noticeTypes = [];
+  state.shoppingLists = [];
+  state.shoppingItems = {};
+  if (activeTaskId) {
+    closeTaskEditor();
+  }
+  state.ui = state.ui ?? {};
+  state.ui.activeWorkspaceId = null;
+  state.ui.activeProjectId = null;
+  state.ui.activeShoppingListId = null;
+  state.ui.activeWorkflowId = null;
+  state.ui.activeNoticeId = null;
 }
 
 async function hydrateAuthSession() {
@@ -10318,7 +10371,12 @@ async function handleAccountAuthAction() {
       // Clear local auth state even if server logout fails.
     }
     applyAuthPayload({ authenticated: false }, { persistProfile: true });
-    await reloadWorkspaceAfterAuthChange();
+    if (isAuthGateEnabled()) {
+      clearWorkspaceDomainData();
+      openAuthModal('login');
+    } else {
+      await reloadWorkspaceAfterAuthChange();
+    }
     render();
     showToast({ type: 'info', message: 'Signed out.' });
     return;
@@ -16665,6 +16723,16 @@ async function init() {
   setAuthModalMode('login');
   const inviteToken = getInviteTokenFromUrl();
   await hydrateAuthSession();
+  if (isAuthGateEnabled() && !isAuthenticatedActor()) {
+    clearWorkspaceDomainData();
+    render();
+    if (inviteToken) {
+      openAuthModal('invite', { inviteToken });
+    } else {
+      openAuthModal('login');
+    }
+    return;
+  }
   await loadWorkspaces();
   await refreshWorkspace();
   await primeSyncCursor();

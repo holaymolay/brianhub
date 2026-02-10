@@ -178,9 +178,10 @@ const authWorkspaceResponseSchema = {
 const authSessionResponseSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['authenticated'],
+  required: ['authenticated', 'require_auth'],
   properties: {
     authenticated: { type: 'boolean' },
+    require_auth: { type: 'boolean' },
     user: {
       anyOf: [authUserResponseSchema, { type: 'null' }]
     },

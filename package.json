@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "dev:api": "node services/api/src/server.js",
+    "auth:bootstrap-owner": "node scripts/bootstrap-owner-auth.js",
     "migrate:data-layer": "node scripts/migrate-data-layer.js",
     "migrate": "node services/api/src/migrate.js",
     "backup:db": "node scripts/backup-db.js",

@@ -10,6 +10,8 @@ const tempDbPath = join(tempDir, 'api-test.sqlite');
 const previousDb = process.env.BRIANHUB_DB;
 const previousNodeEnv = process.env.NODE_ENV;
 const previousExposeInviteToken = process.env.BRIANHUB_EXPOSE_INVITE_TOKEN;
+const previousRequireAuth = process.env.BRIANHUB_REQUIRE_AUTH;
+const previousAllowHeaderActorAuth = process.env.BRIANHUB_ALLOW_HEADER_ACTOR_AUTH;
 const ownerEmail = 'brian@pipecaminc.com';
 
 function getSessionCookie(res) {
@@ -24,6 +26,8 @@ before(async () => {
   process.env.BRIANHUB_DB = tempDbPath;
   process.env.NODE_ENV = 'test';
   process.env.BRIANHUB_EXPOSE_INVITE_TOKEN = 'true';
+  process.env.BRIANHUB_REQUIRE_AUTH = 'false';
+  process.env.BRIANHUB_ALLOW_HEADER_ACTOR_AUTH = 'true';
   const serverModule = await import('../services/api/src/server.js');
   server = serverModule.server;
   await server.ready();
@@ -45,6 +49,16 @@ after(async () => {
     delete process.env.BRIANHUB_EXPOSE_INVITE_TOKEN;
   } else {
     process.env.BRIANHUB_EXPOSE_INVITE_TOKEN = previousExposeInviteToken;
+  }
+  if (previousRequireAuth === undefined) {
+    delete process.env.BRIANHUB_REQUIRE_AUTH;
+  } else {
+    process.env.BRIANHUB_REQUIRE_AUTH = previousRequireAuth;
+  }
+  if (previousAllowHeaderActorAuth === undefined) {
+    delete process.env.BRIANHUB_ALLOW_HEADER_ACTOR_AUTH;
+  } else {
+    process.env.BRIANHUB_ALLOW_HEADER_ACTOR_AUTH = previousAllowHeaderActorAuth;
   }
   rmSync(tempDir, { recursive: true, force: true });
 });

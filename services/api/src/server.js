@@ -353,6 +353,14 @@ async function ensureAuthenticatedAccess(request, reply) {
   return actor;
 }
 
+const AUTH_PUBLIC_ROUTES = new Set([
+  '/health',
+  '/auth/me',
+  '/auth/login',
+  '/auth/logout',
+  '/auth/invite/accept'
+]);
+
 function sanitizeInvite(invite, { includeToken = false } = {}) {
   if (!invite) return invite;
   return {
@@ -413,6 +421,17 @@ server.addHook('preValidation', (request, _reply, done) => {
     done();
   } catch (error) {
     done(error);
+  }
+});
+
+server.addHook('preHandler', async (request, reply) => {
+  if (!config.requireAuth) return;
+  const routePath = String(request.routeOptions?.url ?? '').trim();
+  if (AUTH_PUBLIC_ROUTES.has(routePath)) return;
+  const actor = await resolveRequestActor(request);
+  if (!actor) {
+    reply.code(401).send({ error: 'authentication required' });
+    return reply;
   }
 });
 
@@ -562,6 +581,7 @@ server.get('/auth/me', async (request) => {
   if (!actor || !session?.user) {
     return {
       authenticated: false,
+      require_auth: Boolean(config.requireAuth),
       user: null,
       session: null,
       workspaces: [],
@@ -571,6 +591,7 @@ server.get('/auth/me', async (request) => {
   }
   return {
     authenticated: true,
+    require_auth: Boolean(config.requireAuth),
     user: session.user,
     session: session.session,
     workspaces: session.workspaces ?? [],
@@ -592,6 +613,7 @@ server.post('/auth/login', async (request, reply) => {
     setSessionCookie(reply, login.token, login.session.expires_at);
     return {
       authenticated: true,
+      require_auth: Boolean(config.requireAuth),
       user: login.user,
       session: login.session,
       workspaces: login.workspaces ?? [],
@@ -627,6 +649,7 @@ server.post('/auth/invite/accept', async (request, reply) => {
     setSessionCookie(reply, accepted.token, accepted.session.expires_at);
     return {
       authenticated: true,
+      require_auth: Boolean(config.requireAuth),
       user: accepted.user,
       session: accepted.session,
       workspaces: accepted.workspaces ?? [],

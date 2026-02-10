@@ -114,6 +114,15 @@ async function setUserPasswordCredential(db, userId, password) {
   }
 }
 
+export async function setUserPassword(db, { userId, password } = {}) {
+  const safeUserId = String(userId ?? '').trim();
+  if (!safeUserId) {
+    throw new Error('userId is required');
+  }
+  await setUserPasswordCredential(db, safeUserId, password);
+  return true;
+}
+
 async function createSession(db, userId, { ttlDays = 30, userAgent = null, ipAddress = null } = {}) {
   const token = createSessionToken();
   const tokenHash = hashToken(token);
