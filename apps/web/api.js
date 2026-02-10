@@ -53,6 +53,7 @@ async function request(path, options = {}) {
   let res;
   try {
     res = await fetch(`${API_BASE}${path}`, {
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         'X-Client-Id': getClientId(),
@@ -138,6 +139,22 @@ async function request(path, options = {}) {
     });
     throw error;
   }
+}
+
+export function getAuthMe() {
+  return request('/auth/me');
+}
+
+export function login(data) {
+  return request('/auth/login', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function logout() {
+  return request('/auth/logout', { method: 'POST' });
+}
+
+export function acceptInvite(data) {
+  return request('/auth/invite/accept', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export function listWorkspaces() {

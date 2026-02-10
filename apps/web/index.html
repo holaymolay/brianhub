@@ -1422,6 +1422,50 @@
       </div>
     </div>
 
+    <div id="auth-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2 id="auth-modal-title">Sign in</h2>
+        <div class="auth-mode-tabs">
+          <button id="auth-mode-login" class="subtle-button" type="button">Login</button>
+          <button id="auth-mode-invite" class="subtle-button" type="button">Accept Invite</button>
+        </div>
+        <div id="auth-status" class="sidebar-note"></div>
+        <form id="auth-login-form" class="auth-form">
+          <label>
+            Email
+            <input id="auth-login-email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="auth-login-password" type="password" autocomplete="current-password" required />
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Login</button>
+            <button id="auth-cancel" class="subtle-button" type="button">Cancel</button>
+          </div>
+        </form>
+        <form id="auth-invite-form" class="auth-form hidden">
+          <label>
+            Invite token
+            <input id="auth-invite-token" type="text" autocomplete="off" required />
+          </label>
+          <label>
+            Full name
+            <input id="auth-invite-name" type="text" autocomplete="name" required />
+          </label>
+          <label>
+            Password
+            <input id="auth-invite-password" type="password" autocomplete="new-password" required />
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Create account</button>
+            <button id="auth-cancel-invite" class="subtle-button" type="button">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div id="task-context-menu" class="workspace-menu task-context-menu hidden"></div>
     <script type="module" src="/apps/web/app.js"></script>
   </body>

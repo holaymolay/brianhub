@@ -116,6 +116,23 @@ function buildApiConfig(env = process.env) {
   }
 
   const exposeInviteToken = parseBoolean('BRIANHUB_EXPOSE_INVITE_TOKEN', env.BRIANHUB_EXPOSE_INVITE_TOKEN, false, errors);
+  const requireAuth = parseBoolean('BRIANHUB_REQUIRE_AUTH', env.BRIANHUB_REQUIRE_AUTH, false, errors);
+  const allowHeaderActorAuth = parseBoolean(
+    'BRIANHUB_ALLOW_HEADER_ACTOR_AUTH',
+    env.BRIANHUB_ALLOW_HEADER_ACTOR_AUTH,
+    true,
+    errors
+  );
+  const sessionCookieName = String(env.BRIANHUB_SESSION_COOKIE_NAME ?? 'brianhub_session').trim() || 'brianhub_session';
+  if (!/^[A-Za-z0-9_.-]{3,64}$/.test(sessionCookieName)) {
+    errors.push('BRIANHUB_SESSION_COOKIE_NAME must be 3-64 chars (letters, digits, underscore, dot, dash)');
+  }
+  const sessionTtlDays = parseInteger(
+    'BRIANHUB_SESSION_TTL_DAYS',
+    env.BRIANHUB_SESSION_TTL_DAYS,
+    { min: 1, max: 365, defaultValue: 30 },
+    errors
+  );
   const rateLimitWindowMs = parseInteger('BRIANHUB_RATE_LIMIT_WINDOW_MS', env.BRIANHUB_RATE_LIMIT_WINDOW_MS, { min: 1000, max: 3_600_000, defaultValue: 60_000 }, errors);
   const rateLimitMax = parseInteger('BRIANHUB_RATE_LIMIT_MAX', env.BRIANHUB_RATE_LIMIT_MAX, { min: 1, max: 50_000, defaultValue: 300 }, errors);
 
@@ -135,6 +152,10 @@ function buildApiConfig(env = process.env) {
     corsOrigins,
     ownerSuperAdminEmail,
     exposeInviteToken,
+    requireAuth,
+    allowHeaderActorAuth,
+    sessionCookieName,
+    sessionTtlDays,
     rateLimits: {
       windowMs: rateLimitWindowMs,
       max: rateLimitMax
@@ -152,4 +173,3 @@ export function getApiConfig(env = process.env, { force = false } = {}) {
   }
   return config;
 }
-

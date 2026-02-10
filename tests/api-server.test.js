@@ -9,10 +9,21 @@ const tempDir = mkdtempSync(join(tmpdir(), 'brianhub-api-test-'));
 const tempDbPath = join(tempDir, 'api-test.sqlite');
 const previousDb = process.env.BRIANHUB_DB;
 const previousNodeEnv = process.env.NODE_ENV;
+const previousExposeInviteToken = process.env.BRIANHUB_EXPOSE_INVITE_TOKEN;
+const ownerEmail = 'brian@pipecaminc.com';
+
+function getSessionCookie(res) {
+  const header = res.headers['set-cookie'];
+  if (!header) return null;
+  const raw = Array.isArray(header) ? header[0] : header;
+  const match = String(raw).match(/^[^;]+/);
+  return match ? match[0] : null;
+}
 
 before(async () => {
   process.env.BRIANHUB_DB = tempDbPath;
   process.env.NODE_ENV = 'test';
+  process.env.BRIANHUB_EXPOSE_INVITE_TOKEN = 'true';
   const serverModule = await import('../services/api/src/server.js');
   server = serverModule.server;
   await server.ready();
@@ -29,6 +40,11 @@ after(async () => {
     delete process.env.NODE_ENV;
   } else {
     process.env.NODE_ENV = previousNodeEnv;
+  }
+  if (previousExposeInviteToken === undefined) {
+    delete process.env.BRIANHUB_EXPOSE_INVITE_TOKEN;
+  } else {
+    process.env.BRIANHUB_EXPOSE_INVITE_TOKEN = previousExposeInviteToken;
   }
   rmSync(tempDir, { recursive: true, force: true });
 });
@@ -179,4 +195,106 @@ test('sync push returns 409 conflict with server version for stale task mutation
   assert.equal(conflictBody.error.conflict.reason, 'stale');
   assert.equal(conflictBody.error.conflict.server_version.entity_id, taskId);
   assert.equal(conflictBody.error.conflict.server_version.updated_at, createdTask.updated_at);
+});
+
+test('invite accept creates credentials and session, then login/logout cycle works', async () => {
+  const inviteeEmail = 'new.user@example.com';
+  const inviteeName = 'New User';
+  const inviteePassword = 'Passw0rd!234';
+
+  const workspaceRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    payload: {
+      name: 'Auth workspace',
+      type: 'personal',
+      org_id: '00000000-0000-4000-8000-000000000001'
+    }
+  });
+  assert.equal(workspaceRes.statusCode, 200);
+  const workspaceId = workspaceRes.json().id;
+
+  const inviteRes = await server.inject({
+    method: 'POST',
+    url: '/admin/invites',
+    headers: {
+      'x-actor-email': ownerEmail
+    },
+    payload: {
+      workspace_id: workspaceId,
+      email: inviteeEmail,
+      role: 'member'
+    }
+  });
+  assert.equal(inviteRes.statusCode, 200);
+  const inviteToken = inviteRes.json().invite?.invite_token;
+  assert.equal(typeof inviteToken, 'string');
+  assert.ok(inviteToken.length > 10);
+
+  const acceptRes = await server.inject({
+    method: 'POST',
+    url: '/auth/invite/accept',
+    payload: {
+      invite_token: inviteToken,
+      display_name: inviteeName,
+      password: inviteePassword
+    }
+  });
+  assert.equal(acceptRes.statusCode, 200);
+  const accepted = acceptRes.json();
+  assert.equal(accepted.authenticated, true);
+  assert.equal(accepted.user.email, inviteeEmail);
+  const acceptedCookie = getSessionCookie(acceptRes);
+  assert.ok(acceptedCookie);
+
+  const meRes = await server.inject({
+    method: 'GET',
+    url: '/auth/me',
+    headers: {
+      cookie: acceptedCookie
+    }
+  });
+  assert.equal(meRes.statusCode, 200);
+  const meBody = meRes.json();
+  assert.equal(meBody.authenticated, true);
+  assert.equal(meBody.user.email, inviteeEmail);
+  assert.equal(Array.isArray(meBody.workspaces), true);
+  assert.ok(meBody.workspaces.length >= 1);
+
+  const logoutRes = await server.inject({
+    method: 'POST',
+    url: '/auth/logout',
+    headers: {
+      cookie: acceptedCookie
+    }
+  });
+  assert.equal(logoutRes.statusCode, 200);
+  const clearedCookie = getSessionCookie(logoutRes);
+  assert.ok(clearedCookie);
+  assert.match(clearedCookie, /^brianhub_session=/);
+
+  const meAfterLogoutRes = await server.inject({
+    method: 'GET',
+    url: '/auth/me',
+    headers: {
+      cookie: acceptedCookie
+    }
+  });
+  assert.equal(meAfterLogoutRes.statusCode, 200);
+  assert.equal(meAfterLogoutRes.json().authenticated, false);
+
+  const loginRes = await server.inject({
+    method: 'POST',
+    url: '/auth/login',
+    payload: {
+      email: inviteeEmail,
+      password: inviteePassword
+    }
+  });
+  assert.equal(loginRes.statusCode, 200);
+  const loginBody = loginRes.json();
+  assert.equal(loginBody.authenticated, true);
+  assert.equal(loginBody.user.email, inviteeEmail);
+  const loginCookie = getSessionCookie(loginRes);
+  assert.ok(loginCookie);
 });

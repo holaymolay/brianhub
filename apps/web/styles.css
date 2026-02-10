@@ -3490,6 +3490,34 @@ button:hover { opacity: 0.9; }
   justify-content: flex-end;
 }
 
+.auth-mode-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.auth-mode-tabs .subtle-button.is-active {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.auth-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+#auth-status {
+  min-height: 1.25rem;
+}
+
+#auth-status[data-tone="error"] {
+  color: #ff9f9f;
+}
+
+#auth-status[data-tone="success"] {
+  color: #8de6a8;
+}
+
 .checkin-actions {
   display: flex;
   gap: 0.75rem;

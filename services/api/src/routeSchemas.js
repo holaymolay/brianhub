@@ -150,6 +150,63 @@ const taskListResponseSchema = {
   items: taskResponseSchema
 };
 
+const authUserResponseSchema = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['id', 'org_id', 'display_name', 'email'],
+  properties: {
+    id: uuidSchema,
+    org_id: uuidSchema,
+    display_name: nonEmptyString(256),
+    email: nonEmptyString(320)
+  }
+};
+
+const authWorkspaceResponseSchema = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['id', 'org_id', 'name', 'type'],
+  properties: {
+    id: uuidSchema,
+    org_id: uuidSchema,
+    name: nonEmptyString(256),
+    type: nonEmptyString(64),
+    role: nullableString(64)
+  }
+};
+
+const authSessionResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['authenticated'],
+  properties: {
+    authenticated: { type: 'boolean' },
+    user: {
+      anyOf: [authUserResponseSchema, { type: 'null' }]
+    },
+    session: {
+      anyOf: [
+        {
+          type: 'object',
+          additionalProperties: true,
+          required: ['id', 'expires_at'],
+          properties: {
+            id: uuidSchema,
+            expires_at: dateTimeSchema
+          }
+        },
+        { type: 'null' }
+      ]
+    },
+    workspaces: {
+      type: 'array',
+      items: authWorkspaceResponseSchema
+    },
+    owner_email: nullableString(320),
+    is_owner: { type: 'boolean' }
+  }
+};
+
 const syncPushResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -278,6 +335,52 @@ const routeSchemas = new Map([
         archived: boolishSchema,
         workspace_id: nullableUuidSchema
       }
+    }
+  }],
+  ['GET /auth/me', {
+    response: {
+      200: authSessionResponseSchema
+    }
+  }],
+  ['POST /auth/login', {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['email', 'password'],
+      properties: {
+        email: nonEmptyString(320),
+        password: nonEmptyString(200)
+      }
+    },
+    response: {
+      200: authSessionResponseSchema
+    }
+  }],
+  ['POST /auth/logout', {
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' }
+        }
+      }
+    }
+  }],
+  ['POST /auth/invite/accept', {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['invite_token', 'display_name', 'password'],
+      properties: {
+        invite_token: nonEmptyString(256),
+        display_name: nonEmptyString(256),
+        password: nonEmptyString(200)
+      }
+    },
+    response: {
+      200: authSessionResponseSchema
     }
   }],
   ['GET /admin/invites', {

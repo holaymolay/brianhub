@@ -74,6 +74,12 @@ import {
   recordChange
 } from './taskService.js';
 import { sendInviteEmail } from './email.js';
+import {
+  acceptInviteRegistration,
+  loginWithPassword,
+  resolveSessionUser,
+  revokeSessionByToken
+} from './authService.js';
 
 export const config = getApiConfig();
 
@@ -105,8 +111,10 @@ function mapStatusCodeToErrorCode(statusCode) {
 
 function getCorsOrigin(originHeader) {
   const allowedOrigins = config.corsOrigins ?? ['*'];
-  if (allowedOrigins.includes('*')) return '*';
   const origin = String(originHeader ?? '').trim();
+  if (allowedOrigins.includes('*')) {
+    return origin || '*';
+  }
   if (!origin) return allowedOrigins[0] ?? '';
   if (allowedOrigins.includes(origin)) return origin;
   return '';
@@ -237,17 +245,112 @@ function sanitizeRequestValue(value, key = '') {
   return value;
 }
 
-function getActorEmail(request) {
+function getHeaderActorEmail(request) {
   return String(request.headers['x-actor-email'] ?? '').trim().toLowerCase();
 }
 
-function ensureOwnerAccess(request, reply) {
-  const actorEmail = getActorEmail(request);
-  if (!actorEmail || actorEmail !== OWNER_SUPER_ADMIN_EMAIL) {
+function parseCookieHeader(cookieHeader) {
+  const values = {};
+  const header = String(cookieHeader ?? '').trim();
+  if (!header) return values;
+  const parts = header.split(';');
+  for (const part of parts) {
+    const separatorIndex = part.indexOf('=');
+    if (separatorIndex <= 0) continue;
+    const key = part.slice(0, separatorIndex).trim();
+    if (!key) continue;
+    const rawValue = part.slice(separatorIndex + 1).trim();
+    values[key] = rawValue;
+  }
+  return values;
+}
+
+function getSessionTokenFromRequest(request) {
+  const cookies = parseCookieHeader(request.headers.cookie);
+  const token = cookies[config.sessionCookieName];
+  if (!token) return null;
+  try {
+    return decodeURIComponent(token);
+  } catch {
+    return token;
+  }
+}
+
+function getSessionCookieAttributes(expiresAtIso, maxAgeSeconds) {
+  const secure = config.nodeEnv === 'production' ? '; Secure' : '';
+  return `${config.sessionCookieName}=__VALUE__; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}; Expires=${new Date(expiresAtIso).toUTCString()}${secure}`;
+}
+
+function setSessionCookie(reply, sessionToken, expiresAtIso) {
+  const expiresAtMs = Date.parse(expiresAtIso);
+  const maxAgeSeconds = Number.isFinite(expiresAtMs)
+    ? Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000))
+    : config.sessionTtlDays * 24 * 60 * 60;
+  const serialized = getSessionCookieAttributes(expiresAtIso, maxAgeSeconds).replace(
+    '__VALUE__',
+    encodeURIComponent(sessionToken)
+  );
+  reply.header('Set-Cookie', serialized);
+}
+
+function clearSessionCookie(reply) {
+  const expiresAtIso = new Date(0).toISOString();
+  const serialized = getSessionCookieAttributes(expiresAtIso, 0).replace('__VALUE__', '');
+  reply.header('Set-Cookie', serialized);
+}
+
+async function resolveRequestActor(request) {
+  if (request.actorResolved) {
+    return request.actor ?? null;
+  }
+  let actor = null;
+  const sessionToken = getSessionTokenFromRequest(request);
+  if (sessionToken) {
+    const session = await resolveSessionUser(db, sessionToken);
+    if (session?.user?.email) {
+      actor = {
+        source: 'session',
+        email: String(session.user.email).trim().toLowerCase(),
+        user_id: session.user.id,
+        org_id: session.user.org_id,
+        session_id: session.session?.id ?? null
+      };
+      request.authSession = session;
+    }
+  }
+  if (!actor && config.allowHeaderActorAuth) {
+    const fallbackEmail = getHeaderActorEmail(request);
+    if (fallbackEmail) {
+      actor = {
+        source: 'header',
+        email: fallbackEmail,
+        user_id: null,
+        org_id: null,
+        session_id: null
+      };
+    }
+  }
+  request.actor = actor;
+  request.actorResolved = true;
+  return actor;
+}
+
+async function ensureOwnerAccess(request, reply) {
+  const actor = await resolveRequestActor(request);
+  if (!actor?.email || actor.email !== OWNER_SUPER_ADMIN_EMAIL) {
     reply.code(403).send({ error: 'owner access required' });
     return null;
   }
-  return actorEmail;
+  return actor;
+}
+
+async function ensureAuthenticatedAccess(request, reply) {
+  const actor = await resolveRequestActor(request);
+  if (!actor) {
+    reply.code(401).send({ error: 'authentication required' });
+    return null;
+  }
+  return actor;
 }
 
 function sanitizeInvite(invite, { includeToken = false } = {}) {
@@ -271,10 +374,14 @@ function sanitizeInvite(invite, { includeToken = false } = {}) {
 
 server.addHook('onRequest', (request, reply, done) => {
   request.startedAtMs = Date.now();
+  request.actorResolved = false;
+  request.actor = null;
+  request.authSession = null;
   const corsOrigin = getCorsOrigin(request.headers.origin);
   if (corsOrigin) {
     reply.header('Access-Control-Allow-Origin', corsOrigin);
   }
+  reply.header('Access-Control-Allow-Credentials', 'true');
   reply.header('Vary', 'Origin');
   reply.header('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id, X-Actor-Email, X-Request-Id');
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -449,18 +556,101 @@ server.post('/users', async (request, reply) => {
   }
 });
 
+server.get('/auth/me', async (request) => {
+  const actor = await resolveRequestActor(request);
+  const session = request.authSession ?? null;
+  if (!actor || !session?.user) {
+    return {
+      authenticated: false,
+      user: null,
+      session: null,
+      workspaces: [],
+      owner_email: OWNER_SUPER_ADMIN_EMAIL,
+      is_owner: false
+    };
+  }
+  return {
+    authenticated: true,
+    user: session.user,
+    session: session.session,
+    workspaces: session.workspaces ?? [],
+    owner_email: OWNER_SUPER_ADMIN_EMAIL,
+    is_owner: actor.email === OWNER_SUPER_ADMIN_EMAIL
+  };
+});
+
+server.post('/auth/login', async (request, reply) => {
+  const { email, password } = request.body ?? {};
+  try {
+    const login = await loginWithPassword(db, {
+      email,
+      password,
+      ttlDays: config.sessionTtlDays,
+      userAgent: request.headers['user-agent'] ?? null,
+      ipAddress: request.ip
+    });
+    setSessionCookie(reply, login.token, login.session.expires_at);
+    return {
+      authenticated: true,
+      user: login.user,
+      session: login.session,
+      workspaces: login.workspaces ?? [],
+      owner_email: OWNER_SUPER_ADMIN_EMAIL,
+      is_owner: String(login.user.email ?? '').toLowerCase() === OWNER_SUPER_ADMIN_EMAIL
+    };
+  } catch (err) {
+    return reply.code(401).send({ error: err.message });
+  }
+});
+
+server.post('/auth/logout', async (request, reply) => {
+  const sessionToken = getSessionTokenFromRequest(request);
+  if (sessionToken) {
+    await revokeSessionByToken(db, sessionToken);
+  }
+  clearSessionCookie(reply);
+  return { ok: true };
+});
+
+server.post('/auth/invite/accept', async (request, reply) => {
+  const { invite_token, display_name, password } = request.body ?? {};
+  try {
+    const accepted = await acceptInviteRegistration(db, {
+      inviteToken: invite_token,
+      displayName: display_name,
+      password,
+      ttlDays: config.sessionTtlDays,
+      userAgent: request.headers['user-agent'] ?? null,
+      ipAddress: request.ip,
+      clientId: request.headers['x-client-id'] ?? null
+    });
+    setSessionCookie(reply, accepted.token, accepted.session.expires_at);
+    return {
+      authenticated: true,
+      user: accepted.user,
+      session: accepted.session,
+      workspaces: accepted.workspaces ?? [],
+      owner_email: OWNER_SUPER_ADMIN_EMAIL,
+      is_owner: String(accepted.user.email ?? '').toLowerCase() === OWNER_SUPER_ADMIN_EMAIL
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
 server.get('/admin/info', async (request, reply) => {
-  const actorEmail = getActorEmail(request);
+  const actor = await resolveRequestActor(request);
+  const actorEmail = actor?.email ?? null;
   return {
     owner_email: OWNER_SUPER_ADMIN_EMAIL,
-    actor_email: actorEmail || null,
+    actor_email: actorEmail,
     is_owner: Boolean(actorEmail && actorEmail === OWNER_SUPER_ADMIN_EMAIL)
   };
 });
 
 server.get('/admin/invites', async (request, reply) => {
-  const actorEmail = ensureOwnerAccess(request, reply);
-  if (!actorEmail) return;
+  const actor = await ensureOwnerAccess(request, reply);
+  if (!actor) return;
   const { org_id, workspace_id, status } = request.query ?? {};
   try {
     const invites = await listUserInvites(db, {
@@ -478,8 +668,8 @@ server.get('/admin/invites', async (request, reply) => {
 });
 
 server.post('/admin/invites', async (request, reply) => {
-  const actorEmail = ensureOwnerAccess(request, reply);
-  if (!actorEmail) return;
+  const actor = await ensureOwnerAccess(request, reply);
+  if (!actor) return;
   const { workspace_id, email } = request.body ?? {};
   if (!workspace_id || !email) {
     return reply.code(400).send({ error: 'workspace_id and email required' });
@@ -489,7 +679,7 @@ server.post('/admin/invites', async (request, reply) => {
       db,
       {
         ...(request.body ?? {}),
-        invited_by_email: actorEmail
+        invited_by_email: actor.email
       },
       request.headers['x-client-id'] ?? null
     );
@@ -497,7 +687,7 @@ server.post('/admin/invites', async (request, reply) => {
       toEmail: created.email,
       inviteToken: created.invite_token,
       workspaceName: created.workspace_name ?? null,
-      invitedByEmail: actorEmail,
+      invitedByEmail: actor.email,
       expiresAt: created.expires_at
     });
     const includeToken = config.exposeInviteToken;

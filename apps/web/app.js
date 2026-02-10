@@ -287,6 +287,20 @@ const accountProfileName = document.getElementById('account-profile-name');
 const accountProfileEmail = document.getElementById('account-profile-email');
 const accountLogout = document.getElementById('account-logout');
 const accountAdmin = document.getElementById('account-admin');
+const authModal = document.getElementById('auth-modal');
+const authModalTitle = document.getElementById('auth-modal-title');
+const authModeLogin = document.getElementById('auth-mode-login');
+const authModeInvite = document.getElementById('auth-mode-invite');
+const authStatus = document.getElementById('auth-status');
+const authLoginForm = document.getElementById('auth-login-form');
+const authLoginEmail = document.getElementById('auth-login-email');
+const authLoginPassword = document.getElementById('auth-login-password');
+const authInviteForm = document.getElementById('auth-invite-form');
+const authInviteToken = document.getElementById('auth-invite-token');
+const authInviteName = document.getElementById('auth-invite-name');
+const authInvitePassword = document.getElementById('auth-invite-password');
+const authCancel = document.getElementById('auth-cancel');
+const authCancelInvite = document.getElementById('auth-cancel-invite');
 const settingsOpen = document.getElementById('settings-open');
 const profileOpen = document.getElementById('profile-open');
 const settingsModal = document.getElementById('settings-modal');
@@ -464,6 +478,7 @@ const groupRenameForm = document.getElementById('group-rename-form');
 const groupRenameInput = document.getElementById('group-rename-input');
 const groupRenameCancel = document.getElementById('group-rename-cancel');
 let openMenu = null;
+let authModalMode = 'login';
 let renameGroupLabel = null;
 let editingTemplateId = null;
 let editingWorkflowId = null;
@@ -1216,6 +1231,28 @@ mobileMenuWorkspaces?.addEventListener('click', () => {
 mobileMenuAuth?.addEventListener('click', () => {
   closeMobileTopMenu();
   accountLogout?.click();
+});
+
+authModeLogin?.addEventListener('click', () => {
+  setAuthModalMode('login');
+});
+
+authModeInvite?.addEventListener('click', () => {
+  setAuthModalMode('invite');
+});
+
+authCancel?.addEventListener('click', closeAuthModal);
+authCancelInvite?.addEventListener('click', closeAuthModal);
+authModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeAuthModal);
+
+authLoginForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await submitAuthLogin();
+});
+
+authInviteForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await submitInviteAccept();
 });
 
 mobileCreateSheetBackdrop?.addEventListener('click', () => {
@@ -10067,6 +10104,13 @@ function getAccountDisplayName() {
 }
 
 function getProfileState() {
+  const authUser = state.ui?.auth?.user;
+  if (authUser && typeof authUser === 'object') {
+    return {
+      name: authUser.display_name ?? '',
+      email: authUser.email ?? ''
+    };
+  }
   const profile = state.ui?.profile;
   if (!profile || typeof profile !== 'object') return {};
   return profile;
@@ -10089,6 +10133,199 @@ function normalizeActorEmail(email) {
   return text;
 }
 
+function getAuthState() {
+  state.ui = state.ui ?? {};
+  if (!state.ui.auth || typeof state.ui.auth !== 'object') {
+    state.ui.auth = {
+      authenticated: false,
+      user: null,
+      session: null,
+      workspaces: []
+    };
+  }
+  return state.ui.auth;
+}
+
+function isAuthenticatedActor() {
+  const auth = getAuthState();
+  return Boolean(auth.authenticated && auth.user?.id);
+}
+
+function getInviteTokenFromUrl() {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  return String(params.get('invite_token') ?? '').trim();
+}
+
+function clearInviteTokenFromUrl() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('invite_token')) return;
+  url.searchParams.delete('invite_token');
+  window.history.replaceState(window.history.state ?? null, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function setAuthStatus(message = '', tone = '') {
+  if (!authStatus) return;
+  authStatus.textContent = String(message ?? '');
+  if (tone) {
+    authStatus.dataset.tone = tone;
+  } else {
+    delete authStatus.dataset.tone;
+  }
+}
+
+function setAuthModalMode(mode = 'login') {
+  authModalMode = mode === 'invite' ? 'invite' : 'login';
+  if (authModeLogin) authModeLogin.classList.toggle('is-active', authModalMode === 'login');
+  if (authModeInvite) authModeInvite.classList.toggle('is-active', authModalMode === 'invite');
+  if (authLoginForm) authLoginForm.classList.toggle('hidden', authModalMode !== 'login');
+  if (authInviteForm) authInviteForm.classList.toggle('hidden', authModalMode !== 'invite');
+  if (authModalTitle) {
+    authModalTitle.textContent = authModalMode === 'invite' ? 'Accept invite' : 'Sign in';
+  }
+  if (authModalMode === 'invite') {
+    authInviteToken?.focus();
+  } else {
+    authLoginEmail?.focus();
+  }
+}
+
+function openAuthModal(mode = 'login', { inviteToken = '' } = {}) {
+  if (!authModal) return;
+  setAuthStatus('');
+  if (inviteToken && authInviteToken && !authInviteToken.value) {
+    authInviteToken.value = inviteToken;
+  }
+  setAuthModalMode(mode);
+  authModal.classList.remove('hidden');
+}
+
+function closeAuthModal() {
+  authModal?.classList.add('hidden');
+  setAuthStatus('');
+}
+
+function applyAuthPayload(payload, { persistProfile = true } = {}) {
+  const auth = getAuthState();
+  const user = payload?.user && typeof payload.user === 'object' ? payload.user : null;
+  const session = payload?.session && typeof payload.session === 'object' ? payload.session : null;
+  const workspaces = Array.isArray(payload?.workspaces) ? payload.workspaces : [];
+  auth.authenticated = Boolean(payload?.authenticated && user?.id);
+  auth.user = auth.authenticated ? {
+    id: user.id,
+    org_id: user.org_id,
+    display_name: user.display_name,
+    email: user.email
+  } : null;
+  auth.session = auth.authenticated ? {
+    id: session?.id ?? null,
+    expires_at: session?.expires_at ?? null
+  } : null;
+  auth.workspaces = workspaces;
+  if (persistProfile) {
+    state.ui.profile = auth.user
+      ? { name: auth.user.display_name, email: auth.user.email }
+      : { name: '', email: '' };
+  }
+}
+
+async function hydrateAuthSession() {
+  try {
+    const session = await api.getAuthMe();
+    applyAuthPayload(session, { persistProfile: true });
+  } catch {
+    applyAuthPayload({ authenticated: false }, { persistProfile: false });
+  }
+}
+
+async function reloadWorkspaceAfterAuthChange() {
+  await loadWorkspaces();
+  await refreshWorkspace();
+  await primeSyncCursor();
+}
+
+async function submitAuthLogin() {
+  if (!authLoginEmail || !authLoginPassword) return;
+  const email = normalizeActorEmail(authLoginEmail.value);
+  if (!email) {
+    setAuthStatus('Enter a valid email address.', 'error');
+    authLoginEmail.focus();
+    return;
+  }
+  const password = String(authLoginPassword.value ?? '');
+  if (!password) {
+    setAuthStatus('Password is required.', 'error');
+    authLoginPassword.focus();
+    return;
+  }
+  try {
+    const payload = await api.login({ email, password });
+    applyAuthPayload(payload, { persistProfile: true });
+    authLoginPassword.value = '';
+    closeAuthModal();
+    await reloadWorkspaceAfterAuthChange();
+    render();
+    showToast({ type: 'success', message: 'Signed in.' });
+  } catch (err) {
+    setAuthStatus(err?.message ?? 'Login failed.', 'error');
+  }
+}
+
+async function submitInviteAccept() {
+  if (!authInviteToken || !authInviteName || !authInvitePassword) return;
+  const inviteToken = String(authInviteToken.value ?? '').trim();
+  const displayName = normalizeTitleInput(authInviteName.value);
+  const password = String(authInvitePassword.value ?? '');
+  if (!inviteToken) {
+    setAuthStatus('Invite token is required.', 'error');
+    authInviteToken.focus();
+    return;
+  }
+  if (!displayName) {
+    setAuthStatus('Full name is required.', 'error');
+    authInviteName.focus();
+    return;
+  }
+  if (!password) {
+    setAuthStatus('Password is required.', 'error');
+    authInvitePassword.focus();
+    return;
+  }
+  try {
+    const payload = await api.acceptInvite({
+      invite_token: inviteToken,
+      display_name: displayName,
+      password
+    });
+    applyAuthPayload(payload, { persistProfile: true });
+    authInvitePassword.value = '';
+    clearInviteTokenFromUrl();
+    closeAuthModal();
+    await reloadWorkspaceAfterAuthChange();
+    render();
+    showToast({ type: 'success', message: 'Account created and signed in.' });
+  } catch (err) {
+    setAuthStatus(err?.message ?? 'Could not accept invite.', 'error');
+  }
+}
+
+async function handleAccountAuthAction() {
+  if (isAuthenticatedActor()) {
+    try {
+      await api.logout();
+    } catch {
+      // Clear local auth state even if server logout fails.
+    }
+    applyAuthPayload({ authenticated: false }, { persistProfile: true });
+    await reloadWorkspaceAfterAuthChange();
+    render();
+    showToast({ type: 'info', message: 'Signed out.' });
+    return;
+  }
+  openAuthModal('login');
+}
+
 function isOwnerSuperAdminEmail(email) {
   return normalizeActorEmail(email) === OWNER_SUPER_ADMIN_EMAIL;
 }
@@ -10109,12 +10346,15 @@ function renderAccountMenu() {
   const profileName = getProfileDisplayName();
   const initials = getAccountInitials(profileName);
   const email = getProfileEmail();
+  const authenticated = isAuthenticatedActor();
   [accountAvatar, accountListAvatar, accountProfileAvatar].forEach((el) => {
     if (el) el.textContent = initials;
   });
   if (accountListName) accountListName.textContent = orgName;
   if (accountProfileName) accountProfileName.textContent = profileName;
   if (accountProfileEmail) accountProfileEmail.textContent = email;
+  if (accountLogout) accountLogout.textContent = authenticated ? 'Log out' : 'Log in';
+  if (mobileMenuAuth) mobileMenuAuth.textContent = authenticated ? 'Log out' : 'Log in';
   if (accountAdmin) {
     accountAdmin.classList.toggle('hidden', !isCurrentActorOwnerSuperAdmin());
   }
@@ -10322,7 +10562,19 @@ async function submitAdminInvite() {
       email,
       role
     });
-    setAdminInviteStatus(`Invite sent to ${response?.invite?.email ?? email}.`);
+    const inviteToken = String(response?.invite?.invite_token ?? '').trim();
+    if (inviteToken) {
+      const base = window.location.origin.replace(/\/$/, '');
+      const inviteUrl = `${base}/apps/web/?invite_token=${encodeURIComponent(inviteToken)}`;
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+        setAdminInviteStatus(`Invite created for ${response?.invite?.email ?? email}. Link copied to clipboard.`);
+      } catch {
+        setAdminInviteStatus(`Invite created for ${response?.invite?.email ?? email}. Link: ${inviteUrl}`);
+      }
+    } else {
+      setAdminInviteStatus(`Invite sent to ${response?.invite?.email ?? email}.`);
+    }
     adminInviteEmail.value = '';
     await refreshAdminInvites();
   } catch (err) {
@@ -14439,6 +14691,29 @@ function closeProfile() {
   render();
 }
 
+function openAdminConsole() {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    alert('Owner access required.');
+    return;
+  }
+  state.ui = state.ui ?? {};
+  const currentView = getActiveView();
+  state.ui.adminReturnView = currentView === 'admin' ? (state.ui.adminReturnView ?? 'tasks') : currentView;
+  if (settingsModal && !settingsModal.classList.contains('hidden')) {
+    closeSettings();
+  }
+  setActiveView('admin');
+  render();
+  void refreshAdminInvites();
+}
+
+function closeAdminConsole() {
+  state.ui = state.ui ?? {};
+  const returnView = normalizeNavigationView(state.ui.adminReturnView ?? 'tasks');
+  setActiveView(returnView === 'admin' ? 'tasks' : returnView);
+  render();
+}
+
 function openBulkEditModal() {
   if (!bulkEditModal) return;
   const selected = getSelectedTaskIds();
@@ -15776,13 +16051,14 @@ profilePageSave?.addEventListener('click', saveProfilePage);
 accountLogout?.addEventListener('click', () => {
   accountMenu?.classList.add('hidden');
   openMenu = null;
-  alert('Log out is coming soon.');
+  handleAccountAuthAction();
 });
 accountAdmin?.addEventListener('click', () => {
   accountMenu?.classList.add('hidden');
   openMenu = null;
-  alert('Admin console is coming soon.');
+  openAdminConsole();
 });
+adminPageBack?.addEventListener('click', closeAdminConsole);
 taskTypesOpen?.addEventListener('click', openTaskTypesModal);
 taskTypesClose?.addEventListener('click', closeTaskTypesModal);
 taskTypesModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeTaskTypesModal);
@@ -16386,9 +16662,15 @@ function renderFatalInitOverlay(error) {
 
 async function init() {
   initNotesEditor();
+  setAuthModalMode('login');
+  const inviteToken = getInviteTokenFromUrl();
+  await hydrateAuthSession();
   await loadWorkspaces();
   await refreshWorkspace();
   await primeSyncCursor();
+  if (inviteToken && !isAuthenticatedActor()) {
+    openAuthModal('invite', { inviteToken });
+  }
   checkNotices();
   maybeShowCheckinModal();
 }
