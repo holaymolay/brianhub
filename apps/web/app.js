@@ -289,14 +289,13 @@ const accountLogout = document.getElementById('account-logout');
 const accountAdmin = document.getElementById('account-admin');
 const authModal = document.getElementById('auth-modal');
 const authModalTitle = document.getElementById('auth-modal-title');
-const authModeLogin = document.getElementById('auth-mode-login');
-const authModeInvite = document.getElementById('auth-mode-invite');
 const authStatus = document.getElementById('auth-status');
 const authLoginForm = document.getElementById('auth-login-form');
 const authLoginEmail = document.getElementById('auth-login-email');
 const authLoginPassword = document.getElementById('auth-login-password');
 const authInviteForm = document.getElementById('auth-invite-form');
 const authInviteToken = document.getElementById('auth-invite-token');
+const authInviteEmail = document.getElementById('auth-invite-email');
 const authInviteName = document.getElementById('auth-invite-name');
 const authInvitePassword = document.getElementById('auth-invite-password');
 const authCancel = document.getElementById('auth-cancel');
@@ -1231,14 +1230,6 @@ mobileMenuWorkspaces?.addEventListener('click', () => {
 mobileMenuAuth?.addEventListener('click', () => {
   closeMobileTopMenu();
   accountLogout?.click();
-});
-
-authModeLogin?.addEventListener('click', () => {
-  setAuthModalMode('login');
-});
-
-authModeInvite?.addEventListener('click', () => {
-  setAuthModalMode('invite');
 });
 
 authCancel?.addEventListener('click', closeAuthModal);
@@ -10190,8 +10181,6 @@ function setAuthStatus(message = '', tone = '') {
 
 function setAuthModalMode(mode = 'login') {
   authModalMode = mode === 'invite' ? 'invite' : 'login';
-  if (authModeLogin) authModeLogin.classList.toggle('is-active', authModalMode === 'login');
-  if (authModeInvite) authModeInvite.classList.toggle('is-active', authModalMode === 'invite');
   if (authLoginForm) authLoginForm.classList.toggle('hidden', authModalMode !== 'login');
   if (authInviteForm) authInviteForm.classList.toggle('hidden', authModalMode !== 'invite');
   if (authModalTitle) {
@@ -10326,13 +10315,19 @@ async function submitAuthLogin() {
 }
 
 async function submitInviteAccept() {
-  if (!authInviteToken || !authInviteName || !authInvitePassword) return;
+  if (!authInviteToken || !authInviteEmail || !authInviteName || !authInvitePassword) return;
   const inviteToken = String(authInviteToken.value ?? '').trim();
+  const email = normalizeActorEmail(authInviteEmail.value);
   const displayName = normalizeTitleInput(authInviteName.value);
   const password = String(authInvitePassword.value ?? '');
   if (!inviteToken) {
     setAuthStatus('Invite token is required.', 'error');
     authInviteToken.focus();
+    return;
+  }
+  if (!email) {
+    setAuthStatus('Enter a valid email address.', 'error');
+    authInviteEmail.focus();
     return;
   }
   if (!displayName) {
@@ -10348,6 +10343,7 @@ async function submitInviteAccept() {
   try {
     const payload = await api.acceptInvite({
       invite_token: inviteToken,
+      email,
       display_name: displayName,
       password
     });

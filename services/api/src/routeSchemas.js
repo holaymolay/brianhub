@@ -373,9 +373,10 @@ const routeSchemas = new Map([
     body: {
       type: 'object',
       additionalProperties: false,
-      required: ['invite_token', 'display_name', 'password'],
+      required: ['invite_token', 'email', 'display_name', 'password'],
       properties: {
         invite_token: nonEmptyString(256),
+        email: nonEmptyString(320),
         display_name: nonEmptyString(256),
         password: nonEmptyString(200)
       }

@@ -635,10 +635,11 @@ server.post('/auth/logout', async (request, reply) => {
 });
 
 server.post('/auth/invite/accept', async (request, reply) => {
-  const { invite_token, display_name, password } = request.body ?? {};
+  const { invite_token, email, display_name, password } = request.body ?? {};
   try {
     const accepted = await acceptInviteRegistration(db, {
       inviteToken: invite_token,
+      email,
       displayName: display_name,
       password,
       ttlDays: config.sessionTtlDays,

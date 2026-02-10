@@ -261,6 +261,7 @@ export async function acceptInviteRegistration(
   db,
   {
     inviteToken,
+    email,
     displayName,
     password,
     ttlDays = 30,
@@ -292,15 +293,22 @@ export async function acceptInviteRegistration(
   if (!safeDisplayName) {
     throw new Error('display_name is required');
   }
-  const safeEmail = normalizeEmail(invite.email);
-  if (!safeEmail) {
+  const inviteEmail = normalizeEmail(invite.email);
+  if (!inviteEmail) {
     throw new Error('Invite email is invalid');
+  }
+  const requestedEmail = normalizeEmail(email);
+  if (!requestedEmail) {
+    throw new Error('email is required');
+  }
+  if (requestedEmail !== inviteEmail) {
+    throw new Error('email does not match invite');
   }
   assertValidPassword(password);
 
   let result = null;
   await db.transaction(async (tx) => {
-    let user = await getUserByOrgEmail(tx, invite.org_id, safeEmail);
+    let user = await getUserByOrgEmail(tx, invite.org_id, inviteEmail);
     if (user && Number(user.archived)) {
       await tx.exec(
         'UPDATE users SET archived = 0, display_name = ?, updated_at = ? WHERE id = ?',
@@ -315,7 +323,7 @@ export async function acceptInviteRegistration(
           org_id: invite.org_id,
           workspace_id: invite.workspace_id,
           display_name: safeDisplayName,
-          email: safeEmail
+          email: inviteEmail
         },
         clientId
       );

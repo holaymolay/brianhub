@@ -1426,10 +1426,6 @@
       <div class="modal-backdrop"></div>
       <div class="modal-card">
         <h2 id="auth-modal-title">Sign in</h2>
-        <div class="auth-mode-tabs">
-          <button id="auth-mode-login" class="subtle-button" type="button">Login</button>
-          <button id="auth-mode-invite" class="subtle-button" type="button">Accept Invite</button>
-        </div>
         <div id="auth-status" class="sidebar-note"></div>
         <form id="auth-login-form" class="auth-form">
           <label>
@@ -1449,6 +1445,10 @@
           <label>
             Invite token
             <input id="auth-invite-token" type="text" autocomplete="off" required />
+          </label>
+          <label>
+            Email
+            <input id="auth-invite-email" type="email" autocomplete="email" required />
           </label>
           <label>
             Full name

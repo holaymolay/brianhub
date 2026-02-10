@@ -250,6 +250,7 @@ test('invite accept creates credentials and session, then login/logout cycle wor
     url: '/auth/invite/accept',
     payload: {
       invite_token: inviteToken,
+      email: inviteeEmail,
       display_name: inviteeName,
       password: inviteePassword
     }
@@ -311,4 +312,48 @@ test('invite accept creates credentials and session, then login/logout cycle wor
   assert.equal(loginBody.user.email, inviteeEmail);
   const loginCookie = getSessionCookie(loginRes);
   assert.ok(loginCookie);
+});
+
+test('invite accept rejects email that does not match the invite', async () => {
+  const inviteeEmail = 'mismatch.user@example.com';
+  const workspaceRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    payload: {
+      name: 'Auth mismatch workspace',
+      type: 'personal',
+      org_id: '00000000-0000-4000-8000-000000000001'
+    }
+  });
+  assert.equal(workspaceRes.statusCode, 200);
+  const workspaceId = workspaceRes.json().id;
+
+  const inviteRes = await server.inject({
+    method: 'POST',
+    url: '/admin/invites',
+    headers: {
+      'x-actor-email': ownerEmail
+    },
+    payload: {
+      workspace_id: workspaceId,
+      email: inviteeEmail,
+      role: 'member'
+    }
+  });
+  assert.equal(inviteRes.statusCode, 200);
+  const inviteToken = inviteRes.json().invite?.invite_token;
+  assert.equal(typeof inviteToken, 'string');
+
+  const rejectRes = await server.inject({
+    method: 'POST',
+    url: '/auth/invite/accept',
+    payload: {
+      invite_token: inviteToken,
+      email: 'different.user@example.com',
+      display_name: 'Wrong User',
+      password: 'Passw0rd!234'
+    }
+  });
+  assert.equal(rejectRes.statusCode, 400);
+  assert.equal(rejectRes.json().error.message, 'email does not match invite');
 });
