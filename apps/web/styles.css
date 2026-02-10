@@ -3405,6 +3405,28 @@ button:hover { opacity: 0.9; }
   gap: 0.75rem;
 }
 
+body.auth-gated .app-header,
+body.auth-gated .module-navbar,
+body.auth-gated .app-main,
+body.auth-gated .mobile-nav,
+body.auth-gated .mobile-create-sheet {
+  display: none !important;
+}
+
+body.auth-gated #auth-modal {
+  z-index: 500;
+  background: radial-gradient(circle at top, #1a2230, var(--bg));
+}
+
+body.auth-gated #auth-modal .modal-backdrop {
+  display: none;
+}
+
+body.auth-gated #auth-cancel,
+body.auth-gated #auth-cancel-invite {
+  display: none;
+}
+
 .modal-header {
   display: flex;
   align-items: center;

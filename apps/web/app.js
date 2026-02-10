@@ -9368,6 +9368,7 @@ function renderAiSuggestionsMenu(tasks) {
 }
 
 function render() {
+  syncAuthGatePage();
   const currentSelected = getSelectedTaskIds();
   const validSelected = currentSelected.filter(id => state.tasks?.[id]);
   if (validSelected.length !== currentSelected.length) {
@@ -10155,6 +10156,18 @@ function isAuthenticatedActor() {
   return Boolean(auth.authenticated && auth.user?.id);
 }
 
+function shouldShowAuthGatePage() {
+  return isAuthGateEnabled() && !isAuthenticatedActor();
+}
+
+function syncAuthGatePage() {
+  const authGated = shouldShowAuthGatePage();
+  document.body.classList.toggle('auth-gated', authGated);
+  if (authGated && authModal?.classList.contains('hidden')) {
+    authModal.classList.remove('hidden');
+  }
+}
+
 function getInviteTokenFromUrl() {
   if (typeof window === 'undefined') return '';
   const params = new URLSearchParams(window.location.search);
@@ -10204,6 +10217,7 @@ function openAuthModal(mode = 'login', { inviteToken = '' } = {}) {
 }
 
 function closeAuthModal() {
+  if (shouldShowAuthGatePage()) return;
   authModal?.classList.add('hidden');
   setAuthStatus('');
 }
