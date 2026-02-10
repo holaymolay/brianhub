@@ -3512,20 +3512,32 @@ body.auth-gated #auth-cancel-invite {
   justify-content: flex-end;
 }
 
-.auth-mode-tabs {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.auth-mode-tabs .subtle-button.is-active {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
 .auth-form {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.75rem;
+}
+
+.auth-switch-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 0.1rem;
+}
+
+.auth-switch-link {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.auth-switch-link:hover {
+  color: #b8c3d4;
+  text-decoration: underline;
 }
 
 #auth-status {

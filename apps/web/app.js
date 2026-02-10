@@ -300,6 +300,8 @@ const authInviteName = document.getElementById('auth-invite-name');
 const authInvitePassword = document.getElementById('auth-invite-password');
 const authCancel = document.getElementById('auth-cancel');
 const authCancelInvite = document.getElementById('auth-cancel-invite');
+const authOpenInvite = document.getElementById('auth-open-invite');
+const authBackLogin = document.getElementById('auth-back-login');
 const settingsOpen = document.getElementById('settings-open');
 const profileOpen = document.getElementById('profile-open');
 const settingsModal = document.getElementById('settings-modal');
@@ -1235,6 +1237,8 @@ mobileMenuAuth?.addEventListener('click', () => {
 authCancel?.addEventListener('click', closeAuthModal);
 authCancelInvite?.addEventListener('click', closeAuthModal);
 authModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeAuthModal);
+authOpenInvite?.addEventListener('click', () => setAuthModalMode('invite'));
+authBackLogin?.addEventListener('click', () => setAuthModalMode('login'));
 
 authLoginForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -10194,8 +10198,16 @@ function setAuthStatus(message = '', tone = '') {
 
 function setAuthModalMode(mode = 'login') {
   authModalMode = mode === 'invite' ? 'invite' : 'login';
-  if (authLoginForm) authLoginForm.classList.toggle('hidden', authModalMode !== 'login');
-  if (authInviteForm) authInviteForm.classList.toggle('hidden', authModalMode !== 'invite');
+  if (authLoginForm) {
+    const isLogin = authModalMode === 'login';
+    authLoginForm.classList.toggle('hidden', !isLogin);
+    authLoginForm.setAttribute('aria-hidden', isLogin ? 'false' : 'true');
+  }
+  if (authInviteForm) {
+    const isInvite = authModalMode === 'invite';
+    authInviteForm.classList.toggle('hidden', !isInvite);
+    authInviteForm.setAttribute('aria-hidden', isInvite ? 'false' : 'true');
+  }
   if (authModalTitle) {
     authModalTitle.textContent = authModalMode === 'invite' ? 'Accept invite' : 'Sign in';
   }
