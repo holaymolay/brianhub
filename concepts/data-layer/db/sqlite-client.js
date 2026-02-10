@@ -1,5 +1,15 @@
 import initSqlJs from 'sql.js';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeSync
+} from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 let SQL;
@@ -16,6 +26,38 @@ function bindParams(stmt, params) {
   stmt.bind(params);
 }
 
+function writeFileAtomic(filePath, data) {
+  const dirPath = dirname(filePath);
+  mkdirSync(dirPath, { recursive: true });
+
+  const suffix = `${process.pid}-${Date.now()}-${randomUUID()}`;
+  const tmpPath = `${filePath}.tmp-${suffix}`;
+  const fd = openSync(tmpPath, 'w', 0o600);
+  try {
+    let written = 0;
+    while (written < data.length) {
+      written += writeSync(fd, data, written, data.length - written);
+    }
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+
+  renameSync(tmpPath, filePath);
+
+  // Best-effort directory fsync for durability on abrupt power loss.
+  try {
+    const dirFd = openSync(dirPath, 'r');
+    try {
+      fsyncSync(dirFd);
+    } finally {
+      closeSync(dirFd);
+    }
+  } catch {
+    // Ignore when unsupported by platform/filesystem.
+  }
+}
+
 export async function createSqliteClient(options = {}) {
   const { filename, inMemory = false } = options;
   const sql = await loadSqlJs();
@@ -27,9 +69,8 @@ export async function createSqliteClient(options = {}) {
 
   const persist = () => {
     if (inMemory || !filename) return;
-    mkdirSync(dirname(filename), { recursive: true });
     const exported = db.export();
-    writeFileSync(filename, Buffer.from(exported));
+    writeFileAtomic(filename, Buffer.from(exported));
   };
 
   const client = {

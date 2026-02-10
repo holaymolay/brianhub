@@ -1,0 +1,24 @@
+rules:
+  - id: brianhub.javascript.no-eval
+    languages: [javascript, typescript]
+    message: Avoid eval-style dynamic code execution.
+    severity: ERROR
+    patterns:
+      - pattern-either:
+          - pattern: 'eval(...)'
+          - pattern: 'new Function(...)'
+
+  - id: brianhub.node.no-shell-true
+    languages: [javascript, typescript]
+    message: Avoid child_process shell=true where possible.
+    severity: WARNING
+    patterns:
+      - pattern-either:
+          - pattern: 'exec($CMD, { ..., shell: true, ... })'
+          - pattern: 'spawn($CMD, $ARGS, { ..., shell: true, ... })'
+
+  - id: brianhub.javascript.no-insecure-random
+    languages: [javascript, typescript]
+    message: Avoid Math.random for security-sensitive identifiers.
+    severity: WARNING
+    pattern: 'Math.random(...)'

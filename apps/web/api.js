@@ -1,27 +1,76 @@
 import { getClientId } from './clientId.js';
+import { webConfig } from './config.js';
+import { logger } from './logger.js';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = webConfig.apiBase;
+const UI_STORAGE_KEY = 'brianhub_ui_v1';
+let requestIdCounter = 0;
 
 function emitApiEvent(detail) {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent('brianhub:api', { detail }));
 }
 
+function getActorEmailFromUiState() {
+  if (typeof localStorage === 'undefined') return null;
+  const raw = localStorage.getItem(UI_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    const email = String(parsed?.ui?.profile?.email ?? '').trim().toLowerCase();
+    if (!email) return null;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+    return email;
+  } catch {
+    return null;
+  }
+}
+
+function createRequestId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  requestIdCounter += 1;
+  return `web-${Date.now().toString(36)}-${requestIdCounter.toString(36)}`;
+}
+
+function tryParseJson(text) {
+  if (!text) return null;
+  const trimmed = String(text).trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
 async function request(path, options = {}) {
   const method = options.method ?? 'GET';
   const startedAt = Date.now();
+  const actorEmail = getActorEmailFromUiState();
+  const requestId = createRequestId();
   let res;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       headers: {
         'Content-Type': 'application/json',
         'X-Client-Id': getClientId(),
+        'X-Request-Id': requestId,
+        ...(actorEmail ? { 'X-Actor-Email': actorEmail } : {}),
         ...(options.headers ?? {})
       },
       ...options
     });
   } catch (error) {
+    logger.error('API request failed before response', {
+      requestId,
+      method,
+      path,
+      message: error?.message ?? 'Network request failed'
+    });
     emitApiEvent({
+      request_id: requestId,
       method,
       path,
       ok: false,
@@ -33,23 +82,42 @@ async function request(path, options = {}) {
   }
 
   const durationMs = Date.now() - startedAt;
+  const responseRequestId = res.headers.get('x-request-id') || requestId;
   if (!res.ok) {
     const text = await res.text();
+    const parsed = tryParseJson(text);
+    const responseError = parsed?.error;
+    const message = typeof responseError?.message === 'string'
+      ? responseError.message
+      : (text || `Request failed: ${res.status}`);
+    logger.error('API request failed', {
+      requestId: responseRequestId,
+      method,
+      path,
+      status: res.status,
+      durationMs,
+      message
+    });
     emitApiEvent({
+      request_id: responseRequestId,
       method,
       path,
       ok: false,
       status: res.status,
       duration_ms: durationMs,
-      error: (text || `Request failed: ${res.status}`).slice(0, 1000)
+      error: message.slice(0, 1000)
     });
-    const err = new Error(text || `Request failed: ${res.status}`);
+    const err = new Error(message);
     err.status = res.status;
     err.body = text;
+    err.requestId = responseError?.requestId ?? responseRequestId;
+    err.code = responseError?.code ?? null;
+    err.conflict = responseError?.conflict ?? null;
     throw err;
   }
 
   emitApiEvent({
+    request_id: responseRequestId,
     method,
     path,
     ok: true,
@@ -58,7 +126,18 @@ async function request(path, options = {}) {
   });
 
   if (res.status === 204) return null;
-  return res.json();
+  try {
+    return await res.json();
+  } catch (error) {
+    logger.warn('API response was not JSON', {
+      requestId: responseRequestId,
+      method,
+      path,
+      status: res.status,
+      durationMs
+    });
+    throw error;
+  }
 }
 
 export function listWorkspaces() {
@@ -90,6 +169,22 @@ export function createUser(data) {
 
 export function updateUser(id, patch) {
   return request(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+
+export function getAdminInfo() {
+  return request('/admin/info');
+}
+
+export function listAdminInvites({ orgId = null, workspaceId = null, status = 'pending' } = {}) {
+  const params = new URLSearchParams();
+  if (orgId) params.set('org_id', orgId);
+  if (workspaceId) params.set('workspace_id', workspaceId);
+  if (status) params.set('status', status);
+  return request(`/admin/invites?${params.toString()}`);
+}
+
+export function createAdminInvite(data) {
+  return request('/admin/invites', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export function listWorkspaceMemberships(workspaceId) {

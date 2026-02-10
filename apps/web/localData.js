@@ -1,4 +1,13 @@
 const DATA_KEY = 'brianhub_data_v1';
+let mutationCounter = 0;
+
+function createMutationId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  mutationCounter += 1;
+  return `mut-${Date.now().toString(36)}-${mutationCounter.toString(36)}`;
+}
 
 function defaultData() {
   return {
@@ -68,7 +77,24 @@ function normalizeData(data) {
       next.tasks = {};
     }
   }
-  if (!Array.isArray(next.pendingChanges)) next.pendingChanges = [];
+  if (!Array.isArray(next.pendingChanges)) {
+    next.pendingChanges = [];
+  } else {
+    next.pendingChanges = next.pendingChanges.map((change) => {
+      const normalized = { ...(change ?? {}) };
+      normalized.seq = Number.isFinite(normalized.seq) ? normalized.seq : 0;
+      normalized.created_at = normalized.created_at ?? new Date().toISOString();
+      normalized.client_mutation_id = String(normalized.client_mutation_id ?? '').trim() || createMutationId();
+      normalized.ts = Number.isFinite(normalized.ts) ? normalized.ts : Date.now();
+      normalized.retry_count = Number.isFinite(normalized.retry_count) ? normalized.retry_count : 0;
+      normalized.next_retry_at = normalized.next_retry_at ?? null;
+      normalized.needs_attention = Boolean(normalized.needs_attention);
+      normalized.last_error = normalized.last_error ?? null;
+      normalized.last_error_code = normalized.last_error_code ?? null;
+      normalized.conflict = normalized.conflict ?? null;
+      return normalized;
+    });
+  }
   if (!Array.isArray(next.auditLog)) next.auditLog = [];
   if (!Number.isFinite(next.localSeq)) next.localSeq = 0;
   return next;
@@ -93,11 +119,21 @@ export function saveLocalData(data) {
 export function recordLocalChange(data, change) {
   const next = normalizeData(data);
   const seq = next.localSeq + 1;
+  const mutationId = String(change?.client_mutation_id ?? '').trim() || createMutationId();
+  const nowIso = new Date().toISOString();
   next.localSeq = seq;
   next.pendingChanges.push({
     seq,
-    created_at: new Date().toISOString(),
-    ...change
+    created_at: nowIso,
+    client_mutation_id: mutationId,
+    ts: Date.now(),
+    retry_count: 0,
+    next_retry_at: null,
+    needs_attention: false,
+    last_error: null,
+    last_error_code: null,
+    conflict: null,
+    ...(change ?? {})
   });
   return next;
 }

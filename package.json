@@ -7,7 +7,11 @@
     "dev:api": "node services/api/src/server.js",
     "migrate:data-layer": "node scripts/migrate-data-layer.js",
     "migrate": "node services/api/src/migrate.js",
+    "backup:db": "node scripts/backup-db.js",
+    "backup:retention": "node scripts/backup-db.js --retention-only",
+    "backup:restore-check": "node scripts/restore-check.js",
     "seed:test-data": "node scripts/seed-test-data.js",
+    "security:semgrep": "node scripts/security-semgrep.js",
     "test": "node --test"
   },
   "dependencies": {

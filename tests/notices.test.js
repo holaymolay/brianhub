@@ -10,7 +10,7 @@ process.env.BRIANHUB_DB = dbPath;
 process.env.BRIANHUB_MIGRATIONS = new URL('../services/api/db/migrations', import.meta.url).pathname;
 
 const dbUrl = new URL('../services/api/src/db.js', import.meta.url);
-dbUrl.search = `v=${Date.now()}-${Math.random()}`;
+dbUrl.search = `v=${Date.now()}-${process.hrtime.bigint().toString()}`;
 const { openDb, migrate } = await import(dbUrl);
 const {
   createWorkspace,

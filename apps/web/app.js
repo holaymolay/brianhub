@@ -3,6 +3,7 @@ import { loadLocalData, saveLocalData, recordLocalChange } from './localData.js'
 import { applyRemoteChanges } from './syncState.js';
 import { replayPendingChanges } from './syncQueue.js';
 import { getClientId } from './clientId.js';
+import { showToast } from './ui/toast.js';
 import * as api from './api.js';
 import { compareTasksByPriority } from '../../packages/core/priority.js';
 import { reparent as reparentTasks } from '../../packages/core/tree.js';
@@ -145,6 +146,8 @@ const workflowsPage = document.getElementById('workflows-page');
 const dataTransferPage = document.getElementById('data-transfer-page');
 const auditLogPage = document.getElementById('audit-log-page');
 const automationPage = document.getElementById('automation-page');
+const adminPage = document.getElementById('admin-page');
+const profilePage = document.getElementById('profile-page');
 const workflowPageTitle = document.getElementById('workflow-page-title');
 const workflowPageSubtitle = document.getElementById('workflow-page-subtitle');
 const workflowMenuButton = document.getElementById('workflow-menu-button');
@@ -224,6 +227,7 @@ const mobileCreateNotice = document.getElementById('mobile-create-notice');
 const mobileCreateWorkflow = document.getElementById('mobile-create-workflow');
 const mobileCreateShopping = document.getElementById('mobile-create-shopping');
 const newWorkspaceBtn = document.getElementById('new-workspace-btn');
+const moduleNavTodo = document.getElementById('module-nav-todo');
 const noticeBell = document.getElementById('notice-bell');
 const noticeBellMenu = document.getElementById('notice-bell-menu');
 const taskModal = document.getElementById('task-modal');
@@ -278,12 +282,8 @@ const accountListName = document.getElementById('account-list-name');
 const accountProfileAvatar = document.getElementById('account-profile-avatar');
 const accountProfileName = document.getElementById('account-profile-name');
 const accountProfileEmail = document.getElementById('account-profile-email');
-const accountNewWorkspace = document.getElementById('account-new-workspace');
-const accountAdd = document.getElementById('account-add');
 const accountLogout = document.getElementById('account-logout');
 const accountAdmin = document.getElementById('account-admin');
-const accountInvite = document.getElementById('account-invite');
-const accountUpgrade = document.getElementById('account-upgrade');
 const settingsOpen = document.getElementById('settings-open');
 const profileOpen = document.getElementById('profile-open');
 const settingsModal = document.getElementById('settings-modal');
@@ -294,6 +294,23 @@ const settingsOpenAutomation = document.getElementById('settings-open-automation
 const dataTransferBack = document.getElementById('data-transfer-back');
 const auditLogBack = document.getElementById('audit-log-back');
 const automationBack = document.getElementById('automation-back');
+const adminPageBack = document.getElementById('admin-page-back');
+const adminInviteEmail = document.getElementById('admin-invite-email');
+const adminInviteWorkspace = document.getElementById('admin-invite-workspace');
+const adminInviteRole = document.getElementById('admin-invite-role');
+const adminInviteSend = document.getElementById('admin-invite-send');
+const adminInviteStatus = document.getElementById('admin-invite-status');
+const adminInvitesRefresh = document.getElementById('admin-invites-refresh');
+const adminInvitesList = document.getElementById('admin-invites-list');
+const profilePageBack = document.getElementById('profile-page-back');
+const profilePageSave = document.getElementById('profile-page-save');
+const profilePageAvatar = document.getElementById('profile-page-avatar');
+const profilePageSummaryName = document.getElementById('profile-page-summary-name');
+const profilePageSummaryEmail = document.getElementById('profile-page-summary-email');
+const profilePageName = document.getElementById('profile-page-name');
+const profilePageEmail = document.getElementById('profile-page-email');
+const profilePageWorkspace = document.getElementById('profile-page-workspace');
+const profilePageWorkspaceType = document.getElementById('profile-page-workspace-type');
 const dataExportFormat = document.getElementById('data-export-format');
 const dataExportIncludeAudit = document.getElementById('data-export-include-audit');
 const dataExportDownload = document.getElementById('data-export-download');
@@ -310,8 +327,6 @@ const automationRun = document.getElementById('automation-run');
 const automationClear = document.getElementById('automation-clear');
 const automationOutput = document.getElementById('automation-output');
 const automationCopyGuide = document.getElementById('automation-copy-guide');
-const profileModal = document.getElementById('profile-modal');
-const profileClose = document.getElementById('profile-close');
 const taskTypesOpen = document.getElementById('task-types-open');
 const taskTypesModal = document.getElementById('task-types-modal');
 const taskTypesClose = document.getElementById('task-types-close');
@@ -472,6 +487,9 @@ let editorRecurrence = { interval: null, unit: 'month' };
 let syncInFlight = false;
 let syncFailureCount = 0;
 let syncCooldownUntil = 0;
+let syncErrorCount = 0;
+let syncLastSuccessAt = null;
+let lastSyncAttentionMutationId = null;
 let taskEditorSwapTimer = null;
 let activeNoticeId = null;
 let noticeModalMode = 'create';
@@ -512,12 +530,15 @@ const SYNC_POLL_INTERVAL_MS = 5000;
 const SYNC_BACKOFF_STEPS_MS = [30000, 60000, 120000, 300000];
 const AUDIT_LOG_MAX_ENTRIES = 2000;
 const AUDIT_LOG_ALLOWED_CATEGORIES = new Set(['crud', 'notification', 'export', 'import', 'error']);
+const OWNER_SUPER_ADMIN_EMAIL = 'brian@pipecaminc.com';
 const NAVIGABLE_VIEWS = new Set([
   'tasks',
   'projects',
   'shopping',
   'notices',
   'workflows',
+  'admin',
+  'profile',
   'data-transfer',
   'audit-log',
   'automation',
@@ -1090,6 +1111,11 @@ workflowsOpenBtn?.addEventListener('click', () => {
   render();
 });
 tasksOpenBtn?.addEventListener('click', () => {
+  clearActiveWorkflowChecklistInstanceId();
+  setActiveView('tasks');
+  render();
+});
+moduleNavTodo?.addEventListener('click', () => {
   clearActiveWorkflowChecklistInstanceId();
   setActiveView('tasks');
   render();
@@ -2848,6 +2874,10 @@ function getViewLabel(view) {
       return 'Notices';
     case 'workflows':
       return 'Workflows';
+    case 'admin':
+      return 'Admin';
+    case 'profile':
+      return 'Profile';
     case 'data-transfer':
       return 'Import / Export';
     case 'audit-log':
@@ -4601,6 +4631,13 @@ function getSyncBackoffMs(failureCount) {
   return SYNC_BACKOFF_STEPS_MS[index];
 }
 
+function formatSyncTime(value) {
+  if (!value) return 'never';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'never';
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 function resetSyncBackoff() {
   syncFailureCount = 0;
   syncCooldownUntil = 0;
@@ -4608,11 +4645,12 @@ function resetSyncBackoff() {
 
 function registerSyncFailure() {
   syncFailureCount = Math.min(syncFailureCount + 1, SYNC_BACKOFF_STEPS_MS.length);
+  syncErrorCount = Math.max(0, syncErrorCount) + 1;
   const backoffMs = getSyncBackoffMs(syncFailureCount);
   syncCooldownUntil = Date.now() + backoffMs;
   if (syncStatus) {
     const seconds = Math.max(1, Math.ceil(backoffMs / 1000));
-    syncStatus.textContent = `Local-only mode (retry in ${seconds}s)`;
+    syncStatus.textContent = `Sync error (${syncErrorCount}) · retry in ${seconds}s`;
   }
 }
 
@@ -4645,14 +4683,33 @@ async function autoRefreshOnChanges() {
   if (syncCooldownUntil && Date.now() < syncCooldownUntil) return;
   syncInFlight = true;
   try {
+    if (syncStatus) syncStatus.textContent = 'Syncing...';
     if (!navigator.onLine) {
-      if (syncStatus) syncStatus.textContent = 'Offline changes pending';
+      if (syncStatus) syncStatus.textContent = `Offline · queued ${(state.local?.pendingChanges ?? []).length}`;
       return;
     }
     if (hasPendingLocalChanges()) {
       const pushResult = await pushPendingChanges();
       if (pushResult.error || pushResult.remaining.length) {
-        if (syncStatus) syncStatus.textContent = 'Offline changes pending';
+        const blocked = pushResult.remaining.find(change => change?.needs_attention);
+        if (blocked) {
+          if (syncStatus) syncStatus.textContent = 'Sync blocked · action required';
+          if (blocked.client_mutation_id && blocked.client_mutation_id !== lastSyncAttentionMutationId) {
+            lastSyncAttentionMutationId = blocked.client_mutation_id;
+            const conflictEntity = blocked?.conflict?.entity_id
+              ? ` (${blocked.conflict.entity_id})`
+              : '';
+            showToast({
+              type: 'warn',
+              message: blocked.last_error_code === 409
+                ? `A queued change conflicted${conflictEntity}.`
+                : 'A queued change needs attention.',
+              details: blocked.last_error ?? 'Open tasks and resolve the conflicting change.'
+            });
+          }
+        } else if (syncStatus) {
+          syncStatus.textContent = `Queued ${(pushResult.remaining ?? []).length} · retry pending`;
+        }
         registerSyncFailure();
         return;
       }
@@ -4660,6 +4717,9 @@ async function autoRefreshOnChanges() {
     const cursor = state.ui?.syncCursor ?? 0;
     const result = await api.pullChanges(state.workspace.id, cursor);
     resetSyncBackoff();
+    syncErrorCount = 0;
+    syncLastSuccessAt = new Date().toISOString();
+    lastSyncAttentionMutationId = null;
     if (result?.next_cursor !== undefined) {
       state.ui = state.ui ?? {};
       state.ui.syncCursor = result.next_cursor;
@@ -4682,7 +4742,9 @@ async function autoRefreshOnChanges() {
           render();
         }
       }
-      syncStatus.textContent = 'Auto-refreshed';
+    }
+    if (syncStatus) {
+      syncStatus.textContent = `Online · synced ${formatSyncTime(syncLastSuccessAt)} · errors ${syncErrorCount}`;
     }
   } catch {
     registerSyncFailure();
@@ -5819,9 +5881,9 @@ async function pushPendingChanges() {
         state.workspaceMemberships = (state.workspaceMemberships ?? []).filter(item => item.id !== change.entity_id);
       }
     }
-  });
+  }, { nowMs: Date.now() });
 
-  if (result.applied.length) {
+  if (result.applied.length || result.error) {
     state.local.pendingChanges = result.remaining;
     persistLocalData();
   }
@@ -9176,6 +9238,7 @@ function render() {
   }
   renderWorkspaceList();
   renderAccountMenu();
+  renderProfilePage();
   renderProjectList();
   renderProjectsPage();
   renderWorkflowList();
@@ -9271,6 +9334,8 @@ function renderView() {
   const showShopping = view === 'shopping';
   const showNotices = view === 'notices';
   const showWorkflows = view === 'workflows';
+  const showAdmin = view === 'admin';
+  const showProfile = view === 'profile';
   const showDataTransfer = view === 'data-transfer';
   const showAuditLog = view === 'audit-log';
   const showAutomation = view === 'automation';
@@ -9282,6 +9347,8 @@ function renderView() {
   shoppingPage?.classList.toggle('hidden', !showShopping);
   noticesPage?.classList.toggle('hidden', !showNotices);
   workflowsPage?.classList.toggle('hidden', !showWorkflows);
+  adminPage?.classList.toggle('hidden', !showAdmin);
+  profilePage?.classList.toggle('hidden', !showProfile);
   dataTransferPage?.classList.toggle('hidden', !showDataTransfer);
   auditLogPage?.classList.toggle('hidden', !showAuditLog);
   automationPage?.classList.toggle('hidden', !showAutomation);
@@ -9453,12 +9520,13 @@ function getFilteredTasks() {
       });
     }
   }
+  const nonWorkflowTasks = tasks.filter(task => !getChecklistLinkForTask(task.id, null));
   const filter = state.ui?.activeProjectId ?? null;
-  if (!filter) return tasks;
+  if (!filter) return nonWorkflowTasks;
   if (filter === 'unassigned') {
-    return tasks.filter(task => !task.project_id);
+    return nonWorkflowTasks.filter(task => !task.project_id);
   }
-  return tasks.filter(task => task.project_id === filter);
+  return nonWorkflowTasks.filter(task => task.project_id === filter);
 }
 
 function getChecklistLinkForTask(taskId, checklistInstanceId) {
@@ -9702,6 +9770,37 @@ function getAccountDisplayName() {
   return name || 'Organization';
 }
 
+function getProfileState() {
+  const profile = state.ui?.profile;
+  if (!profile || typeof profile !== 'object') return {};
+  return profile;
+}
+
+function getProfileDisplayName() {
+  const name = String(getProfileState().name ?? '').trim();
+  return name || getAccountDisplayName();
+}
+
+function getProfileEmail() {
+  const email = String(getProfileState().email ?? '').trim();
+  return email || 'you@example.com';
+}
+
+function normalizeActorEmail(email) {
+  const text = String(email ?? '').trim().toLowerCase();
+  if (!text) return '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return '';
+  return text;
+}
+
+function isOwnerSuperAdminEmail(email) {
+  return normalizeActorEmail(email) === OWNER_SUPER_ADMIN_EMAIL;
+}
+
+function isCurrentActorOwnerSuperAdmin() {
+  return isOwnerSuperAdminEmail(getProfileEmail());
+}
+
 function getAccountInitials(name) {
   const parts = String(name ?? '').trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return 'BH';
@@ -9710,15 +9809,231 @@ function getAccountInitials(name) {
 }
 
 function renderAccountMenu() {
-  const name = getAccountDisplayName();
-  const initials = getAccountInitials(name);
-  const email = 'you@example.com';
+  const orgName = getAccountDisplayName();
+  const profileName = getProfileDisplayName();
+  const initials = getAccountInitials(profileName);
+  const email = getProfileEmail();
   [accountAvatar, accountListAvatar, accountProfileAvatar].forEach((el) => {
     if (el) el.textContent = initials;
   });
-  if (accountListName) accountListName.textContent = name;
-  if (accountProfileName) accountProfileName.textContent = name;
+  if (accountListName) accountListName.textContent = orgName;
+  if (accountProfileName) accountProfileName.textContent = profileName;
   if (accountProfileEmail) accountProfileEmail.textContent = email;
+  if (accountAdmin) {
+    accountAdmin.classList.toggle('hidden', !isCurrentActorOwnerSuperAdmin());
+  }
+}
+
+function getWorkspaceTypeLabel() {
+  const raw = String(state.workspace?.type ?? 'personal').trim();
+  if (!raw) return 'Personal';
+  return raw
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function renderProfilePage() {
+  if (!profilePage) return;
+  const name = getProfileDisplayName();
+  const email = getProfileEmail();
+  const initials = getAccountInitials(name);
+  if (profilePageAvatar) profilePageAvatar.textContent = initials;
+  if (profilePageSummaryName) profilePageSummaryName.textContent = name;
+  if (profilePageSummaryEmail) profilePageSummaryEmail.textContent = email;
+  if (profilePageName && document.activeElement !== profilePageName) {
+    profilePageName.value = name;
+  }
+  if (profilePageEmail && document.activeElement !== profilePageEmail) {
+    profilePageEmail.value = email;
+  }
+  if (profilePageWorkspace) {
+    profilePageWorkspace.textContent = state.workspace?.name?.trim() || 'No active workspace';
+  }
+  if (profilePageWorkspaceType) {
+    profilePageWorkspaceType.textContent = getWorkspaceTypeLabel();
+  }
+}
+
+function saveProfilePage() {
+  if (!profilePageName || !profilePageEmail) return;
+  const name = normalizeTitleInput(profilePageName.value);
+  if (!name) {
+    alert('Display name is required.');
+    profilePageName.focus();
+    return;
+  }
+  const email = String(profilePageEmail.value ?? '').trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    alert('Enter a valid email address.');
+    profilePageEmail.focus();
+    return;
+  }
+  state.ui = state.ui ?? {};
+  state.ui.profile = {
+    name,
+    email
+  };
+  appendCrudEvent({
+    source: 'profile',
+    event: 'updated',
+    entity_type: 'profile',
+    entity_id: 'self',
+    data: { name, email }
+  });
+  render();
+}
+
+function populateAdminInviteWorkspaceSelect() {
+  if (!adminInviteWorkspace) return;
+  const activeWorkspaceId = state.workspace?.id ?? '';
+  const workspaces = (state.workspaces ?? []).filter(item => !item.archived);
+  const previous = adminInviteWorkspace.value || activeWorkspaceId;
+  adminInviteWorkspace.innerHTML = '';
+  workspaces.forEach((workspace) => {
+    const option = document.createElement('option');
+    option.value = workspace.id;
+    option.textContent = workspace.name;
+    adminInviteWorkspace.appendChild(option);
+  });
+  if (workspaces.some(item => item.id === previous)) {
+    adminInviteWorkspace.value = previous;
+  } else if (activeWorkspaceId && workspaces.some(item => item.id === activeWorkspaceId)) {
+    adminInviteWorkspace.value = activeWorkspaceId;
+  }
+}
+
+function getAdminInvitesState() {
+  state.ui = state.ui ?? {};
+  if (!state.ui.admin) {
+    state.ui.admin = {
+      invites: [],
+      loading: false,
+      error: ''
+    };
+  }
+  return state.ui.admin;
+}
+
+function renderAdminInvitesList() {
+  if (!adminInvitesList) return;
+  const adminState = getAdminInvitesState();
+  adminInvitesList.innerHTML = '';
+  if (adminState.loading) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Loading invites...';
+    adminInvitesList.appendChild(note);
+    return;
+  }
+  if (adminState.error) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = adminState.error;
+    adminInvitesList.appendChild(note);
+    return;
+  }
+  const invites = Array.isArray(adminState.invites) ? adminState.invites : [];
+  if (!invites.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No pending invites.';
+    adminInvitesList.appendChild(note);
+    return;
+  }
+  invites.forEach((invite) => {
+    const row = document.createElement('div');
+    row.className = 'workspace-row notice-row';
+    const info = document.createElement('div');
+    info.className = 'notice-row-info';
+    const title = document.createElement('div');
+    title.className = 'notice-row-title';
+    title.textContent = invite.email;
+    const meta = document.createElement('div');
+    meta.className = 'notice-row-meta';
+    const workspaceName = invite.workspace_name ? ` • ${invite.workspace_name}` : '';
+    meta.textContent = `${invite.role} • expires ${formatDateTime(invite.expires_at)}${workspaceName}`;
+    info.appendChild(title);
+    info.appendChild(meta);
+    row.appendChild(info);
+    adminInvitesList.appendChild(row);
+  });
+}
+
+function renderAdminPage() {
+  if (!adminPage) return;
+  if (adminInviteRole && !adminInviteRole.value) {
+    adminInviteRole.value = 'member';
+  }
+  if (adminInviteStatus && !adminInviteStatus.dataset.pinned) {
+    adminInviteStatus.textContent = isCurrentActorOwnerSuperAdmin()
+      ? `Owner: ${OWNER_SUPER_ADMIN_EMAIL}`
+      : 'Owner access required.';
+  }
+  populateAdminInviteWorkspaceSelect();
+  renderAdminInvitesList();
+}
+
+async function refreshAdminInvites() {
+  const adminState = getAdminInvitesState();
+  const workspaceId = adminInviteWorkspace?.value || state.workspace?.id || null;
+  if (!workspaceId) {
+    adminState.invites = [];
+    adminState.error = 'Select a workspace first.';
+    adminState.loading = false;
+    renderAdminInvitesList();
+    return;
+  }
+  adminState.loading = true;
+  adminState.error = '';
+  renderAdminInvitesList();
+  try {
+    const response = await api.listAdminInvites({ workspaceId, status: 'pending' });
+    adminState.invites = response?.invites ?? [];
+  } catch (err) {
+    adminState.error = err?.message ?? 'Unable to load invites.';
+  } finally {
+    adminState.loading = false;
+    renderAdminInvitesList();
+  }
+}
+
+function setAdminInviteStatus(message, type = 'info') {
+  if (!adminInviteStatus) return;
+  adminInviteStatus.textContent = message;
+  adminInviteStatus.dataset.pinned = type === 'info' ? '' : '1';
+}
+
+async function submitAdminInvite() {
+  if (!adminInviteEmail || !adminInviteWorkspace) return;
+  const email = normalizeActorEmail(adminInviteEmail.value);
+  if (!email) {
+    setAdminInviteStatus('Enter a valid email address.', 'error');
+    adminInviteEmail.focus();
+    return;
+  }
+  const workspaceId = adminInviteWorkspace.value;
+  if (!workspaceId) {
+    setAdminInviteStatus('Select a workspace.', 'error');
+    return;
+  }
+  const role = adminInviteRole?.value || 'member';
+  adminInviteSend?.setAttribute('disabled', 'true');
+  try {
+    const response = await api.createAdminInvite({
+      workspace_id: workspaceId,
+      email,
+      role
+    });
+    setAdminInviteStatus(`Invite sent to ${response?.invite?.email ?? email}.`);
+    adminInviteEmail.value = '';
+    await refreshAdminInvites();
+  } catch (err) {
+    setAdminInviteStatus(err?.message ?? 'Unable to send invite.', 'error');
+  } finally {
+    adminInviteSend?.removeAttribute('disabled');
+  }
 }
 
 function renderTaskViewToggle() {
@@ -13794,14 +14109,21 @@ function returnFromSettingsLinkedPage() {
 }
 
 function openProfile() {
+  state.ui = state.ui ?? {};
+  const currentView = getActiveView();
+  state.ui.profileReturnView = currentView === 'profile' ? (state.ui.profileReturnView ?? 'tasks') : currentView;
   if (settingsModal && !settingsModal.classList.contains('hidden')) {
     closeSettings();
   }
-  profileModal?.classList.remove('hidden');
+  setActiveView('profile');
+  render();
 }
 
 function closeProfile() {
-  profileModal?.classList.add('hidden');
+  state.ui = state.ui ?? {};
+  const returnView = normalizeNavigationView(state.ui.profileReturnView ?? 'tasks');
+  setActiveView(returnView === 'profile' ? 'tasks' : returnView);
+  render();
 }
 
 function openBulkEditModal() {
@@ -15136,18 +15458,8 @@ profileOpen?.addEventListener('click', () => {
   openMenu = null;
   openProfile();
 });
-profileClose?.addEventListener('click', closeProfile);
-profileModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeProfile);
-accountNewWorkspace?.addEventListener('click', () => {
-  accountMenu?.classList.add('hidden');
-  openMenu = null;
-  newWorkspaceBtn?.click();
-});
-accountAdd?.addEventListener('click', () => {
-  accountMenu?.classList.add('hidden');
-  openMenu = null;
-  alert('Add another account is coming soon.');
-});
+profilePageBack?.addEventListener('click', closeProfile);
+profilePageSave?.addEventListener('click', saveProfilePage);
 accountLogout?.addEventListener('click', () => {
   accountMenu?.classList.add('hidden');
   openMenu = null;
@@ -15157,16 +15469,6 @@ accountAdmin?.addEventListener('click', () => {
   accountMenu?.classList.add('hidden');
   openMenu = null;
   alert('Admin console is coming soon.');
-});
-accountInvite?.addEventListener('click', () => {
-  accountMenu?.classList.add('hidden');
-  openMenu = null;
-  alert('Invites are coming soon.');
-});
-accountUpgrade?.addEventListener('click', () => {
-  accountMenu?.classList.add('hidden');
-  openMenu = null;
-  alert('Upgrade options are coming soon.');
 });
 taskTypesOpen?.addEventListener('click', openTaskTypesModal);
 taskTypesClose?.addEventListener('click', closeTaskTypesModal);
@@ -15656,6 +15958,11 @@ if (typeof window !== 'undefined') {
   });
 
   window.addEventListener('error', (event) => {
+    showToast({
+      type: 'error',
+      message: 'Something went wrong.',
+      details: event?.message ?? 'Unexpected client error'
+    });
     appendAuditEvent({
       source: 'app',
       category: 'error',
@@ -15671,6 +15978,14 @@ if (typeof window !== 'undefined') {
 
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event?.reason;
+    const details = reason?.requestId
+      ? `${reason?.message ?? String(reason ?? 'Unhandled rejection')} (RequestId: ${reason.requestId})`
+      : (reason?.message ?? String(reason ?? 'Unhandled rejection'));
+    showToast({
+      type: 'error',
+      message: 'Request failed.',
+      details
+    });
     appendAuditEvent({
       source: 'app',
       category: 'error',
@@ -15678,6 +15993,22 @@ if (typeof window !== 'undefined') {
       data: {
         message: reason?.message ?? String(reason ?? 'Unhandled rejection')
       }
+    });
+  });
+
+  window.addEventListener('brianhub:api', (event) => {
+    const detail = event?.detail ?? {};
+    if (detail.ok) return;
+    const status = Number(detail.status ?? 0);
+    if (status > 0 && status < 500) return;
+    const requestId = detail.request_id ?? null;
+    const message = status >= 500
+      ? 'Server error while processing request.'
+      : 'Network error while syncing.';
+    showToast({
+      type: 'warn',
+      message,
+      details: requestId ? `RequestId: ${requestId}` : (detail.error ?? 'Try again shortly.')
     });
   });
 
@@ -15690,6 +16021,57 @@ if (typeof window !== 'undefined') {
   });
 }
 
+function buildFatalDiagnostics(error) {
+  return {
+    ts: new Date().toISOString(),
+    message: error?.message ?? 'Unknown init failure',
+    stack: error?.stack ?? null
+  };
+}
+
+function renderFatalInitOverlay(error) {
+  const diagnostics = buildFatalDiagnostics(error);
+  const existing = document.querySelector('.fatal-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'fatal-overlay';
+  const card = document.createElement('div');
+  card.className = 'fatal-card';
+  const heading = document.createElement('h2');
+  heading.textContent = 'BrianHub could not initialize';
+  const body = document.createElement('p');
+  body.textContent = 'Reload the page. If this persists, copy diagnostics and share with support/dev.';
+  const actions = document.createElement('div');
+  actions.className = 'fatal-actions';
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'subtle-button';
+  copyBtn.textContent = 'Copy diagnostics';
+  copyBtn.addEventListener('click', async () => {
+    const text = JSON.stringify(diagnostics, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast({ type: 'success', message: 'Diagnostics copied.' });
+    } catch {
+      showToast({ type: 'error', message: 'Could not copy diagnostics.' });
+    }
+  });
+  const reloadBtn = document.createElement('button');
+  reloadBtn.type = 'button';
+  reloadBtn.className = 'subtle-button';
+  reloadBtn.textContent = 'Reload';
+  reloadBtn.addEventListener('click', () => {
+    window.location.reload();
+  });
+  actions.appendChild(copyBtn);
+  actions.appendChild(reloadBtn);
+  card.appendChild(heading);
+  card.appendChild(body);
+  card.appendChild(actions);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
 async function init() {
   initNotesEditor();
   await loadWorkspaces();
@@ -15699,7 +16081,17 @@ async function init() {
   maybeShowCheckinModal();
 }
 
-init();
+init().catch((error) => {
+  appendAuditEvent({
+    source: 'app',
+    category: 'error',
+    event: 'init_failed',
+    data: {
+      message: error?.message ?? 'Unknown init failure'
+    }
+  });
+  renderFatalInitOverlay(error);
+});
 
 setInterval(() => {
   if (document.hidden) return;

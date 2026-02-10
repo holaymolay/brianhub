@@ -21,3 +21,14 @@ This document is a binding constraint for work in this repository.
 ## Network
 - Do not exfiltrate data.
 - External calls must be explicit and justified.
+
+## Static Analysis (Semgrep)
+- Run `npm run security:semgrep` before release branches and deployment candidates.
+- The command uses `.semgrep.yml` plus Semgrep `p/ci` rules.
+- Preferred runtime order:
+  1. local `semgrep` binary if installed
+  2. Docker image `returntocorp/semgrep:latest`
+  3. warning only (scan skipped) when neither is installed
+- Treat findings as:
+  - `ERROR`: block merge until fixed or explicitly risk-accepted.
+  - `WARNING`: triage and track in `.ceres/core/todo.md`.

@@ -1,5 +1,10 @@
 import Fastify from 'fastify';
+import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openDb, migrate } from './db.js';
+import { getApiConfig } from './config.js';
+import { attachRouteSchemas } from './routeSchemas.js';
 import {
   createWorkspace,
   listWorkspaces,
@@ -8,6 +13,8 @@ import {
   listUsers,
   createUser,
   updateUser,
+  listUserInvites,
+  createUserInvite,
   listWorkspaceMemberships,
   createWorkspaceMembership,
   updateWorkspaceMembership,
@@ -66,21 +73,325 @@ import {
   searchTasks,
   recordChange
 } from './taskService.js';
+import { sendInviteEmail } from './email.js';
 
-const server = Fastify({ logger: true });
-const db = await openDb();
-await migrate(db);
+export const config = getApiConfig();
+
+export const server = Fastify({
+  logger: {
+    level: config.logLevel
+  },
+  requestIdHeader: 'x-request-id',
+  requestIdLogLabel: 'requestId',
+  genReqId: (request) => {
+    const incoming = String(request.headers['x-request-id'] ?? '').trim();
+    return incoming || randomUUID();
+  }
+});
+export const db = await openDb({ filename: config.dbPath });
+await migrate(db, config.migrationsDir);
+const OWNER_SUPER_ADMIN_EMAIL = config.ownerSuperAdminEmail;
+
+function mapStatusCodeToErrorCode(statusCode) {
+  if (statusCode === 400) return 'BAD_REQUEST';
+  if (statusCode === 401) return 'UNAUTHORIZED';
+  if (statusCode === 403) return 'FORBIDDEN';
+  if (statusCode === 404) return 'NOT_FOUND';
+  if (statusCode === 409) return 'CONFLICT';
+  if (statusCode === 422) return 'UNPROCESSABLE_ENTITY';
+  if (statusCode === 429) return 'RATE_LIMITED';
+  return statusCode >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_FAILED';
+}
+
+function getCorsOrigin(originHeader) {
+  const allowedOrigins = config.corsOrigins ?? ['*'];
+  if (allowedOrigins.includes('*')) return '*';
+  const origin = String(originHeader ?? '').trim();
+  if (!origin) return allowedOrigins[0] ?? '';
+  if (allowedOrigins.includes(origin)) return origin;
+  return '';
+}
+
+function parsePayloadAsObject(payload) {
+  if (!payload) return null;
+  if (typeof payload === 'object') return payload;
+  if (typeof payload !== 'string') return null;
+  const trimmed = payload.trim();
+  if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+class SyncConflictError extends Error {
+  constructor(message, conflict) {
+    super(message);
+    this.name = 'SyncConflictError';
+    this.code = 'CONFLICT';
+    this.statusCode = 409;
+    this.conflict = conflict;
+  }
+}
+
+async function isDuplicateSyncMutation(workspaceId, mutationId) {
+  if (!workspaceId || !mutationId) return false;
+  const row = await db.queryOne(
+    'SELECT id FROM sync_mutations WHERE workspace_id = ? AND client_mutation_id = ? LIMIT 1',
+    [workspaceId, mutationId]
+  );
+  return Boolean(row);
+}
+
+async function recordSyncMutation(workspaceId, clientId, mutationId) {
+  await db.exec(
+    'INSERT INTO sync_mutations (id, workspace_id, client_id, client_mutation_id) VALUES (?, ?, ?, ?)',
+    [randomUUID(), workspaceId, clientId ?? null, mutationId]
+  );
+}
+
+async function getTaskServerVersion(workspaceId, entityId) {
+  const row = await db.queryOne(
+    'SELECT id, updated_at FROM tasks WHERE workspace_id = ? AND id = ? LIMIT 1',
+    [workspaceId, entityId]
+  );
+  if (!row) return null;
+  return {
+    entity_type: 'task',
+    entity_id: row.id,
+    updated_at: row.updated_at
+  };
+}
+
+async function assertNoSyncConflict(workspaceId, change) {
+  if (!workspaceId || !change || change.entity_type !== 'task') return;
+  if (change.action === 'create') return;
+  const expectedUpdatedAt = String(
+    change?.payload?.expected_updated_at
+      ?? change?.payload?.updated_at_expected
+      ?? ''
+  ).trim();
+  if (!expectedUpdatedAt) return;
+  const entityId = String(change.entity_id ?? '').trim();
+  if (!entityId) return;
+  const serverVersion = await getTaskServerVersion(workspaceId, entityId);
+  if (!serverVersion) {
+    throw new SyncConflictError('Entity no longer exists', {
+      entity_type: 'task',
+      entity_id: entityId,
+      reason: 'missing',
+      server_version: null
+    });
+  }
+  if (serverVersion.updated_at !== expectedUpdatedAt) {
+    throw new SyncConflictError('Entity has changed on server', {
+      entity_type: 'task',
+      entity_id: entityId,
+      reason: 'stale',
+      server_version: serverVersion
+    });
+  }
+}
+
+const TRIM_SAFE_FIELDS = new Set([
+  'name',
+  'title',
+  'label',
+  'email',
+  'display_name',
+  'org_name',
+  'store_name',
+  'workspace_id',
+  'org_id',
+  'user_id',
+  'project_id',
+  'list_id',
+  'task_id',
+  'depends_on_id',
+  'client_id',
+  'entity_type',
+  'entity_id',
+  'action',
+  'status',
+  'kind',
+  'role',
+  'notice_type',
+  'response'
+]);
+
+function sanitizeRequestValue(value, key = '') {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeRequestValue(item, key));
+  }
+  if (value && typeof value === 'object') {
+    Object.keys(value).forEach((childKey) => {
+      value[childKey] = sanitizeRequestValue(value[childKey], childKey);
+    });
+    return value;
+  }
+  if (typeof value === 'string' && TRIM_SAFE_FIELDS.has(key)) {
+    const trimmed = value.trim();
+    return trimmed === '' ? null : trimmed;
+  }
+  return value;
+}
+
+function getActorEmail(request) {
+  return String(request.headers['x-actor-email'] ?? '').trim().toLowerCase();
+}
+
+function ensureOwnerAccess(request, reply) {
+  const actorEmail = getActorEmail(request);
+  if (!actorEmail || actorEmail !== OWNER_SUPER_ADMIN_EMAIL) {
+    reply.code(403).send({ error: 'owner access required' });
+    return null;
+  }
+  return actorEmail;
+}
+
+function sanitizeInvite(invite, { includeToken = false } = {}) {
+  if (!invite) return invite;
+  return {
+    id: invite.id,
+    org_id: invite.org_id,
+    workspace_id: invite.workspace_id,
+    workspace_name: invite.workspace_name ?? null,
+    email: invite.email,
+    role: invite.role,
+    status: invite.status,
+    invited_by_email: invite.invited_by_email,
+    expires_at: invite.expires_at,
+    accepted_at: invite.accepted_at,
+    created_at: invite.created_at,
+    updated_at: invite.updated_at,
+    ...(includeToken ? { invite_token: invite.invite_token } : {})
+  };
+}
 
 server.addHook('onRequest', (request, reply, done) => {
-  reply.header('Access-Control-Allow-Origin', '*');
-  reply.header('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id');
+  request.startedAtMs = Date.now();
+  const corsOrigin = getCorsOrigin(request.headers.origin);
+  if (corsOrigin) {
+    reply.header('Access-Control-Allow-Origin', corsOrigin);
+  }
+  reply.header('Vary', 'Origin');
+  reply.header('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id, X-Actor-Email, X-Request-Id');
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  reply.header('x-request-id', request.id);
   if (request.method === 'OPTIONS') {
     reply.code(204).send();
     return;
   }
   done();
 });
+
+server.addHook('preValidation', (request, _reply, done) => {
+  try {
+    if (request.body !== undefined) {
+      if (request.body === null || typeof request.body !== 'object' || Array.isArray(request.body)) {
+        const error = new Error('request body must be an object');
+        error.statusCode = 400;
+        error.code = 'INVALID_BODY';
+        throw error;
+      }
+      request.body = sanitizeRequestValue(request.body);
+    }
+    if (request.query && typeof request.query === 'object') {
+      request.query = sanitizeRequestValue(request.query);
+    }
+    if (request.params && typeof request.params === 'object') {
+      request.params = sanitizeRequestValue(request.params);
+    }
+    done();
+  } catch (error) {
+    done(error);
+  }
+});
+
+server.addHook('onSend', async (request, reply, payload) => {
+  if (reply.statusCode < 400) return payload;
+  const parsed = parsePayloadAsObject(payload);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return payload;
+  if (!Object.prototype.hasOwnProperty.call(parsed, 'error')) return payload;
+  const baseCode = mapStatusCodeToErrorCode(reply.statusCode);
+  if (typeof parsed.error === 'string') {
+    reply.type('application/json; charset=utf-8');
+    return JSON.stringify({
+      error: {
+        code: baseCode,
+        message: parsed.error,
+        requestId: request.id
+      }
+    });
+  }
+  if (parsed.error && typeof parsed.error === 'object') {
+    const { code, message, requestId, ...rest } = parsed.error;
+    reply.type('application/json; charset=utf-8');
+    return JSON.stringify({
+      error: {
+        code: code ?? baseCode,
+        message: message ?? 'Request failed',
+        requestId: requestId ?? request.id,
+        ...rest
+      }
+    });
+  }
+  return payload;
+});
+
+server.addHook('onResponse', (request, reply, done) => {
+  const latencyMs = Math.max(0, Date.now() - Number(request.startedAtMs ?? Date.now()));
+  request.log.info({
+    method: request.method,
+    url: request.url,
+    route: request.routeOptions?.url ?? null,
+    statusCode: reply.statusCode,
+    latencyMs
+  }, 'request completed');
+  done();
+});
+
+server.setNotFoundHandler((request, reply) => {
+  reply.code(404).send({
+    error: {
+      code: 'NOT_FOUND',
+      message: 'not found',
+      requestId: request.id
+    }
+  });
+});
+
+server.setErrorHandler((error, request, reply) => {
+  const candidate = Number(error?.statusCode ?? 500);
+  const statusCode = Number.isInteger(candidate) && candidate >= 400 && candidate <= 599 ? candidate : 500;
+  const code = typeof error?.code === 'string' ? error.code : mapStatusCodeToErrorCode(statusCode);
+  const message = statusCode >= 500 ? 'Internal server error' : (error?.message ?? 'Request failed');
+  const conflict = error?.conflict && typeof error.conflict === 'object'
+    ? error.conflict
+    : null;
+  request.log.error({
+    method: request.method,
+    url: request.url,
+    route: request.routeOptions?.url ?? null,
+    statusCode,
+    err: {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack
+    }
+  }, 'request failed');
+  reply.code(statusCode).send({
+    error: {
+      code,
+      message,
+      requestId: request.id,
+      ...(conflict ? { conflict } : {})
+    }
+  });
+});
+
+attachRouteSchemas(server);
 
 server.get('/health', async () => ({ ok: true }));
 
@@ -133,6 +444,71 @@ server.post('/users', async (request, reply) => {
       { ...(request.body ?? {}), workspace_id: workspace_id ?? null },
       request.headers['x-client-id'] ?? null
     );
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/admin/info', async (request, reply) => {
+  const actorEmail = getActorEmail(request);
+  return {
+    owner_email: OWNER_SUPER_ADMIN_EMAIL,
+    actor_email: actorEmail || null,
+    is_owner: Boolean(actorEmail && actorEmail === OWNER_SUPER_ADMIN_EMAIL)
+  };
+});
+
+server.get('/admin/invites', async (request, reply) => {
+  const actorEmail = ensureOwnerAccess(request, reply);
+  if (!actorEmail) return;
+  const { org_id, workspace_id, status } = request.query ?? {};
+  try {
+    const invites = await listUserInvites(db, {
+      org_id: org_id ?? null,
+      workspace_id: workspace_id ?? null,
+      status: status ?? 'pending'
+    });
+    return {
+      invites: invites.map((invite) => sanitizeInvite(invite)),
+      count: invites.length
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin/invites', async (request, reply) => {
+  const actorEmail = ensureOwnerAccess(request, reply);
+  if (!actorEmail) return;
+  const { workspace_id, email } = request.body ?? {};
+  if (!workspace_id || !email) {
+    return reply.code(400).send({ error: 'workspace_id and email required' });
+  }
+  try {
+    const created = await createUserInvite(
+      db,
+      {
+        ...(request.body ?? {}),
+        invited_by_email: actorEmail
+      },
+      request.headers['x-client-id'] ?? null
+    );
+    const delivery = await sendInviteEmail({
+      toEmail: created.email,
+      inviteToken: created.invite_token,
+      workspaceName: created.workspace_name ?? null,
+      invitedByEmail: actorEmail,
+      expiresAt: created.expires_at
+    });
+    const includeToken = config.exposeInviteToken;
+    return {
+      invite: sanitizeInvite(created, { includeToken }),
+      delivery: {
+        provider: delivery.provider,
+        accepted: delivery.accepted,
+        message_id: delivery.message_id
+      }
+    };
   } catch (err) {
     return reply.code(400).send({ error: err.message });
   }
@@ -574,13 +950,26 @@ server.post('/tasks/search', async (request) => {
 server.post('/sync/push', async (request) => {
   const { workspace_id, client_id, changes } = request.body ?? {};
   const applied = [];
+  const deduped = [];
   if (Array.isArray(changes)) {
     for (const change of changes) {
+      const mutationId = String(change?.client_mutation_id ?? '').trim();
+      if (mutationId) {
+        const duplicate = await isDuplicateSyncMutation(workspace_id, mutationId);
+        if (duplicate) {
+          deduped.push(mutationId);
+          continue;
+        }
+      }
+      await assertNoSyncConflict(workspace_id, change);
       await recordChange(db, workspace_id, change.entity_type, change.entity_id, change.action, change.payload, client_id ?? null);
+      if (mutationId) {
+        await recordSyncMutation(workspace_id, client_id ?? null, mutationId);
+      }
       applied.push(change);
     }
   }
-  return { applied: applied.length };
+  return { applied: applied.length, deduped: deduped.length };
 });
 
 server.post('/sync/pull', async (request) => {
@@ -624,5 +1013,23 @@ server.post('/ai/suggest', async (request) => {
   return { suggestions, notes: 'AI stub only; no state mutation.' };
 });
 
-const port = Number(process.env.PORT ?? 3000);
-server.listen({ port, host: '0.0.0.0' });
+function isEntrypoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+export async function startServer() {
+  await server.listen({ port: config.port, host: config.host });
+  return server;
+}
+
+if (isEntrypoint()) {
+  startServer().catch((error) => {
+    server.log.fatal({ err: error }, 'failed to start server');
+    process.exit(1);
+  });
+}
