@@ -6,8 +6,8 @@
   --muted: #9aa4b2;
   --accent: #3fa6ff;
   --border: #2b3240;
-  --mobile-nav-safe-clearance: calc(7rem + env(safe-area-inset-bottom, 0px));
-  --mobile-nav-fab-overhang: 1.25rem;
+  --mobile-nav-safe-clearance: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  --mobile-nav-fab-overhang: 0.65rem;
 }
 
 * { box-sizing: border-box; }
@@ -5088,6 +5088,17 @@ body.auth-gated #auth-cancel-invite {
     padding: 0.45rem 0.6rem;
   }
 
+  body.mobile-scheduling-view #scheduling-page .panel-header {
+    justify-content: flex-end;
+    min-height: 2.25rem;
+    margin-bottom: 0.2rem;
+    padding: 0.1rem 0.6rem 0;
+  }
+
+  body.mobile-scheduling-view #scheduling-page .panel-header h2 {
+    display: none;
+  }
+
   body.mobile-scheduling-view #scheduling-calendar .scheduling-week-wrap.is-mobile {
     flex: 1 1 auto;
     min-height: 0;
@@ -5095,7 +5106,7 @@ body.auth-gated #auth-cancel-invite {
     border: none;
     border-radius: 0;
     background: transparent;
-    padding: 0 0.2rem var(--mobile-nav-fab-overhang);
+    padding: 0 0.2rem;
   }
 
   body.mobile-scheduling-view #scheduling-calendar .scheduling-week-wrap.is-mobile .scheduling-week-body {
@@ -5256,6 +5267,7 @@ body.auth-gated #auth-cancel-invite {
 
   #scheduling-calendar .scheduling-week-wrap.is-mobile .scheduling-week-time-label:first-child {
     top: 0.18rem !important;
+    transform: translateY(0);
   }
 
   #scheduling-calendar .scheduling-week-wrap.is-mobile .scheduling-week-days {
