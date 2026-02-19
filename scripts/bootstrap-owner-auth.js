@@ -47,7 +47,8 @@ async function bootstrapOwnerAuth() {
       org_id: workspace.org_id,
       workspace_id: workspace.id,
       display_name: displayName,
-      email: login
+      email: login,
+      org_role: 'admin'
     });
 
     await createWorkspaceMembership(db, {

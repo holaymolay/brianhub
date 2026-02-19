@@ -3,11 +3,14 @@ import { loadLocalData, saveLocalData, recordLocalChange } from './localData.js'
 import { applyRemoteChanges } from './syncState.js';
 import { replayPendingChanges } from './syncQueue.js';
 import { getClientId } from './clientId.js';
+import { suppressQuickAddPointerEvents } from './quickAdd.js';
 import { showToast } from './ui/toast.js';
 import * as api from './api.js';
 import { compareTasksByPriority } from '../../packages/core/priority.js';
 import { reparent as reparentTasks } from '../../packages/core/tree.js';
 import { applyCheckIn, applyWaitingFollowup, TaskStatus } from '../../packages/core/taskState.js';
+
+const DEFAULT_OWNER_EMAIL = 'brian@pipecaminc.com';
 
 const localData = loadLocalData();
 const state = {
@@ -25,11 +28,12 @@ const state = {
   workflowPatternTasks: localData.workflowPatternTasks ?? localData.workflowFragmentTasks ?? [],
   workflowInstances: localData.workflowInstances ?? [],
   workflowInstanceTasks: localData.workflowInstanceTasks ?? [],
+  scheduleEvents: localData.scheduleEvents ?? [],
   statuses: localData.statuses ?? [],
   taskTypes: localData.taskTypes ?? [],
   users: localData.users ?? [],
   workspaceMemberships: localData.workspaceMemberships ?? [],
-  taskSections: localData.taskSections ?? [],
+  taskSections: (localData.taskSections ?? []).map(normalizeTaskSection),
   storeRules: localData.storeRules ?? [],
   tasks: localData.tasks ?? {},
   taskDependencies: localData.taskDependencies ?? [],
@@ -43,11 +47,27 @@ const state = {
     pendingChanges: localData.pendingChanges ?? []
   }
 };
+state.ui = state.ui ?? {};
+state.ui.forceAuthGate = Boolean(state.ui.forceAuthGate);
+// Never trust persisted auth flags across refresh; hydrate from /auth/me + cookie each boot.
+state.ui.auth = {
+  authenticated: false,
+  requireAuth: Boolean(state.ui.auth?.requireAuth),
+  user: null,
+  session: null,
+  workspaces: [],
+  ownerEmail: String(state.ui.auth?.ownerEmail ?? DEFAULT_OWNER_EMAIL).trim().toLowerCase() || DEFAULT_OWNER_EMAIL,
+  isOwner: false,
+  isAdmin: false
+};
 const DEFAULT_NOTICE_TYPES = [
   { key: 'general', label: 'General' },
   { key: 'bill', label: 'Bill notice' },
-  { key: 'auto-payment', label: 'Auto-payment notice' }
+  { key: 'auto-payment', label: 'Auto-payment notice' },
+  { key: 'birthday', label: 'Birthday' },
+  { key: 'holiday', label: 'Holiday' }
 ];
+const NOTICE_TYPE_BIRTHDAY = 'birthday';
 const DEFAULT_STATUS_DEFS = [
   { key: TaskStatus.INBOX, label: 'Inbox', kind: TaskStatus.INBOX, sort_order: 10, kanban_visible: 0 },
   { key: TaskStatus.PLANNED, label: 'Planned', kind: TaskStatus.PLANNED, sort_order: 20, kanban_visible: 0 },
@@ -64,23 +84,79 @@ const DEFAULT_TASK_TYPE_DEFS = [
 const DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000001';
 const TASK_FILTER_UNASSIGNED = 'unassigned';
 const TASK_FILTER_INBOX = '__inbox__';
+const TASK_TYPE_WORKFLOW = 'workflow';
+const SETTINGS_TAB_KEYS = new Set(['general', 'tasks', 'scheduling', 'crm', 'knowledge']);
+const SCHEDULING_EVENT_KINDS = ['event', 'time-block', 'day-off'];
+const US_HOLIDAY_RULES = Object.freeze([
+  { key: 'new-years-day', title: "New Year's Day", getDate: (year) => new Date(year, 0, 1, 12, 0, 0, 0) },
+  { key: 'chinese-new-year', title: 'Chinese New Year', getDate: (year) => getChineseNewYearDate(year) },
+  { key: 'martin-luther-king-jr-day', title: 'Martin Luther King Jr. Day', getDate: (year) => getNthWeekdayOfMonth(year, 0, 1, 3) },
+  { key: 'presidents-day', title: "Presidents' Day", getDate: (year) => getNthWeekdayOfMonth(year, 1, 1, 3) },
+  { key: 'memorial-day', title: 'Memorial Day', getDate: (year) => getLastWeekdayOfMonth(year, 4, 1) },
+  { key: 'juneteenth', title: 'Juneteenth', getDate: (year) => new Date(year, 5, 19, 12, 0, 0, 0) },
+  { key: 'independence-day', title: 'Independence Day', getDate: (year) => new Date(year, 6, 4, 12, 0, 0, 0) },
+  { key: 'labor-day', title: 'Labor Day', getDate: (year) => getNthWeekdayOfMonth(year, 8, 1, 1) },
+  { key: 'columbus-day', title: 'Columbus Day', getDate: (year) => getNthWeekdayOfMonth(year, 9, 1, 2) },
+  { key: 'veterans-day', title: 'Veterans Day', getDate: (year) => new Date(year, 10, 11, 12, 0, 0, 0) },
+  { key: 'thanksgiving', title: 'Thanksgiving', getDate: (year) => getNthWeekdayOfMonth(year, 10, 4, 4) },
+  { key: 'christmas-day', title: 'Christmas Day', getDate: (year) => new Date(year, 11, 25, 12, 0, 0, 0) }
+]);
+const US_HOLIDAY_RULE_KEYS = new Set(US_HOLIDAY_RULES.map(rule => rule.key));
+const CHINESE_CALENDAR_FORMATTER = (() => {
+  try {
+    return new Intl.DateTimeFormat('en-u-ca-chinese', { month: 'numeric', day: 'numeric' });
+  } catch {
+    return null;
+  }
+})();
 
 function normalizeTitleInput(value) {
   const text = String(value ?? '').trim();
   if (!text) return '';
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
+
+function normalizeTaskStatusValue(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function normalizeTagList(value) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value ?? '')
+      .split(',');
+  const seen = new Set();
+  const tags = [];
+  source.forEach((entry) => {
+    const tag = String(entry ?? '').trim();
+    if (!tag) return;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    tags.push(tag);
+  });
+  return tags;
+}
+
+function formatTagList(tags) {
+  return normalizeTagList(tags).join(', ');
+}
+
+function areTagListsEqual(a, b) {
+  const left = normalizeTagList(a).map(tag => tag.toLowerCase()).sort();
+  const right = normalizeTagList(b).map(tag => tag.toLowerCase()).sort();
+  if (left.length !== right.length) return false;
+  return left.every((tag, index) => tag === right[index]);
+}
 const taskTreeEl = document.getElementById('task-tree');
 const taskFilterButton = document.getElementById('task-filter-button');
 const taskFilterMenu = document.getElementById('task-filter-menu');
 const taskFilterSearchInput = document.getElementById('task-filter-search-input');
-const taskToolsButton = document.getElementById('task-tools-button');
-const taskToolsMenu = document.getElementById('task-tools-menu');
-const taskToolsToggleQuickAdd = document.getElementById('task-tools-toggle-quick-add');
-const taskToolsMobileFilter = document.getElementById('task-tools-mobile-filter');
-const taskToolsMobileSort = document.getElementById('task-tools-mobile-sort');
-const taskToolsMobileGroup = document.getElementById('task-tools-mobile-group');
-const taskToolsMobileView = document.getElementById('task-tools-mobile-view');
+const taskFilterTagInput = document.getElementById('task-filter-tag-input');
+const taskCreatePrimary = document.getElementById('task-create-primary');
+const taskCreateMenuButton = document.getElementById('task-create-menu-button');
+const taskCreateMenu = document.getElementById('task-create-menu');
 const taskAiButton = document.getElementById('task-ai-button');
 const taskAiMenu = document.getElementById('task-ai-menu');
 const taskSortButton = document.getElementById('task-sort-button');
@@ -166,6 +242,25 @@ const noticeFilterMenu = document.getElementById('notice-filter-menu');
 const noticeSortButton = document.getElementById('notice-sort-button');
 const noticeSortMenu = document.getElementById('notice-sort-menu');
 const tasksPanel = document.getElementById('tasks-panel');
+const schedulingPage = document.getElementById('scheduling-page');
+const schedulingAddBtn = document.getElementById('scheduling-add-btn');
+const schedulingCalendar = document.getElementById('scheduling-calendar');
+const tasksSidebarContent = document.getElementById('tasks-sidebar-content');
+const schedulingSidebarContent = document.getElementById('scheduling-sidebar-content');
+const schedulingSidebarOpen = document.getElementById('scheduling-sidebar-open');
+const schedulingSidebarToday = document.getElementById('scheduling-sidebar-today');
+const schedulingSidebarAddEvent = document.getElementById('scheduling-sidebar-add-event');
+const schedulingSidebarAddTimeBlock = document.getElementById('scheduling-sidebar-add-time-block');
+const schedulingSidebarAddDayOff = document.getElementById('scheduling-sidebar-add-day-off');
+const schedulingLayerEvent = document.getElementById('scheduling-layer-event');
+const schedulingLayerTimeBlock = document.getElementById('scheduling-layer-time-block');
+const schedulingLayerDayOff = document.getElementById('scheduling-layer-day-off');
+const schedulingLayerTasks = document.getElementById('scheduling-layer-tasks');
+const schedulingLayerHolidays = document.getElementById('scheduling-layer-holidays');
+const schedulingMiniMonthPrev = document.getElementById('scheduling-mini-month-prev');
+const schedulingMiniMonthNext = document.getElementById('scheduling-mini-month-next');
+const schedulingMiniMonthTitle = document.getElementById('scheduling-mini-month-title');
+const schedulingMiniMonthGrid = document.getElementById('scheduling-mini-month-grid');
 const projectsPage = document.getElementById('projects-page');
 const projectsAddBtn = document.getElementById('projects-add-btn');
 const projectsMobileList = document.getElementById('projects-mobile-list');
@@ -211,7 +306,10 @@ const shoppingItemInput = document.getElementById('shopping-item-input');
 const shoppingItemParse = document.getElementById('shopping-item-parse');
 const shoppingItemCancel = document.getElementById('shopping-item-cancel');
 const syncStatus = document.getElementById('sync-status');
+const syncOfflineNotice = document.getElementById('sync-offline-notice');
 const appTitle = document.getElementById('app-title');
+const globalSearchInput = document.getElementById('global-search-input');
+const globalSearchMenu = document.getElementById('global-search-menu');
 const mobileTopMenuButton = document.getElementById('mobile-top-menu-button');
 const mobileTopMenu = document.getElementById('mobile-top-menu');
 const mobileMenuNotices = document.getElementById('mobile-menu-notices');
@@ -231,6 +329,7 @@ const mobileCreateWorkflow = document.getElementById('mobile-create-workflow');
 const mobileCreateShopping = document.getElementById('mobile-create-shopping');
 const newWorkspaceBtn = document.getElementById('new-workspace-btn');
 const moduleNavTodo = document.getElementById('module-nav-todo');
+const moduleNavScheduling = document.getElementById('module-nav-scheduling');
 const noticeBell = document.getElementById('notice-bell');
 const noticeBellMenu = document.getElementById('notice-bell-menu');
 const taskModal = document.getElementById('task-modal');
@@ -243,12 +342,24 @@ const modalDue = document.getElementById('modal-due');
 const modalDesc = document.getElementById('modal-desc');
 const modalCancel = document.getElementById('modal-cancel');
 const modalType = document.getElementById('modal-type');
+const modalTags = document.getElementById('modal-tags');
 const modalAssignee = document.getElementById('modal-assignee');
 const modalAssigneeLabelRow = document.getElementById('modal-assignee-label-row');
 const modalAssigneeLabel = document.getElementById('modal-assignee-label');
 const modalRecurringButton = document.getElementById('modal-recurring-button');
 const modalRecurringSummary = document.getElementById('modal-recurring-summary');
 const modalReminder = document.getElementById('modal-reminder');
+const scheduleEventModal = document.getElementById('schedule-event-modal');
+const scheduleEventModalTitle = document.getElementById('schedule-event-modal-title');
+const scheduleEventForm = document.getElementById('schedule-event-form');
+const scheduleEventTitle = document.getElementById('schedule-event-title');
+const scheduleEventKind = document.getElementById('schedule-event-kind');
+const scheduleEventAllDay = document.getElementById('schedule-event-all-day');
+const scheduleEventStart = document.getElementById('schedule-event-start');
+const scheduleEventEnd = document.getElementById('schedule-event-end');
+const scheduleEventNotes = document.getElementById('schedule-event-notes');
+const scheduleEventDelete = document.getElementById('schedule-event-delete');
+const scheduleEventCancel = document.getElementById('schedule-event-cancel');
 const templateModal = document.getElementById('template-modal');
 const templateModalForm = document.getElementById('template-modal-form');
 const templateName = document.getElementById('template-name');
@@ -306,20 +417,41 @@ const settingsOpen = document.getElementById('settings-open');
 const profileOpen = document.getElementById('profile-open');
 const settingsModal = document.getElementById('settings-modal');
 const settingsClose = document.getElementById('settings-close');
+const settingsOpenTemplates = document.getElementById('settings-open-templates');
 const settingsOpenDataTransfer = document.getElementById('settings-open-data-transfer');
 const settingsOpenAuditLog = document.getElementById('settings-open-audit-log');
 const settingsOpenAutomation = document.getElementById('settings-open-automation');
+const settingsTabButtons = Array.from(document.querySelectorAll('.settings-tab-button[data-settings-tab]'));
+const settingsTabPanels = Array.from(document.querySelectorAll('.settings-tab-panel[data-settings-panel]'));
+const templateManagerModal = document.getElementById('template-manager-modal');
+const templateManagerClose = document.getElementById('template-manager-close');
 const dataTransferBack = document.getElementById('data-transfer-back');
 const auditLogBack = document.getElementById('audit-log-back');
 const automationBack = document.getElementById('automation-back');
 const adminPageBack = document.getElementById('admin-page-back');
 const adminInviteEmail = document.getElementById('admin-invite-email');
-const adminInviteWorkspace = document.getElementById('admin-invite-workspace');
 const adminInviteRole = document.getElementById('admin-invite-role');
 const adminInviteSend = document.getElementById('admin-invite-send');
+const adminInviteTokenWrap = document.getElementById('admin-invite-token-wrap');
+const adminInviteToken = document.getElementById('admin-invite-token');
+const adminInviteTokenCopy = document.getElementById('admin-invite-token-copy');
 const adminInviteStatus = document.getElementById('admin-invite-status');
-const adminInvitesRefresh = document.getElementById('admin-invites-refresh');
 const adminInvitesList = document.getElementById('admin-invites-list');
+const adminUsersStatus = document.getElementById('admin-users-status');
+const adminUsersList = document.getElementById('admin-users-list');
+const adminUsersRefresh = document.getElementById('admin-users-refresh');
+const adminUserSelect = document.getElementById('admin-user-select');
+const adminUserName = document.getElementById('admin-user-name');
+const adminUserEmail = document.getElementById('admin-user-email');
+const adminUserRole = document.getElementById('admin-user-role');
+const adminUserArchived = document.getElementById('admin-user-archived');
+const adminUserSettings = document.getElementById('admin-user-settings');
+const adminUserSave = document.getElementById('admin-user-save');
+const adminUserPassword = document.getElementById('admin-user-password');
+const adminUserPasswordReset = document.getElementById('admin-user-password-reset');
+const adminUserExport = document.getElementById('admin-user-export');
+const adminUserDelete = document.getElementById('admin-user-delete');
+const adminOwnershipTransfer = document.getElementById('admin-ownership-transfer');
 const profilePageBack = document.getElementById('profile-page-back');
 const profilePageSave = document.getElementById('profile-page-save');
 const profilePageAvatar = document.getElementById('profile-page-avatar');
@@ -412,6 +544,15 @@ const checkinRescheduleApply = document.getElementById('checkin-reschedule-apply
 const checkinRescheduleCancel = document.getElementById('checkin-reschedule-cancel');
 const checkinRescheduleBack = document.getElementById('checkin-reschedule-back');
 const checkinDefaultMinutesInput = document.getElementById('checkin-default-minutes');
+const taskUiQuickAddInput = document.getElementById('task-ui-quick-add');
+const taskUiCompletedVisibilitySelect = document.getElementById('task-ui-completed-visibility');
+const taskUiFutureDaysInput = document.getElementById('task-ui-future-days');
+const taskUiFilterSelect = document.getElementById('task-ui-filter');
+const taskUiSortSelect = document.getElementById('task-ui-sort');
+const taskUiGroupSelect = document.getElementById('task-ui-group');
+const taskUiViewSelect = document.getElementById('task-ui-view');
+const taskUiHolidayList = document.getElementById('task-ui-holiday-list');
+const schedulingUiWeekModeSelect = document.getElementById('scheduling-ui-week-mode');
 const taskEditor = document.getElementById('task-editor');
 const taskEditorBody = document.getElementById('task-editor-body');
 const taskEditorScrollbar = document.getElementById('task-editor-scrollbar');
@@ -419,6 +560,7 @@ const taskEditorScrollThumb = document.getElementById('task-editor-scroll-thumb'
 const taskEditorForm = document.getElementById('task-editor-form');
 const editorTitle = document.getElementById('editor-title');
 const editorType = document.getElementById('editor-type');
+const editorTags = document.getElementById('editor-tags');
 const editorPriority = document.getElementById('editor-priority');
 const editorRecurringButton = document.getElementById('editor-recurring-button');
 const editorRecurringSummary = document.getElementById('editor-recurring-summary');
@@ -478,11 +620,20 @@ const groupRenameModal = document.getElementById('group-rename-modal');
 const groupRenameForm = document.getElementById('group-rename-form');
 const groupRenameInput = document.getElementById('group-rename-input');
 const groupRenameCancel = document.getElementById('group-rename-cancel');
+const sectionSettingsModal = document.getElementById('section-settings-modal');
+const sectionSettingsTitle = document.getElementById('section-settings-title');
+const sectionSettingsForm = document.getElementById('section-settings-form');
+const sectionSettingsCompleted = document.getElementById('section-settings-completed');
+const sectionSettingsFutureDays = document.getElementById('section-settings-future-days');
+const sectionSettingsDefaults = document.getElementById('section-settings-defaults');
+const sectionSettingsCancel = document.getElementById('section-settings-cancel');
 let openMenu = null;
 let authModalMode = 'login';
-let renameGroupLabel = null;
+let renameGroupTarget = null;
+let sectionSettingsTarget = null;
 let editingTemplateId = null;
 let editingWorkflowId = null;
+let templateEditorReturnTo = 'settings';
 let activeTaskId = null;
 let templatePromptTaskId = null;
 let taskModalDefaults = {};
@@ -511,6 +662,7 @@ let syncLastSuccessAt = null;
 let lastSyncAttentionMutationId = null;
 let taskEditorSwapTimer = null;
 let activeNoticeId = null;
+let activeScheduleEventId = null;
 let noticeModalMode = 'create';
 let noticeTypePreviousKey = 'general';
 let shoppingStorePreviousSelection = '';
@@ -549,14 +701,20 @@ let taskSearchRequestSeq = 0;
 let taskSearchResultIds = null;
 let taskSearchResultKey = '';
 let taskSearchInFlightKey = '';
+let adminInvitesAutoRefreshTimer = null;
+let adminUsersAutoRefreshTimer = null;
+let userSettingsSaveTimer = null;
 
 const SYNC_POLL_INTERVAL_MS = 5000;
 const SYNC_BACKOFF_STEPS_MS = [30000, 60000, 120000, 300000];
+const ADMIN_INVITES_AUTO_REFRESH_MS = 15000;
+const ADMIN_USERS_AUTO_REFRESH_MS = 20000;
+const USER_SETTINGS_SAVE_DEBOUNCE_MS = 350;
 const AUDIT_LOG_MAX_ENTRIES = 2000;
 const AUDIT_LOG_ALLOWED_CATEGORIES = new Set(['crud', 'notification', 'export', 'import', 'error']);
-const OWNER_SUPER_ADMIN_EMAIL = 'brian@pipecaminc.com';
 const NAVIGABLE_VIEWS = new Set([
   'tasks',
+  'scheduling',
   'projects',
   'shopping',
   'notices',
@@ -764,6 +922,119 @@ archivedWorkspacesBtn?.addEventListener('click', (event) => {
   render();
 });
 
+taskCreatePrimary?.addEventListener('click', () => {
+  taskCreateMenu?.classList.add('hidden');
+  if (openMenu === taskCreateMenu) openMenu = null;
+  setActiveView('tasks');
+  clearActiveWorkflowChecklistInstanceId();
+  render();
+  openTaskModal();
+});
+
+taskCreateMenuButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!taskCreateMenu) return;
+  if (openMenu && openMenu !== taskCreateMenu) {
+    openMenu.classList.add('hidden');
+  }
+  if (taskCreateMenu.classList.contains('hidden')) {
+    taskCreateMenu.classList.remove('hidden');
+    openMenu = taskCreateMenu;
+  } else {
+    taskCreateMenu.classList.add('hidden');
+    if (openMenu === taskCreateMenu) openMenu = null;
+  }
+});
+
+taskCreateMenu?.addEventListener('click', async (event) => {
+  event.stopPropagation();
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const action = target.dataset.create;
+  if (!action) return;
+  taskCreateMenu.classList.add('hidden');
+  if (openMenu === taskCreateMenu) openMenu = null;
+  setActiveView('tasks');
+  clearActiveWorkflowChecklistInstanceId();
+  if (action === 'task') {
+    render();
+    openTaskModal();
+    return;
+  }
+  if (action === 'section') {
+    const name = prompt('Section name');
+    if (!name) return;
+    setTaskGroupMode('section');
+    createSectionRecord(name);
+    render();
+  }
+});
+
+globalSearchInput?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+
+globalSearchInput?.addEventListener('focus', () => {
+  renderGlobalSearch();
+});
+
+globalSearchInput?.addEventListener('input', () => {
+  setGlobalSearchQuery(globalSearchInput.value);
+  renderGlobalSearch();
+});
+
+globalSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeGlobalSearchMenu();
+    return;
+  }
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  const query = getGlobalSearchQuery();
+  if (!query) return;
+  const results = getGlobalSearchResults(query);
+  const primary = getGlobalSearchPrimaryResult(results, getGlobalSearchScope());
+  if (!primary) return;
+  closeGlobalSearchMenu();
+  handleGlobalSearchResultSelect(primary.kind, primary.id);
+});
+
+globalSearchMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const target = event.target instanceof Element ? event.target.closest('button') : null;
+  if (!(target instanceof HTMLButtonElement)) return;
+  const scope = target.dataset.scope;
+  if (scope) {
+    setGlobalSearchScope(scope);
+    renderGlobalSearch();
+    return;
+  }
+  const action = target.dataset.action;
+  if (action === 'toggle-task-results') {
+    setGlobalSearchExpandTasks(!getGlobalSearchExpandTasks());
+    renderGlobalSearch();
+    return;
+  }
+  if (action === 'view-all-results') {
+    const query = getGlobalSearchQuery();
+    setActiveView('tasks');
+    clearActiveWorkflowChecklistInstanceId();
+    setActiveTaskFilter('all');
+    state.ui = state.ui ?? {};
+    state.ui.taskSearchText = query;
+    scheduleTaskSearchRefresh(true);
+    closeGlobalSearchMenu();
+    render();
+    return;
+  }
+  const kind = target.dataset.kind;
+  const id = target.dataset.id;
+  if (!kind || !id) return;
+  closeGlobalSearchMenu();
+  handleGlobalSearchResultSelect(kind, id);
+});
+
 taskFilterButton?.addEventListener('click', (event) => {
   event.stopPropagation();
   if (isWorkflowChecklistViewActive()) {
@@ -819,64 +1090,27 @@ taskFilterSearchInput?.addEventListener('keydown', (event) => {
   }
 });
 
-taskToolsButton?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  if (openMenu && openMenu !== taskToolsMenu) {
-    openMenu.classList.add('hidden');
-  }
-  if (taskToolsMenu.classList.contains('hidden')) {
-    taskToolsMenu.classList.remove('hidden');
-    openMenu = taskToolsMenu;
-  } else {
-    taskToolsMenu.classList.add('hidden');
-    openMenu = null;
-  }
-});
-
-taskToolsMenu?.addEventListener('click', (event) => {
+taskFilterTagInput?.addEventListener('click', (event) => {
   event.stopPropagation();
 });
 
-taskToolsToggleQuickAdd?.addEventListener('click', () => {
-  setTaskQuickAddVisible(!getTaskQuickAddVisible());
-  taskToolsMenu?.classList.add('hidden');
-  openMenu = null;
+taskFilterTagInput?.addEventListener('input', () => {
+  state.ui = state.ui ?? {};
+  state.ui.taskTagFilter = taskFilterTagInput.value;
+  scheduleTaskSearchRefresh();
   render();
 });
 
-taskToolsMobileFilter?.addEventListener('click', () => {
-  cycleTaskFilterSelection();
-  taskToolsMenu?.classList.add('hidden');
-  openMenu = null;
-  render();
-});
-
-taskToolsMobileSort?.addEventListener('click', async () => {
-  const sortKey = cycleTaskSortSelection();
-  taskToolsMenu?.classList.add('hidden');
-  openMenu = null;
-  if (sortKey === 'ai-queue') {
-    const hasTaskSuggestions = getAiSuggestions().some(item => item?.task_id);
-    if (!hasTaskSuggestions) {
-      await refreshAiSuggestions(getFilteredTasks());
-      return;
-    }
+taskFilterTagInput?.addEventListener('keydown', (event) => {
+  event.stopPropagation();
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    taskFilterTagInput.value = '';
+    state.ui = state.ui ?? {};
+    state.ui.taskTagFilter = '';
+    scheduleTaskSearchRefresh(true);
+    render();
   }
-  render();
-});
-
-taskToolsMobileGroup?.addEventListener('click', () => {
-  cycleTaskGroupSelection();
-  taskToolsMenu?.classList.add('hidden');
-  openMenu = null;
-  render();
-});
-
-taskToolsMobileView?.addEventListener('click', () => {
-  cycleTaskViewSelection();
-  taskToolsMenu?.classList.add('hidden');
-  openMenu = null;
-  render();
 });
 
 taskAiButton?.addEventListener('click', (event) => {
@@ -1158,13 +1392,78 @@ workflowsOpenBtn?.addEventListener('click', () => {
   render();
 });
 tasksOpenBtn?.addEventListener('click', () => {
+  setActiveTaskFilter('all');
   clearActiveWorkflowChecklistInstanceId();
   setActiveView('tasks');
   render();
 });
 moduleNavTodo?.addEventListener('click', () => {
+  setActiveTaskFilter('all');
   clearActiveWorkflowChecklistInstanceId();
   setActiveView('tasks');
+  render();
+});
+
+moduleNavScheduling?.addEventListener('click', () => {
+  clearActiveWorkflowChecklistInstanceId();
+  setActiveView('scheduling');
+  render();
+});
+
+schedulingSidebarOpen?.addEventListener('click', () => {
+  clearActiveWorkflowChecklistInstanceId();
+  setActiveView('scheduling');
+  render();
+});
+
+schedulingSidebarToday?.addEventListener('click', () => {
+  const today = new Date();
+  setSchedulingCalendarMonth(today);
+  if (getSchedulingCalendarRange() === 'week') {
+    setSchedulingCalendarWeekStart(today);
+  }
+  render();
+});
+
+schedulingSidebarAddEvent?.addEventListener('click', () => {
+  openScheduleEventCreate('event');
+});
+
+schedulingSidebarAddTimeBlock?.addEventListener('click', () => {
+  openScheduleEventCreate('time-block');
+});
+
+schedulingSidebarAddDayOff?.addEventListener('click', () => {
+  openScheduleEventCreate('day-off');
+});
+
+schedulingLayerEvent?.addEventListener('change', () => {
+  setSchedulingKindVisible('event', Boolean(schedulingLayerEvent.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+schedulingLayerTimeBlock?.addEventListener('change', () => {
+  setSchedulingKindVisible('time-block', Boolean(schedulingLayerTimeBlock.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+schedulingLayerDayOff?.addEventListener('change', () => {
+  setSchedulingKindVisible('day-off', Boolean(schedulingLayerDayOff.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+schedulingLayerTasks?.addEventListener('change', () => {
+  setSchedulingShowTasks(Boolean(schedulingLayerTasks.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+schedulingLayerHolidays?.addEventListener('change', () => {
+  setCalendarIncludeHolidays(Boolean(schedulingLayerHolidays.checked));
+  queueUserSettingsSave();
   render();
 });
 
@@ -1178,6 +1477,10 @@ mobileNavButtons.forEach((button) => {
     }
     if (view === 'shopping') {
       setMobileShoppingPanelMode('list');
+    }
+    if (view === 'tasks') {
+      setActiveTaskFilter('all');
+      clearActiveWorkflowChecklistInstanceId();
     }
     setActiveView(view);
     render();
@@ -1347,6 +1650,9 @@ noticeType?.addEventListener('change', () => {
     return;
   }
   noticeTypePreviousKey = noticeType.value;
+  if (isBirthdayNoticeType(noticeType.value) && noticeRepeatPreset?.value === 'none') {
+    noticeRepeatPreset.value = 'yearly';
+  }
 });
 noticeTypeCancel?.addEventListener('click', () => closeNoticeTypeModal({ restoreSelection: true }));
 noticeTypeModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => closeNoticeTypeModal({ restoreSelection: true }));
@@ -1408,8 +1714,8 @@ noticeForm?.addEventListener('submit', async (event) => {
   const fallbackTimeIso = existing?.created_at ?? nowIso();
   const notifyAt = combineDateAndTimeToIso(noticeDateValue, noticeTime?.value?.trim() ?? '', fallbackTimeIso);
   if (!notifyAt) return;
-  const repeatPreset = noticeRepeatPreset?.value ?? 'none';
-  const recurrenceRule = buildNoticeRecurrenceRuleFromPreset(repeatPreset, notifyAt);
+  let repeatPreset = noticeRepeatPreset?.value ?? 'none';
+  let recurrenceRule = buildNoticeRecurrenceRuleFromPreset(repeatPreset, notifyAt);
   if (repeatPreset === 'custom' && !recurrenceRule) {
     openNoticeRecurrenceModal();
     return;
@@ -1419,6 +1725,11 @@ noticeForm?.addEventListener('submit', async (event) => {
   if (typeValue === '__add_new__') {
     openNoticeTypeModal();
     return;
+  }
+  if (isBirthdayNoticeType(typeValue) && !recurrenceRule) {
+    repeatPreset = 'yearly';
+    recurrenceRule = buildNoticeRecurrenceRuleFromPreset(repeatPreset, notifyAt);
+    if (noticeRepeatPreset) noticeRepeatPreset.value = repeatPreset;
   }
   if (activeNoticeId) {
     await updateNoticeRecord(activeNoticeId, {
@@ -1578,6 +1889,73 @@ checkinDefaultMinutesInput?.addEventListener('change', () => {
   if (checkinNoModal && !checkinNoModal.classList.contains('hidden') && checkinNoExtend) {
     checkinNoExtend.textContent = `Extend session (${value} min)`;
   }
+  queueUserSettingsSave();
+  render();
+});
+
+taskUiQuickAddInput?.addEventListener('change', () => {
+  setTaskQuickAddVisible(Boolean(taskUiQuickAddInput.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+taskUiCompletedVisibilitySelect?.addEventListener('change', () => {
+  setTaskCompletedVisibility(taskUiCompletedVisibilitySelect.value || 'show');
+  queueUserSettingsSave();
+  render();
+});
+
+taskUiFutureDaysInput?.addEventListener('change', () => {
+  const value = Number(taskUiFutureDaysInput.value);
+  if (!Number.isFinite(value) || value < 0) {
+    taskUiFutureDaysInput.value = String(getTaskFutureVisibilityDays());
+    return;
+  }
+  setTaskFutureVisibilityDays(value);
+  queueUserSettingsSave();
+  render();
+});
+
+taskUiFilterSelect?.addEventListener('change', () => {
+  const selected = taskUiFilterSelect.value || 'all';
+  setActiveTaskFilter(selected);
+  clearActiveWorkflowChecklistInstanceId();
+  scheduleTaskSearchRefresh(true);
+  setActiveView('tasks');
+  queueUserSettingsSave();
+  render();
+});
+
+taskUiSortSelect?.addEventListener('change', async () => {
+  const selected = taskUiSortSelect.value || 'default';
+  setTaskSortKey(selected);
+  if (selected === 'ai-queue') {
+    const hasTaskSuggestions = getAiSuggestions().some(item => item?.task_id);
+    if (!hasTaskSuggestions) {
+      await refreshAiSuggestions(getFilteredTasks());
+      queueUserSettingsSave();
+      return;
+    }
+  }
+  queueUserSettingsSave();
+  render();
+});
+
+taskUiGroupSelect?.addEventListener('change', () => {
+  setTaskGroupMode(taskUiGroupSelect.value || 'none');
+  queueUserSettingsSave();
+  render();
+});
+
+taskUiViewSelect?.addEventListener('change', () => {
+  setTaskView(taskUiViewSelect.value || 'list');
+  queueUserSettingsSave();
+  render();
+});
+
+schedulingUiWeekModeSelect?.addEventListener('change', () => {
+  setSchedulingWeekMode(schedulingUiWeekModeSelect.value || 'seven');
+  queueUserSettingsSave();
   render();
 });
 
@@ -1917,6 +2295,9 @@ function getWorkspaceExportPayload(workspaceId, options = {}) {
   const workflowInstanceTasks = (state.workflowInstanceTasks ?? [])
     .filter(link => workflowInstanceIdSet.has(link.workflow_instance_id))
     .map(link => ({ ...link }));
+  const scheduleEvents = (state.scheduleEvents ?? [])
+    .filter(event => event.workspace_id === workspaceId)
+    .map(event => ({ ...event }));
 
   const auditLog = includeAudit
     ? ensureAuditLogArray()
@@ -1951,6 +2332,7 @@ function getWorkspaceExportPayload(workspaceId, options = {}) {
     workflowPatternTasks,
     workflowInstances,
     workflowInstanceTasks,
+    scheduleEvents,
     notices,
     noticeTypes,
     storeRules,
@@ -2018,7 +2400,10 @@ function buildExportCsv(payload) {
   pushRows('project', payload.projects, item => ({ name: item.name, archived: item.archived ? 1 : 0 }));
   pushRows('status', payload.statuses, item => ({ name: item.label, status: item.key }));
   pushRows('task_type', payload.taskTypes, item => ({ name: item.name, archived: item.archived ? 1 : 0 }));
-  pushRows('task_section', payload.taskSections, item => ({ name: item.label }));
+  pushRows('task_section', payload.taskSections, item => ({
+    name: item.label,
+    project_id: item.project_id ?? ''
+  }));
   pushRows('task', payload.tasks, item => ({
     title: item.title,
     status: item.status,
@@ -2062,6 +2447,13 @@ function buildExportCsv(payload) {
   pushRows('workflow_pattern_item', payload.workflowPatternTasks, item => ({ title: item.title, status: item.item_kind ?? '' }));
   pushRows('workflow_instance', payload.workflowInstances, item => ({ title: item.title, status: item.status }));
   pushRows('workflow_instance_task', payload.workflowInstanceTasks, item => ({ title: item.task_id, status: item.dismissed_at ? 'dismissed' : 'active' }));
+  pushRows('schedule_event', payload.scheduleEvents, item => ({
+    title: item.title,
+    status: item.kind ?? '',
+    start_at: item.start_at ?? '',
+    due_at: item.end_at ?? '',
+    archived: item.archived ? 1 : 0
+  }));
   pushRows('notice_type', payload.noticeTypes, item => ({ name: item.label, status: item.key }));
   pushRows('notice', payload.notices, item => ({
     title: item.title,
@@ -2159,6 +2551,10 @@ function buildExportMarkdown(payload) {
   lines.push(`- Phases: ${(payload.workflowPhases ?? []).length}`);
   lines.push(`- Patterns: ${(payload.workflowPatterns ?? []).length}`);
   lines.push(`- Instances: ${(payload.workflowInstances ?? []).length}`);
+  lines.push('');
+
+  lines.push(`## Scheduling (${(payload.scheduleEvents ?? []).length})`);
+  lines.push(`- Events: ${(payload.scheduleEvents ?? []).length}`);
   lines.push('');
 
   if (payload.meta?.includes_audit_log) {
@@ -2326,7 +2722,7 @@ function parseWorkspaceImportPayload(raw) {
     projects: cloneArrayOfObjects(raw.projects),
     statuses: cloneArrayOfObjects(raw.statuses),
     taskTypes: cloneArrayOfObjects(raw.taskTypes),
-    taskSections: cloneArrayOfObjects(raw.taskSections),
+    taskSections: cloneArrayOfObjects(raw.taskSections).map(normalizeTaskSection),
     tasks: tasksMap,
     taskDependencies: cloneArrayOfObjects(raw.taskDependencies)
       .filter(dep => taskIdSet.has(dep.task_id) && taskIdSet.has(dep.depends_on_id)),
@@ -2346,6 +2742,8 @@ function parseWorkspaceImportPayload(raw) {
     workflowInstances: workflowInstances.filter(item => workflowIdSet.has(item.workflow_id)),
     workflowInstanceTasks: cloneArrayOfObjects(raw.workflowInstanceTasks)
       .filter(item => workflowInstanceIdSet.has(item.workflow_instance_id) && taskIdSet.has(item.task_id)),
+    scheduleEvents: cloneArrayOfObjects(raw.scheduleEvents)
+      .filter(item => item.workspace_id === workspace.id),
     notices: cloneArrayOfObjects(raw.notices),
     noticeTypes: cloneArrayOfObjects(raw.noticeTypes),
     storeRules: cloneArrayOfObjects(raw.storeRules),
@@ -2400,7 +2798,7 @@ function applyImportedWorkspacePayload(payload, options = {}) {
   ];
   state.taskSections = [
     ...keepByWorkspace(state.taskSections),
-    ...payload.taskSections
+    ...payload.taskSections.map(normalizeTaskSection)
   ];
   state.templates = [
     ...keepByWorkspace(state.templates),
@@ -2465,6 +2863,10 @@ function applyImportedWorkspacePayload(payload, options = {}) {
   state.workflowPatternTasks = [...(state.workflowPatternTasks ?? []), ...payload.workflowPatternTasks.map(normalizeWorkflowPatternTask)];
   state.workflowInstances = [...(state.workflowInstances ?? []), ...payload.workflowInstances.map(normalizeWorkflowInstance)];
   state.workflowInstanceTasks = [...(state.workflowInstanceTasks ?? []), ...payload.workflowInstanceTasks.map(normalizeWorkflowInstanceTaskLink)];
+  state.scheduleEvents = [
+    ...keepByWorkspace(state.scheduleEvents),
+    ...payload.scheduleEvents.map(normalizeScheduleEvent)
+  ];
 
   state.notices = [
     ...keepByWorkspace(state.notices),
@@ -2630,7 +3032,7 @@ async function runAutomationCommand(command = {}, index = 0) {
     const created = await createTaskRecord({
       title,
       description_md: command.description_md ?? '',
-      status: command.status ?? getDefaultStatusKey(),
+      status: normalizeTaskStatusValue(command.status),
       priority: command.priority ?? 'medium',
       project_id: command.project_id ?? null,
       parent_id: command.parent_id ?? null,
@@ -2815,7 +3217,7 @@ function getAutomationSyntaxGuideText() {
     '  Optional: store_name, event_date, items (array of strings)',
     '- set_view',
     '  Required: view',
-    '  Allowed views: tasks, projects, shopping, notices, workflows, data-transfer, audit-log, automation, workspaces-manage, workspaces-archived',
+    '  Allowed views: tasks, scheduling, projects, shopping, notices, workflows, data-transfer, audit-log, automation, workspaces-manage, workspaces-archived',
     '',
     'Date/time inputs:',
     '- start_at, due_at, notify_at accept ISO datetime (example: 2026-03-01T14:30:00-08:00)',
@@ -2929,6 +3331,8 @@ function closeMobileTopMenu() {
 
 function getViewLabel(view) {
   switch (view) {
+    case 'scheduling':
+      return 'Scheduling';
     case 'projects':
       return 'Projects';
     case 'shopping':
@@ -2955,6 +3359,44 @@ function getViewLabel(view) {
     default:
       return 'My Tasks';
   }
+}
+
+function getDefaultSettingsTab() {
+  const activeView = getActiveView();
+  if (activeView === 'scheduling') return 'scheduling';
+  if (activeView === 'tasks') return 'tasks';
+  if (activeView === 'crm') return 'crm';
+  if (activeView === 'knowledge') return 'knowledge';
+  return 'general';
+}
+
+function getSettingsTab() {
+  const current = String(state.ui?.settingsTab ?? '').trim();
+  if (SETTINGS_TAB_KEYS.has(current)) return current;
+  return getDefaultSettingsTab();
+}
+
+function setSettingsTab(value) {
+  state.ui = state.ui ?? {};
+  const next = String(value ?? '').trim();
+  state.ui.settingsTab = SETTINGS_TAB_KEYS.has(next) ? next : getDefaultSettingsTab();
+}
+
+function renderSettingsTabs() {
+  if (!settingsTabButtons.length || !settingsTabPanels.length) return;
+  const activeTab = getSettingsTab();
+  settingsTabButtons.forEach((button) => {
+    const tab = String(button.dataset.settingsTab ?? '');
+    const active = tab === activeTab;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+    button.setAttribute('tabindex', active ? '0' : '-1');
+  });
+  settingsTabPanels.forEach((panel) => {
+    const tab = String(panel.dataset.settingsPanel ?? '');
+    const active = tab === activeTab;
+    panel.classList.toggle('is-active', active);
+  });
 }
 
 function singularizeLabel(label) {
@@ -2994,6 +3436,144 @@ function renderMobileNavigation() {
   });
   if (appTitle) {
     appTitle.textContent = isMobileViewport() ? getViewLabel(activeView) : 'BrianHub';
+  }
+}
+
+function shiftSchedulingMiniMonth(delta) {
+  const monthDate = getSchedulingCalendarMonth();
+  const nextMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + Number(delta || 0), 1, 12, 0, 0, 0);
+  setSchedulingCalendarMonth(nextMonth);
+  if (getSchedulingCalendarRange() === 'week') {
+    const anchor = getSchedulingCalendarWeekStart();
+    const maxDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
+    const targetDay = Math.min(anchor.getDate(), maxDay);
+    setSchedulingCalendarWeekStart(new Date(nextMonth.getFullYear(), nextMonth.getMonth(), targetDay, 12, 0, 0, 0));
+  }
+  render();
+}
+
+function renderSchedulingMiniMonth(hasWorkspace) {
+  if (!schedulingMiniMonthGrid || !schedulingMiniMonthTitle) return;
+  schedulingMiniMonthGrid.innerHTML = '';
+  if (schedulingMiniMonthPrev) {
+    schedulingMiniMonthPrev.disabled = !hasWorkspace;
+    schedulingMiniMonthPrev.onclick = hasWorkspace ? () => shiftSchedulingMiniMonth(-1) : null;
+  }
+  if (schedulingMiniMonthNext) {
+    schedulingMiniMonthNext.disabled = !hasWorkspace;
+    schedulingMiniMonthNext.onclick = hasWorkspace ? () => shiftSchedulingMiniMonth(1) : null;
+  }
+  if (!hasWorkspace) {
+    schedulingMiniMonthTitle.textContent = 'No workspace';
+    return;
+  }
+
+  const monthDate = getSchedulingCalendarMonth();
+  const year = monthDate.getFullYear();
+  const monthIndex = monthDate.getMonth();
+  schedulingMiniMonthTitle.textContent = monthDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  const firstDay = new Date(year, monthIndex, 1, 12, 0, 0, 0);
+  const startOffset = firstDay.getDay();
+  const gridStart = new Date(year, monthIndex, 1 - startOffset, 12, 0, 0, 0);
+  const todayKey = getDateIsoKey(new Date());
+  const rangeMode = getSchedulingCalendarRange();
+  const weekMode = getSchedulingWeekMode();
+  const anchorDate = rangeMode === 'week' ? getSchedulingCalendarWeekStart() : monthDate;
+  const anchorKey = getDateIsoKey(new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate(), 12, 0, 0, 0));
+  const weekVisibleKeys = new Set();
+  if (rangeMode === 'week') {
+    const weekStart = getSchedulingCalendarWeekStart();
+    const visibleDates = weekMode === 'workweek'
+      ? Array.from({ length: 5 }, (_, index) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 1 + index, 12, 0, 0, 0))
+      : Array.from({ length: 7 }, (_, index) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index, 12, 0, 0, 0));
+    visibleDates.forEach((date) => {
+      const key = getDateIsoKey(date);
+      if (key) weekVisibleKeys.add(key);
+    });
+  }
+
+  for (let index = 0; index < 42; index += 1) {
+    const date = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index, 12, 0, 0, 0);
+    const key = getDateIsoKey(date);
+    const dayButton = document.createElement('button');
+    dayButton.type = 'button';
+    dayButton.className = 'scheduling-mini-month-day';
+    dayButton.textContent = String(date.getDate());
+    dayButton.title = date.toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    });
+    dayButton.setAttribute('aria-label', dayButton.title);
+    if (date.getMonth() !== monthIndex) dayButton.classList.add('is-outside');
+    if (key && key === todayKey) dayButton.classList.add('is-today');
+    if (key && key === anchorKey) dayButton.classList.add('is-selected');
+    if (key && weekVisibleKeys.has(key)) dayButton.classList.add('is-in-range');
+    dayButton.addEventListener('click', () => {
+      setSchedulingCalendarMonth(date);
+      if (getSchedulingCalendarRange() === 'week') {
+        setSchedulingCalendarWeekStart(date);
+      }
+      render();
+    });
+    schedulingMiniMonthGrid.appendChild(dayButton);
+  }
+}
+
+function renderSchedulingSidebar() {
+  const hasWorkspace = Boolean(state.workspace);
+  if (schedulingLayerEvent) {
+    schedulingLayerEvent.checked = isSchedulingKindVisible('event');
+    schedulingLayerEvent.disabled = !hasWorkspace;
+  }
+  if (schedulingLayerTimeBlock) {
+    schedulingLayerTimeBlock.checked = isSchedulingKindVisible('time-block');
+    schedulingLayerTimeBlock.disabled = !hasWorkspace;
+  }
+  if (schedulingLayerDayOff) {
+    schedulingLayerDayOff.checked = isSchedulingKindVisible('day-off');
+    schedulingLayerDayOff.disabled = !hasWorkspace;
+  }
+  if (schedulingLayerTasks) {
+    schedulingLayerTasks.checked = getSchedulingShowTasks();
+    schedulingLayerTasks.disabled = !hasWorkspace;
+  }
+  if (schedulingLayerHolidays) {
+    schedulingLayerHolidays.checked = getCalendarIncludeHolidays();
+    schedulingLayerHolidays.disabled = !hasWorkspace;
+  }
+  renderSchedulingMiniMonth(hasWorkspace);
+  if (schedulingSidebarAddEvent) schedulingSidebarAddEvent.disabled = !hasWorkspace;
+  if (schedulingSidebarAddTimeBlock) schedulingSidebarAddTimeBlock.disabled = !hasWorkspace;
+  if (schedulingSidebarAddDayOff) schedulingSidebarAddDayOff.disabled = !hasWorkspace;
+}
+
+function renderModuleNavigation() {
+  const activeView = getActiveView();
+  const schedulingActive = activeView === 'scheduling';
+  if (tasksSidebarContent) {
+    tasksSidebarContent.classList.toggle('hidden', schedulingActive);
+  }
+  if (schedulingSidebarContent) {
+    schedulingSidebarContent.classList.toggle('hidden', !schedulingActive);
+  }
+  if (moduleNavTodo) {
+    moduleNavTodo.classList.toggle('is-active', !schedulingActive);
+    if (!schedulingActive) {
+      moduleNavTodo.setAttribute('aria-current', 'page');
+    } else {
+      moduleNavTodo.removeAttribute('aria-current');
+    }
+  }
+  if (moduleNavScheduling) {
+    moduleNavScheduling.classList.toggle('is-active', schedulingActive);
+    if (schedulingActive) {
+      moduleNavScheduling.setAttribute('aria-current', 'page');
+    } else {
+      moduleNavScheduling.removeAttribute('aria-current');
+    }
   }
 }
 
@@ -3225,22 +3805,151 @@ function setTaskQuickAddVisible(value) {
   state.ui.showTaskQuickAdd = Boolean(value);
 }
 
+function normalizeTaskCompletedVisibility(value) {
+  return value === 'hide' ? 'hide' : 'show';
+}
+
+function getTaskCompletedVisibility() {
+  return normalizeTaskCompletedVisibility(state.ui?.completedTaskVisibility);
+}
+
+function setTaskCompletedVisibility(value) {
+  state.ui = state.ui ?? {};
+  state.ui.completedTaskVisibility = normalizeTaskCompletedVisibility(value);
+}
+
+function normalizeTaskFutureVisibilityDays(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return 0;
+  return Math.floor(numeric);
+}
+
+function getTaskFutureVisibilityDays() {
+  return normalizeTaskFutureVisibilityDays(state.ui?.futureTaskVisibilityDays);
+}
+
+function setTaskFutureVisibilityDays(value) {
+  state.ui = state.ui ?? {};
+  state.ui.futureTaskVisibilityDays = normalizeTaskFutureVisibilityDays(value);
+}
+
+function getSchedulingShowTasks() {
+  return Boolean(state.ui?.schedulingShowTasks);
+}
+
+function setSchedulingShowTasks(value) {
+  state.ui = state.ui ?? {};
+  state.ui.schedulingShowTasks = Boolean(value);
+}
+
+function normalizeSchedulingWeekMode(value) {
+  return value === 'workweek' ? 'workweek' : 'seven';
+}
+
+function getSchedulingWeekMode() {
+  return normalizeSchedulingWeekMode(state.ui?.schedulingWeekMode);
+}
+
+function setSchedulingWeekMode(value) {
+  state.ui = state.ui ?? {};
+  state.ui.schedulingWeekMode = normalizeSchedulingWeekMode(value);
+}
+
+function normalizeSchedulingHiddenKinds(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const hidden = [];
+  value.forEach((entry) => {
+    const kind = normalizeScheduleEventKind(entry);
+    if (!SCHEDULING_EVENT_KINDS.includes(kind) || seen.has(kind)) return;
+    seen.add(kind);
+    hidden.push(kind);
+  });
+  return hidden;
+}
+
+function getSchedulingHiddenKinds() {
+  return normalizeSchedulingHiddenKinds(state.ui?.schedulingHiddenKinds);
+}
+
+function isSchedulingKindVisible(kind) {
+  const normalizedKind = normalizeScheduleEventKind(kind);
+  return !getSchedulingHiddenKinds().includes(normalizedKind);
+}
+
+function setSchedulingKindVisible(kind, visible) {
+  const normalizedKind = normalizeScheduleEventKind(kind);
+  const hidden = new Set(getSchedulingHiddenKinds());
+  if (visible) {
+    hidden.delete(normalizedKind);
+  } else {
+    hidden.add(normalizedKind);
+  }
+  state.ui = state.ui ?? {};
+  state.ui.schedulingHiddenKinds = normalizeSchedulingHiddenKinds(Array.from(hidden));
+}
+
+function normalizeSectionCompletedVisibility(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return normalizeTaskCompletedVisibility(value);
+}
+
+function normalizeSectionFutureVisibilityDays(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return normalizeTaskFutureVisibilityDays(value);
+}
+
+function isTaskCompletedAndHidden(task, completedVisibility) {
+  return normalizeTaskCompletedVisibility(completedVisibility) === 'hide'
+    && isDoneStatusKey(normalizeTaskStatusValue(task?.status));
+}
+
+function isTaskBeyondDueHorizon(task, futureVisibilityDays) {
+  const horizonDays = normalizeTaskFutureVisibilityDays(futureVisibilityDays);
+  if (horizonDays <= 0) return false;
+  if (!task?.due_at) return false;
+  const dueDate = new Date(task.due_at);
+  if (Number.isNaN(dueDate.getTime())) return false;
+  const threshold = Date.now() + (horizonDays * 24 * 60 * 60 * 1000);
+  return dueDate.getTime() > threshold;
+}
+
+function normalizeSectionScopeProjectId(projectId) {
+  return projectId ? String(projectId) : null;
+}
+
+function getActiveTaskSectionScopeProjectId() {
+  return normalizeSectionScopeProjectId(getProjectIdFromTaskFilter());
+}
+
+function taskMatchesSectionScope(task, projectId) {
+  return normalizeSectionScopeProjectId(task?.project_id) === normalizeSectionScopeProjectId(projectId);
+}
+
 function getSectionsForWorkspace() {
   if (!state.workspace) return [];
   const workspaceId = state.workspace.id;
+  const projectId = getActiveTaskSectionScopeProjectId();
   const sections = (state.taskSections ?? [])
-    .filter(section => section.workspace_id === workspaceId);
+    .map(normalizeTaskSection)
+    .filter(section =>
+      section.workspace_id === workspaceId
+      && normalizeSectionScopeProjectId(section.project_id) === projectId
+    );
   const byLabel = new Map(sections.map(section => [section.label, section]));
   Object.values(state.tasks ?? {})
-    .filter(task => task.workspace_id === workspaceId)
+    .filter(task => task.workspace_id === workspaceId && taskMatchesSectionScope(task, projectId))
     .forEach(task => {
       const label = (task.group_label ?? '').trim();
       if (!label || byLabel.has(label)) return;
       byLabel.set(label, {
         id: `derived-${label}`,
         workspace_id: workspaceId,
+        project_id: projectId,
         label,
-        sort_order: null
+        sort_order: null,
+        completed_visibility: null,
+        future_visibility_days: null
       });
     });
 
@@ -3258,22 +3967,178 @@ function isPersistedSection(section) {
   return (state.taskSections ?? []).some(record => record.id === section.id);
 }
 
+function getTaskSectionRecordIndex(sectionInfo, sections = state.taskSections ?? []) {
+  const workspaceId = state.workspace?.id ?? null;
+  if (!workspaceId) return -1;
+  const sourceLabel = String(sectionInfo?.label ?? '').trim();
+  const sectionId = sectionInfo?.id ?? null;
+  const scopeProjectId = normalizeSectionScopeProjectId(
+    sectionInfo?.project_id ?? getActiveTaskSectionScopeProjectId()
+  );
+  let index = sections.findIndex((section) =>
+    section.id === sectionId
+    && section.workspace_id === workspaceId
+    && normalizeSectionScopeProjectId(section.project_id) === scopeProjectId
+  );
+  if (index >= 0) return index;
+  if (!sourceLabel) return -1;
+  index = sections.findIndex((section) =>
+    section.workspace_id === workspaceId
+    && section.label === sourceLabel
+    && normalizeSectionScopeProjectId(section.project_id) === scopeProjectId
+  );
+  return index;
+}
+
+function getTaskSectionCompletedVisibilityOverride(sectionInfo) {
+  const sections = (state.taskSections ?? []).map(normalizeTaskSection);
+  const index = getTaskSectionRecordIndex(sectionInfo, sections);
+  if (index < 0) return null;
+  return normalizeSectionCompletedVisibility(sections[index]?.completed_visibility);
+}
+
+function getTaskSectionCompletedVisibility(sectionInfo) {
+  const override = getTaskSectionCompletedVisibilityOverride(sectionInfo);
+  if (override) return override;
+  return getTaskCompletedVisibility();
+}
+
+function getTaskSectionFutureVisibilityOverrideDays(sectionInfo) {
+  const sections = (state.taskSections ?? []).map(normalizeTaskSection);
+  const index = getTaskSectionRecordIndex(sectionInfo, sections);
+  if (index < 0) return null;
+  return normalizeSectionFutureVisibilityDays(sections[index]?.future_visibility_days);
+}
+
+function getTaskSectionFutureVisibilityDays(sectionInfo) {
+  const override = getTaskSectionFutureVisibilityOverrideDays(sectionInfo);
+  if (override === null) return getTaskFutureVisibilityDays();
+  return override;
+}
+
+function setTaskSectionCompletedVisibilityOverride(sectionInfo, visibility) {
+  const workspaceId = state.workspace?.id ?? null;
+  if (!workspaceId) return;
+  const label = String(sectionInfo?.label ?? '').trim();
+  if (!label) return;
+  const scopeProjectId = normalizeSectionScopeProjectId(
+    sectionInfo?.project_id ?? getActiveTaskSectionScopeProjectId()
+  );
+  const sections = [...(state.taskSections ?? [])].map(normalizeTaskSection);
+  let index = getTaskSectionRecordIndex(sectionInfo, sections);
+  const nextVisibility = normalizeSectionCompletedVisibility(visibility);
+  const timestamp = nowIso();
+
+  if (index < 0) {
+    const maxSort = Math.max(0, ...sections
+      .filter(section =>
+        section.workspace_id === workspaceId
+        && normalizeSectionScopeProjectId(section.project_id) === scopeProjectId
+      )
+      .map(section => section.sort_order ?? 0));
+    sections.push({
+      id: createId(),
+      workspace_id: workspaceId,
+      project_id: scopeProjectId,
+      label,
+      sort_order: maxSort + 10,
+      completed_visibility: nextVisibility,
+      future_visibility_days: null,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    state.taskSections = sections;
+    persistLocalData();
+    return;
+  }
+
+  const existing = sections[index];
+  const currentVisibility = normalizeSectionCompletedVisibility(existing?.completed_visibility);
+  if (currentVisibility === nextVisibility) return;
+  sections[index] = {
+    ...existing,
+    completed_visibility: nextVisibility,
+    updated_at: timestamp
+  };
+  state.taskSections = sections;
+  persistLocalData();
+}
+
+function setTaskSectionFutureVisibilityOverrideDays(sectionInfo, days) {
+  const workspaceId = state.workspace?.id ?? null;
+  if (!workspaceId) return;
+  const label = String(sectionInfo?.label ?? '').trim();
+  if (!label) return;
+  const scopeProjectId = normalizeSectionScopeProjectId(
+    sectionInfo?.project_id ?? getActiveTaskSectionScopeProjectId()
+  );
+  const sections = [...(state.taskSections ?? [])].map(normalizeTaskSection);
+  let index = getTaskSectionRecordIndex(sectionInfo, sections);
+  const nextDays = normalizeSectionFutureVisibilityDays(days);
+  const timestamp = nowIso();
+
+  if (index < 0) {
+    const maxSort = Math.max(0, ...sections
+      .filter(section =>
+        section.workspace_id === workspaceId
+        && normalizeSectionScopeProjectId(section.project_id) === scopeProjectId
+      )
+      .map(section => section.sort_order ?? 0));
+    sections.push({
+      id: createId(),
+      workspace_id: workspaceId,
+      project_id: scopeProjectId,
+      label,
+      sort_order: maxSort + 10,
+      completed_visibility: null,
+      future_visibility_days: nextDays,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    state.taskSections = sections;
+    persistLocalData();
+    return;
+  }
+
+  const existing = sections[index];
+  const currentDays = normalizeSectionFutureVisibilityDays(existing?.future_visibility_days);
+  if (currentDays === nextDays) return;
+  sections[index] = {
+    ...existing,
+    future_visibility_days: nextDays,
+    updated_at: timestamp
+  };
+  state.taskSections = sections;
+  persistLocalData();
+}
+
 function createSectionRecord(label) {
   if (!state.workspace) return null;
   const trimmed = normalizeTitleInput(label);
   if (!trimmed) return null;
   const workspaceId = state.workspace.id;
-  const existing = getSectionsForWorkspace().find(section => section.label === trimmed);
+  const projectId = getActiveTaskSectionScopeProjectId();
+  const existing = getSectionsForWorkspace().find(section =>
+    section.label === trimmed
+    && normalizeSectionScopeProjectId(section.project_id) === projectId
+  );
   if (existing && existing.workspace_id === workspaceId && isPersistedSection(existing)) return existing;
   const now = new Date().toISOString();
   const maxSort = Math.max(0, ...((state.taskSections ?? [])
-    .filter(section => section.workspace_id === workspaceId)
+    .map(normalizeTaskSection)
+    .filter(section =>
+      section.workspace_id === workspaceId
+      && normalizeSectionScopeProjectId(section.project_id) === projectId
+    )
     .map(section => section.sort_order ?? 0)));
   const section = {
     id: createId(),
     workspace_id: workspaceId,
+    project_id: projectId,
     label: trimmed,
     sort_order: maxSort + 10,
+    completed_visibility: null,
+    future_visibility_days: null,
     created_at: now,
     updated_at: now
   };
@@ -3527,6 +4392,127 @@ function getWorkflowInstanceLinkByTaskId(taskId) {
   if (link.dismissed_at === undefined) link.dismissed_at = null;
   if (link.if_applicable === undefined) link.if_applicable = false;
   return link;
+}
+
+function isWorkflowTaskType(taskType) {
+  return String(taskType ?? '').toLowerCase() === TASK_TYPE_WORKFLOW;
+}
+
+function isWorkflowTaskRecord(task, checklistInstanceId = null) {
+  if (!task) return false;
+  if (isWorkflowTaskType(task.task_type)) return true;
+  return Boolean(getChecklistLinkForTask(task.id, checklistInstanceId));
+}
+
+function hasPendingWorkflowTaskTypeUpdate(taskId) {
+  return (state.local?.pendingChanges ?? []).some(change =>
+    change?.entity_type === 'task'
+    && change?.entity_id === taskId
+    && change?.action === 'update'
+    && isWorkflowTaskType(change?.payload?.task_type)
+  );
+}
+
+function normalizeWorkflowTitleKey(title) {
+  return String(title ?? '').trim().toLowerCase();
+}
+
+function collectWorkflowTemplateTitleKeys() {
+  const keys = new Set();
+  (state.workflowPhaseTasks ?? []).forEach((entry) => {
+    if (entry?.item_kind === 'pattern') return;
+    const key = normalizeWorkflowTitleKey(entry?.title);
+    if (key) keys.add(key);
+  });
+  (state.workflowPatternTasks ?? []).forEach((entry) => {
+    if (entry?.item_kind === 'pattern') return;
+    const key = normalizeWorkflowTitleKey(entry?.title);
+    if (key) keys.add(key);
+  });
+  return keys;
+}
+
+function backfillWorkflowTaskTypeMarkers() {
+  const workspaceId = state.workspace?.id ?? null;
+  if (!workspaceId) return;
+  const links = state.workflowInstanceTasks ?? [];
+  const templateTitleKeys = collectWorkflowTemplateTitleKeys();
+  const workspaceTasks = Object.values(state.tasks ?? {})
+    .filter(task => task.workspace_id === workspaceId);
+  const linkedTitleKeys = new Set();
+  const templateTitleCounts = new Map();
+
+  workspaceTasks.forEach((task) => {
+    const key = normalizeWorkflowTitleKey(task.title);
+    if (!key || !templateTitleKeys.has(key)) return;
+    templateTitleCounts.set(key, (templateTitleCounts.get(key) ?? 0) + 1);
+  });
+
+  links.forEach((link) => {
+    const task = state.tasks?.[link.task_id];
+    if (!task) return;
+    const key = normalizeWorkflowTitleKey(task.title);
+    if (key) linkedTitleKeys.add(key);
+  });
+
+  const shouldMarkByTemplateSignature = (task) => {
+    const key = normalizeWorkflowTitleKey(task?.title);
+    if (!key || !templateTitleKeys.has(key)) return false;
+    if (linkedTitleKeys.has(key)) return true;
+    return (templateTitleCounts.get(key) ?? 0) > 1;
+  };
+
+  const workflowTaskIdSet = new Set(links.map(link => link.task_id).filter(Boolean));
+  let changed = false;
+  workspaceTasks.forEach((task) => {
+    if (!task || isWorkflowTaskType(task.task_type)) return;
+    if (!workflowTaskIdSet.has(task.id) && !shouldMarkByTemplateSignature(task)) return;
+    state.tasks[task.id] = normalizeTask({
+      ...task,
+      task_type: TASK_TYPE_WORKFLOW,
+      updated_at: nowIso()
+    });
+    if (!hasPendingWorkflowTaskTypeUpdate(task.id)) {
+      queueLocalChange({
+        entity_type: 'task',
+        entity_id: task.id,
+        action: 'update',
+        payload: { task_type: TASK_TYPE_WORKFLOW }
+      });
+    }
+    changed = true;
+  });
+  if (changed) persistLocalData();
+}
+
+function reconcileWorkflowWorkspaceIds() {
+  const workspaceId = state.workspace?.id ?? null;
+  if (!workspaceId) return;
+  const knownWorkspaceIds = new Set((state.workspaces ?? []).map(item => item.id));
+  const workflows = state.workflows ?? [];
+  const patterns = state.workflowPatterns ?? [];
+  let changed = false;
+
+  workflows.forEach((workflow) => {
+    if (!workflow?.workspace_id) return;
+    if (knownWorkspaceIds.has(workflow.workspace_id)) return;
+    workflow.workspace_id = workspaceId;
+    workflow.updated_at = nowIso();
+    changed = true;
+  });
+
+  patterns.forEach((pattern) => {
+    if (!pattern?.workspace_id) return;
+    if (knownWorkspaceIds.has(pattern.workspace_id)) return;
+    pattern.workspace_id = workspaceId;
+    pattern.updated_at = nowIso();
+    changed = true;
+  });
+
+  if (!changed) return;
+  state.workflows = [...workflows];
+  state.workflowPatterns = [...patterns];
+  persistLocalData();
 }
 
 function getWorkflowInstanceProgress(instanceId) {
@@ -4558,7 +5544,8 @@ async function scaffoldWorkflowInstance(instance, variantId) {
       title,
       description_md: description_md ?? '',
       assignee_user_id: assigneeUserId ?? null,
-      assignee_label: assigneeLabel ?? null
+      assignee_label: assigneeLabel ?? null,
+      task_type: TASK_TYPE_WORKFLOW
     });
     if (!created) return null;
     links.push({
@@ -4690,14 +5677,19 @@ async function scaffoldWorkflowInstance(instance, variantId) {
   }
 }
 
-async function deleteTaskSection(label) {
+async function deleteTaskSection(sectionInfo) {
   if (!state.workspace) return;
   const workspaceId = state.workspace.id;
-  const trimmed = String(label ?? '').trim();
+  const trimmed = String(sectionInfo?.label ?? '').trim();
   if (!trimmed) return;
+  const scopeProjectId = normalizeSectionScopeProjectId(sectionInfo?.project_id);
   const sections = state.taskSections ?? [];
   const updatedSections = sections.filter(section =>
-    !(section.workspace_id === workspaceId && section.label === trimmed)
+    !(
+      section.workspace_id === workspaceId
+      && section.label === trimmed
+      && normalizeSectionScopeProjectId(section.project_id) === scopeProjectId
+    )
   );
   if (updatedSections.length !== sections.length) {
     state.taskSections = updatedSections;
@@ -4706,6 +5698,7 @@ async function deleteTaskSection(label) {
   const tasks = Object.values(state.tasks ?? {});
   for (const task of tasks) {
     if (task.workspace_id !== workspaceId) continue;
+    if (!taskMatchesSectionScope(task, scopeProjectId)) continue;
     const currentLabel = (task.group_label ?? '').trim();
     if (currentLabel !== trimmed) continue;
     await updateTaskRecord(task.id, { group_label: null });
@@ -4772,6 +5765,12 @@ function formatSyncTime(value) {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function updateSyncOfflineNotice(forceOffline = null) {
+  if (!syncOfflineNotice) return;
+  const offline = forceOffline === null ? !navigator.onLine : Boolean(forceOffline);
+  syncOfflineNotice.classList.toggle('hidden', !offline);
+}
+
 function resetSyncBackoff() {
   syncFailureCount = 0;
   syncCooldownUntil = 0;
@@ -4817,8 +5816,10 @@ async function autoRefreshOnChanges() {
   if (syncCooldownUntil && Date.now() < syncCooldownUntil) return;
   syncInFlight = true;
   try {
+    updateSyncOfflineNotice();
     if (syncStatus) syncStatus.textContent = 'Syncing...';
     if (!navigator.onLine) {
+      updateSyncOfflineNotice(true);
       if (syncStatus) syncStatus.textContent = `Offline · queued ${(state.local?.pendingChanges ?? []).length}`;
       return;
     }
@@ -4880,8 +5881,10 @@ async function autoRefreshOnChanges() {
     if (syncStatus) {
       syncStatus.textContent = `Online · synced ${formatSyncTime(syncLastSuccessAt)} · errors ${syncErrorCount}`;
     }
+    updateSyncOfflineNotice(false);
   } catch {
     registerSyncFailure();
+    updateSyncOfflineNotice();
   } finally {
     syncInFlight = false;
   }
@@ -4900,7 +5903,8 @@ function getStatusByKey(key) {
 }
 
 function getStatusLabel(key) {
-  return getStatusByKey(key)?.label ?? key ?? 'Unknown';
+  if (!key) return '';
+  return getStatusByKey(key)?.label ?? key;
 }
 
 function getStatusKind(key) {
@@ -5039,6 +6043,15 @@ function stringToHue(value) {
   return Math.abs(hash) % 360;
 }
 
+function toCssToken(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'default';
+}
+
 const STATUS_COLOR_MAP = {
   [TaskStatus.INBOX]: '#3fa6ff',
   [TaskStatus.PLANNED]: '#38d9a9',
@@ -5050,7 +6063,8 @@ const STATUS_COLOR_MAP = {
 };
 
 function getStatusColor(key) {
-  return STATUS_COLOR_MAP[key] ?? `hsl(${stringToHue(key ?? 'status')}, 60%, 55%)`;
+  if (!key) return '#4b5568';
+  return STATUS_COLOR_MAP[key] ?? `hsl(${stringToHue(key)}, 60%, 55%)`;
 }
 
 const RECURRENCE_UNITS = new Set(['day', 'week', 'month', 'year']);
@@ -5157,6 +6171,10 @@ function getNoticeRecurrenceRule(notice) {
     });
   }
   return null;
+}
+
+function isBirthdayNoticeType(typeKey) {
+  return String(typeKey ?? '').trim().toLowerCase() === NOTICE_TYPE_BIRTHDAY;
 }
 
 function getNoticeRepeatPresetFromRule(rule, notifyAtIso) {
@@ -5269,6 +6287,20 @@ function formatRecurrence(interval, unit) {
   const count = Number(interval);
   if (!count || !unit) return 'No repeat';
   return `Repeats every ${count} ${unit}${count > 1 ? 's' : ''}`;
+}
+
+function formatTaskDueMeta(dueAt) {
+  if (!dueAt) return 'No due';
+  const date = new Date(dueAt);
+  if (Number.isNaN(date.getTime())) return 'No due';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatTaskRepeatMeta(interval, unit) {
+  if (!interval || !unit) return 'No repeat';
+  const count = Number(interval);
+  if (!Number.isFinite(count) || count <= 0) return 'No repeat';
+  return `Every ${count} ${unit}${count > 1 ? 's' : ''}`;
 }
 
 function getRecurrenceState(context) {
@@ -5435,6 +6467,9 @@ function openNoticeModalWithNotice(notice, options = {}) {
   noticeRecurrenceDraft = rule;
   if (noticeRepeatPreset) {
     noticeRepeatPreset.value = getNoticeRepeatPresetFromRule(rule, notice?.notify_at ?? null);
+    if (!rule && isBirthdayNoticeType(notice?.notice_type)) {
+      noticeRepeatPreset.value = 'yearly';
+    }
   }
   renderNoticeTypeSelect(notice?.notice_type ?? 'general');
   if (notice) {
@@ -5752,6 +6787,7 @@ function persistLocalData() {
     workflowPatternTasks: state.workflowPatternTasks ?? [],
     workflowInstances: state.workflowInstances ?? [],
     workflowInstanceTasks: state.workflowInstanceTasks ?? [],
+    scheduleEvents: state.scheduleEvents ?? [],
     notices: state.notices ?? [],
     noticeTypes: state.noticeTypes ?? [],
     storeRules: state.storeRules ?? [],
@@ -5788,8 +6824,18 @@ function normalizePendingTaskCreatePayload(change) {
   const normalizedTitle = normalizeTitleInput(payload.title);
   const fallbackTitle = normalizeTitleInput(localTask?.title ?? '') || 'Untitled task';
   payload.title = normalizedTitle || fallbackTitle;
-  payload.status = payload.status ?? localTask?.status ?? getDefaultStatusKey();
+  payload.status = normalizeTaskStatusValue(payload.status ?? localTask?.status ?? '');
   payload.priority = payload.priority ?? localTask?.priority ?? 'medium';
+  payload.assignee_user_id =
+    payload.assignee_user_id
+    ?? localTask?.assignee_user_id
+    ?? getDefaultTaskAssigneeUserId(payload.workspace_id);
+  payload.assignee_label = payload.assignee_label ?? localTask?.assignee_label ?? null;
+  if (payload.assignee_user_id) {
+    payload.assignee_label = null;
+  } else if (!payload.assignee_label) {
+    payload.assignee_user_id = null;
+  }
 
   // Keep local and pending copies aligned so replay does not repeatedly fail.
   if (change) {
@@ -5800,6 +6846,8 @@ function normalizePendingTaskCreatePayload(change) {
     localTask.workspace_id = payload.workspace_id;
     localTask.status = payload.status;
     localTask.priority = payload.priority;
+    localTask.assignee_user_id = payload.assignee_user_id ?? null;
+    localTask.assignee_label = payload.assignee_label ?? null;
     localTask.updated_at = nowIso();
   }
   return payload;
@@ -5827,6 +6875,7 @@ function snapshotLocalData() {
     workflowPatternTasks: state.workflowPatternTasks ?? [],
     workflowInstances: state.workflowInstances ?? [],
     workflowInstanceTasks: state.workflowInstanceTasks ?? [],
+    scheduleEvents: state.scheduleEvents ?? [],
     notices: state.notices ?? [],
     noticeTypes: state.noticeTypes ?? [],
     storeRules: state.storeRules ?? [],
@@ -5843,7 +6892,7 @@ function applyLocalDataSnapshot(data) {
   state.taskTypes = data.taskTypes ?? [];
   state.users = data.users ?? [];
   state.workspaceMemberships = data.workspaceMemberships ?? [];
-  state.taskSections = data.taskSections ?? [];
+  state.taskSections = (data.taskSections ?? []).map(normalizeTaskSection);
   state.tasks = data.tasks ?? {};
   state.taskDependencies = data.taskDependencies ?? [];
   state.templates = data.templates ?? [];
@@ -5856,6 +6905,7 @@ function applyLocalDataSnapshot(data) {
   state.workflowPatternTasks = data.workflowPatternTasks ?? data.workflowFragmentTasks ?? [];
   state.workflowInstances = data.workflowInstances ?? [];
   state.workflowInstanceTasks = data.workflowInstanceTasks ?? [];
+  state.scheduleEvents = (data.scheduleEvents ?? []).map(normalizeScheduleEvent);
   state.notices = data.notices ?? [];
   state.noticeTypes = data.noticeTypes ?? [];
   state.storeRules = data.storeRules ?? [];
@@ -5884,7 +6934,7 @@ async function pushPendingChanges() {
             id: payload.id ?? change.entity_id ?? createId(),
             workspace_id: payload.workspace_id ?? state.workspace?.id ?? null,
             title: normalizeTitleInput(payload.title) || 'Untitled task',
-            status: getDefaultStatusKey(),
+            status: normalizeTaskStatusValue(payload.status),
             priority: 'medium'
           };
           if (!minimalPayload.workspace_id) throw err;
@@ -6126,6 +7176,8 @@ async function loadWorkspaceData() {
       // offline: keep local data
     }
   }
+  reconcileWorkflowWorkspaceIds();
+  backfillWorkflowTaskTypeMarkers();
   ensureLocalWorkspaceDefaults(state.workspace);
   const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
   const preferredListId = state.ui?.activeShoppingListId;
@@ -6176,6 +7228,16 @@ function normalizeProject(project) {
   return { ...project, archived: Boolean(project.archived) };
 }
 
+function normalizeTaskSection(section) {
+  if (!section || typeof section !== 'object') return section;
+  return {
+    ...section,
+    project_id: section.project_id || null,
+    completed_visibility: normalizeSectionCompletedVisibility(section.completed_visibility),
+    future_visibility_days: normalizeSectionFutureVisibilityDays(section.future_visibility_days)
+  };
+}
+
 function normalizeTemplate(template) {
   return { ...template, archived: Boolean(template.archived) };
 }
@@ -6198,6 +7260,7 @@ function normalizeTaskType(type) {
 function normalizeUser(user) {
   return {
     ...user,
+    org_role: normalizeOrgRole(user.org_role),
     archived: Number(user.archived) ? 1 : 0
   };
 }
@@ -6261,11 +7324,42 @@ function normalizeShoppingItem(item) {
   return { ...item, is_checked: Number(item.is_checked) ? 1 : 0 };
 }
 
+function normalizeScheduleEventKind(kind) {
+  const key = String(kind ?? '').trim().toLowerCase();
+  if (key === 'time-block') return 'time-block';
+  if (key === 'day-off') return 'day-off';
+  return 'event';
+}
+
+function normalizeScheduleEvent(event) {
+  return {
+    ...event,
+    kind: normalizeScheduleEventKind(event?.kind),
+    title: normalizeTitleInput(event?.title ?? '') || 'Untitled event',
+    start_at: event?.start_at ?? null,
+    end_at: event?.end_at ?? null,
+    all_day: Number(event?.all_day) ? 1 : 0,
+    notes: String(event?.notes ?? ''),
+    archived: Number(event?.archived) ? 1 : 0
+  };
+}
+
+function getScheduleEventsForWorkspace() {
+  if (!state.workspace) return [];
+  return (state.scheduleEvents ?? [])
+    .map(normalizeScheduleEvent)
+    .filter((event) => event.workspace_id === state.workspace.id && !event.archived)
+    .sort((a, b) => String(a.start_at ?? '').localeCompare(String(b.start_at ?? '')));
+}
+
 function normalizeTask(task) {
   return {
     ...task,
+    status: normalizeTaskStatusValue(task?.status),
+    tags: normalizeTagList(task?.tags ?? []),
     auto_debit: Number(task.auto_debit) ? 1 : 0,
     template_prompt_pending: Number(task.template_prompt_pending) ? 1 : 0,
+    task_type: task.task_type ?? 'task',
     group_label: task.group_label ?? null,
     assignee_user_id: task.assignee_user_id ?? null,
     assignee_label: task.assignee_label ?? null
@@ -6418,7 +7512,7 @@ function removeShoppingItemsForList(listId) {
 async function createTaskRecord(payload) {
   if (!state.workspace) return null;
   const parentId = payload.parent_id ?? null;
-  const statusKey = parentId ? null : (payload.status ?? getDefaultStatusKey());
+  const statusKey = parentId ? null : normalizeTaskStatusValue(payload.status);
   const sortOrder = payload.sort_order === undefined || payload.sort_order === null
     ? getNextTaskSortOrder(parentId, statusKey)
     : payload.sort_order;
@@ -6426,13 +7520,20 @@ async function createTaskRecord(payload) {
   const normalizedType = payload.type_label ? normalizeTitleInput(payload.type_label) : payload.type_label;
   const normalizedGroup = payload.group_label ? normalizeTitleInput(payload.group_label) : payload.group_label;
   const normalizedAssigneeLabel = payload.assignee_label ? normalizeTitleInput(payload.assignee_label) : null;
+  const normalizedTags = normalizeTagList(payload.tags ?? []);
+  const explicitAssigneeUserId = payload.assignee_user_id ?? null;
+  const explicitAssigneeLabel = normalizedAssigneeLabel;
+  const defaultAssigneeUserId = (!explicitAssigneeUserId && !explicitAssigneeLabel)
+    ? getDefaultTaskAssigneeUserId(state.workspace.id)
+    : null;
   const taskPayload = {
     ...payload,
     title: normalizedTitle || 'Untitled task',
     type_label: normalizedType ?? null,
     group_label: normalizedGroup ?? null,
-    assignee_user_id: payload.assignee_user_id ?? null,
-    assignee_label: normalizedAssigneeLabel,
+    tags: normalizedTags,
+    assignee_user_id: explicitAssigneeUserId ?? defaultAssigneeUserId ?? null,
+    assignee_label: explicitAssigneeLabel,
     sort_order: sortOrder,
     workspace_id: state.workspace.id
   };
@@ -6459,7 +7560,7 @@ async function createTaskRecord(payload) {
     }
   }
   const now = new Date().toISOString();
-  const status = taskPayload.status ?? getDefaultStatusKey();
+  const status = normalizeTaskStatusValue(taskPayload.status);
   let localTask = normalizeTask({
     id: createId(),
     workspace_id: state.workspace.id,
@@ -6487,6 +7588,7 @@ async function createTaskRecord(payload) {
     template_prompt_pending: taskPayload.template_prompt_pending ? 1 : 0,
     assignee_user_id: taskPayload.assignee_user_id ?? null,
     assignee_label: taskPayload.assignee_label ?? null,
+    tags: normalizedTags,
     start_at: taskPayload.start_at ?? null,
     due_at: taskPayload.due_at ?? null,
     completed_at: null,
@@ -6516,6 +7618,9 @@ async function createTaskRecord(payload) {
 }
 
 async function updateTaskRecord(id, patch) {
+  if (Object.prototype.hasOwnProperty.call(patch ?? {}, 'status')) {
+    patch = { ...patch, status: normalizeTaskStatusValue(patch.status) };
+  }
   if (patch.title !== undefined) {
     patch = { ...patch, title: normalizeTitleInput(patch.title) };
   }
@@ -6530,6 +7635,9 @@ async function updateTaskRecord(id, patch) {
   }
   if (patch.assignee_label !== undefined) {
     patch = { ...patch, assignee_label: patch.assignee_label ? normalizeTitleInput(patch.assignee_label) : null };
+  }
+  if (patch.tags !== undefined) {
+    patch = { ...patch, tags: normalizeTagList(patch.tags) };
   }
   const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
   if (canUseRemote) {
@@ -6553,7 +7661,7 @@ async function updateTaskRecord(id, patch) {
   const existing = state.tasks[id];
   if (!existing) return null;
   let next = { ...existing, ...patch, updated_at: new Date().toISOString() };
-  if (patch.status) {
+  if (Object.prototype.hasOwnProperty.call(patch, 'status')) {
     const statusKind = getStatusKind(patch.status);
     if (statusKind === TaskStatus.WAITING) {
       if (patch.next_checkin_at) {
@@ -7125,6 +8233,71 @@ async function createNoticeRecord(payload) {
   return created;
 }
 
+function createScheduleEventRecord(payload) {
+  if (!state.workspace) return null;
+  const now = nowIso();
+  const event = normalizeScheduleEvent({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    title: payload?.title,
+    kind: payload?.kind,
+    start_at: payload?.start_at,
+    end_at: payload?.end_at ?? null,
+    all_day: payload?.all_day ? 1 : 0,
+    notes: payload?.notes ?? '',
+    archived: 0,
+    created_at: now,
+    updated_at: now
+  });
+  state.scheduleEvents = [...(state.scheduleEvents ?? []), event];
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_event_created',
+    entity_type: 'schedule_event',
+    entity_id: event.id
+  });
+  return event;
+}
+
+function updateScheduleEventRecord(id, patch = {}) {
+  const events = state.scheduleEvents ?? [];
+  const index = events.findIndex(event => event.id === id);
+  if (index < 0) return null;
+  const current = normalizeScheduleEvent(events[index]);
+  const next = normalizeScheduleEvent({
+    ...current,
+    ...patch,
+    id: current.id,
+    workspace_id: current.workspace_id,
+    created_at: current.created_at ?? nowIso(),
+    updated_at: nowIso()
+  });
+  events[index] = next;
+  state.scheduleEvents = [...events];
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_event_updated',
+    entity_type: 'schedule_event',
+    entity_id: id,
+    data: { fields: Object.keys(patch ?? {}) }
+  });
+  return next;
+}
+
+function deleteScheduleEventRecord(id) {
+  const events = state.scheduleEvents ?? [];
+  const existing = events.find(event => event.id === id);
+  if (!existing) return { deleted: 0 };
+  state.scheduleEvents = events.filter(event => event.id !== id);
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_event_deleted',
+    entity_type: 'schedule_event',
+    entity_id: id
+  });
+  return { deleted: 1 };
+}
+
 async function createNoticeTypeRecord(payload) {
   if (!state.workspace) return null;
   const label = payload?.label !== undefined ? normalizeTitleInput(payload.label) : payload?.label;
@@ -7583,16 +8756,18 @@ function buildTaskEditorPatch(task) {
   if (!task) return { patch: null, parentChanged: false };
   const titleInput = editorTitle?.value.trim() ?? '';
   const title = titleInput || task.title;
-  const nextStatus = editorStatus?.value ?? task.status ?? getDefaultStatusKey();
+  const nextStatus = normalizeTaskStatusValue(editorStatus?.value ?? task.status ?? '');
   const nextParentId = editorParent?.value || null;
   const description = getNotesContent();
   const typeLabel = editorType?.value ? editorType.value.trim() : null;
+  const tags = normalizeTagList(editorTags?.value ?? '');
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
   const reminderValue = parseInt(editorReminder?.value ?? '', 10);
   const reminder = Number.isFinite(reminderValue) ? reminderValue : null;
   const startAt = editorStart ? fromDatetimeLocal(editorStart.value) : null;
   const dueAt = fromDatetimeLocal(editorDue?.value ?? '');
-  const projectId = editorProject?.value || null;
+  const canEditProject = Boolean(editorProject);
+  const projectId = canEditProject ? (editorProject?.value || null) : (task.project_id ?? null);
   const priority = editorPriority?.value ?? task.priority ?? 'medium';
   const assigneeSelection = editorAssignee?.value ?? ASSIGNEE_SELECT_NONE;
   const assigneeLabelInput = editorAssigneeLabel?.value?.trim() ?? '';
@@ -7605,8 +8780,9 @@ function buildTaskEditorPatch(task) {
   if (title && title !== task.title) patch.title = title;
   if (description !== (task.description_md ?? '')) patch.description_md = description;
   if ((typeLabel ?? null) !== (task.type_label ?? null)) patch.type_label = typeLabel;
+  if (!areTagListsEqual(tags, task.tags ?? [])) patch.tags = tags;
   if (priority !== (task.priority ?? 'medium')) patch.priority = priority;
-  if ((projectId ?? null) !== (task.project_id ?? null)) patch.project_id = projectId;
+  if (canEditProject && (projectId ?? null) !== (task.project_id ?? null)) patch.project_id = projectId;
   if ((nextAssigneeUserId ?? null) !== (task.assignee_user_id ?? null)) {
     patch.assignee_user_id = nextAssigneeUserId;
   }
@@ -7623,9 +8799,9 @@ function buildTaskEditorPatch(task) {
   if ((reminder ?? null) !== (task.reminder_offset_days ?? null)) patch.reminder_offset_days = reminder;
   if (editorStart && (startAt ?? null) !== (task.start_at ?? null)) patch.start_at = startAt;
   if ((dueAt ?? null) !== (task.due_at ?? null)) patch.due_at = dueAt;
-  if (nextStatus !== (task.status ?? getDefaultStatusKey())) patch.status = nextStatus;
+  if (nextStatus !== normalizeTaskStatusValue(task.status)) patch.status = nextStatus;
 
-  const wasWaiting = isWaitingStatusKey(task.status ?? getDefaultStatusKey());
+  const wasWaiting = isWaitingStatusKey(normalizeTaskStatusValue(task.status));
   if (isWaitingStatusKey(nextStatus)) {
     const followupAt = fromDatetimeLocal(editorFollowup?.value ?? '');
     patch.waiting_followup_at = followupAt;
@@ -7642,7 +8818,7 @@ function buildTaskEditorPatch(task) {
     }
   }
 
-  if (patch.status) {
+  if (Object.prototype.hasOwnProperty.call(patch, 'status')) {
     if (isDoneStatusKey(nextStatus)) {
       patch.completed_at = task.completed_at ?? nowIso();
     } else {
@@ -7754,18 +8930,18 @@ function isTaskSelected(taskId) {
 }
 
 function renderBulkSelectionBar() {
-  if (!taskBulkBar || !taskBulkCount) return;
   const selected = getSelectedTaskIds();
-  const hasHistory = getBulkUndoStack().length > 0;
-  if (!selected.length && !hasHistory) {
+  taskTreeEl?.classList.toggle('task-selection-active', selected.length > 0);
+  if (!taskBulkBar || !taskBulkCount) return;
+  if (!selected.length) {
     taskBulkBar.classList.add('hidden');
     return;
   }
-  taskBulkCount.textContent = selected.length ? `${selected.length} selected` : 'No selection';
+  taskBulkCount.textContent = `${selected.length} selected`;
   taskBulkBar.classList.remove('hidden');
-  if (taskBulkEditBtn) taskBulkEditBtn.disabled = !selected.length;
-  if (taskBulkDeleteBtn) taskBulkDeleteBtn.disabled = !selected.length;
-  if (taskBulkClearBtn) taskBulkClearBtn.disabled = !selected.length;
+  if (taskBulkEditBtn) taskBulkEditBtn.disabled = false;
+  if (taskBulkDeleteBtn) taskBulkDeleteBtn.disabled = false;
+  if (taskBulkClearBtn) taskBulkClearBtn.disabled = false;
   renderBulkUndoMenu();
 }
 
@@ -8225,7 +9401,7 @@ function beginTaskDrag(event, task, itemEl = event.currentTarget) {
   const descendantIds = new Set(getDescendants(task.id).map(child => child.id));
   draggingTaskOrigin = {
     parentId: task.parent_id ?? null,
-    status: task.status ?? getDefaultStatusKey(),
+    status: normalizeTaskStatusValue(task.status),
     descendants: descendantIds
   };
   suppressTaskClick = true;
@@ -8336,17 +9512,8 @@ function getTaskElementsByIds(taskIds) {
     .filter(Boolean);
 }
 
-function attachQuickAddClick(addInput, createFn) {
-  addInput.addEventListener('mousedown', async (event) => {
-    if (event.button !== 0) return;
-    if (addInput.value.trim()) return;
-    event.preventDefault();
-    const created = await createFn();
-    if (created?.id) {
-      requestInlineTaskEdit(created.id);
-      render();
-    }
-  });
+function attachQuickAddClick(addInput) {
+  suppressQuickAddPointerEvents(addInput);
 }
 
 async function persistTaskOrder(container, parentId, statusKey, groupMeta) {
@@ -8709,8 +9876,13 @@ function endSectionDrag() {
 function persistSectionOrder(listEl) {
   const workspaceId = state.workspace?.id;
   if (!workspaceId) return;
+  const projectId = getActiveTaskSectionScopeProjectId();
   const sections = (state.taskSections ?? [])
-    .filter(section => section.workspace_id === workspaceId);
+    .map(normalizeTaskSection)
+    .filter(section =>
+      section.workspace_id === workspaceId
+      && normalizeSectionScopeProjectId(section.project_id) === projectId
+    );
   if (!sections.length) return;
   const byId = new Map(sections.map(section => [section.id, section]));
   const orderedIds = Array.from(listEl.querySelectorAll('.task-group-section'))
@@ -9382,6 +10554,7 @@ function render() {
   renderWorkspaceList();
   renderAccountMenu();
   renderProfilePage();
+  renderAdminPage();
   renderProjectList();
   renderProjectsPage();
   renderWorkflowList();
@@ -9441,7 +10614,10 @@ function render() {
     renderAiSuggestionsMenu(tasks);
   }
   renderShoppingPanel();
+  renderSchedulingPage();
+  renderSchedulingSidebar();
   renderView();
+  renderModuleNavigation();
   renderMobileNavigation();
   if (taskColumnsModal && !taskColumnsModal.classList.contains('hidden')) {
     renderTaskColumnsModal();
@@ -9450,6 +10626,10 @@ function render() {
     renderNoticeTypeSelect(noticeType?.value ?? '');
   }
   renderNotificationStatus();
+  renderTaskUiSettings();
+  renderSchedulingUiSettings();
+  renderSettingsTabs();
+  renderGlobalSearch();
   if ((settingsModal && !settingsModal.classList.contains('hidden')) || getActiveView() === 'audit-log') {
     renderAuditLogOutput();
   }
@@ -9473,6 +10653,7 @@ function render() {
 function renderView() {
   const view = getActiveView();
   const showTasks = view === 'tasks';
+  const showScheduling = view === 'scheduling';
   const showProjects = view === 'projects';
   const showShopping = view === 'shopping';
   const showNotices = view === 'notices';
@@ -9486,6 +10667,7 @@ function renderView() {
   const showArchivedWorkspaces = view === 'workspaces-archived';
 
   tasksPanel?.classList.toggle('hidden', !showTasks);
+  schedulingPage?.classList.toggle('hidden', !showScheduling);
   projectsPage?.classList.toggle('hidden', !showProjects);
   shoppingPage?.classList.toggle('hidden', !showShopping);
   noticesPage?.classList.toggle('hidden', !showNotices);
@@ -9518,6 +10700,20 @@ function getUsersForCurrentWorkspace() {
   return (state.users ?? [])
     .filter(user => user.org_id === state.workspace.org_id && userIds.has(user.id) && !user.archived)
     .sort((a, b) => String(a.display_name ?? '').localeCompare(String(b.display_name ?? '')));
+}
+
+function getDefaultTaskAssigneeUserId(workspaceId = null) {
+  if (!isAuthenticatedActor()) return null;
+  const actorUserId = getAuthState().user?.id ?? null;
+  if (!actorUserId) return null;
+  const targetWorkspaceId = workspaceId ?? state.workspace?.id ?? null;
+  if (!targetWorkspaceId) return null;
+  const isActiveMember = (state.workspaceMemberships ?? []).some((membership) =>
+    membership.workspace_id === targetWorkspaceId
+    && membership.user_id === actorUserId
+    && !membership.archived
+  );
+  return isActiveMember ? actorUserId : null;
 }
 
 function getUserDisplayName(userId) {
@@ -9721,8 +10917,325 @@ function getProjectIdFromTaskFilter(activeFilter = getActiveTaskFilter()) {
   return activeFilter;
 }
 
+function normalizeGlobalSearchScope(value) {
+  if (value === 'projects' || value === 'people' || value === 'workflows') return value;
+  return 'tasks';
+}
+
+function getGlobalSearchState() {
+  state.ui = state.ui ?? {};
+  state.ui.globalSearch = state.ui.globalSearch ?? {};
+  if (typeof state.ui.globalSearch.query !== 'string') {
+    state.ui.globalSearch.query = '';
+  }
+  state.ui.globalSearch.scope = normalizeGlobalSearchScope(state.ui.globalSearch.scope);
+  state.ui.globalSearch.expandTasks = Boolean(state.ui.globalSearch.expandTasks);
+  return state.ui.globalSearch;
+}
+
+function getGlobalSearchQuery() {
+  return getGlobalSearchState().query.trim();
+}
+
+function setGlobalSearchQuery(value) {
+  const search = getGlobalSearchState();
+  const next = String(value ?? '');
+  if (search.query === next) return;
+  search.query = next;
+  search.expandTasks = false;
+}
+
+function getGlobalSearchScope() {
+  return getGlobalSearchState().scope;
+}
+
+function setGlobalSearchScope(value) {
+  getGlobalSearchState().scope = normalizeGlobalSearchScope(value);
+}
+
+function getGlobalSearchExpandTasks() {
+  return Boolean(getGlobalSearchState().expandTasks);
+}
+
+function setGlobalSearchExpandTasks(value) {
+  getGlobalSearchState().expandTasks = Boolean(value);
+}
+
+function openGlobalSearchMenu() {
+  if (!globalSearchMenu) return;
+  if (openMenu && openMenu !== globalSearchMenu) {
+    openMenu.classList.add('hidden');
+  }
+  globalSearchMenu.classList.remove('hidden');
+  openMenu = globalSearchMenu;
+}
+
+function closeGlobalSearchMenu() {
+  if (!globalSearchMenu) return;
+  globalSearchMenu.classList.add('hidden');
+  if (openMenu === globalSearchMenu) {
+    openMenu = null;
+  }
+}
+
+function getTextMatchScore(text, needle) {
+  const value = String(text ?? '').toLowerCase();
+  if (!value || !needle) return Number.MAX_SAFE_INTEGER;
+  if (value.startsWith(needle)) return 0;
+  if (value.includes(` ${needle}`)) return 1;
+  if (value.includes(needle)) return 2;
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function getGlobalSearchResults(query = getGlobalSearchQuery()) {
+  const needle = String(query ?? '').trim().toLowerCase();
+  if (!needle || !state.workspace) {
+    return { tasks: [], projects: [], people: [], workflows: [] };
+  }
+  const workspaceId = state.workspace.id;
+  const projectsById = new Map(getProjectsForWorkspace().map(project => [project.id, project]));
+  const searchableTasks = Object.values(state.tasks ?? [])
+    .filter(task => task.workspace_id === workspaceId && !isWorkflowTaskRecord(task, null))
+    .map((task) => {
+      const projectName = task.project_id ? (projectsById.get(task.project_id)?.name ?? '') : '';
+      const searchText = [
+        task.title ?? '',
+        task.description_md ?? '',
+        normalizeTagList(task.tags).join(' '),
+        projectName
+      ].join(' ').toLowerCase();
+      if (!searchText.includes(needle)) return null;
+      const score = Math.min(
+        getTextMatchScore(task.title, needle),
+        getTextMatchScore(searchText, needle) + 1
+      );
+      return {
+        kind: 'task',
+        id: task.id,
+        title: task.title ?? 'Untitled task',
+        meta: projectName || getStatusLabel(normalizeTaskStatusValue(task.status)) || 'Task',
+        score,
+        updatedAt: new Date(task.updated_at ?? 0).getTime() || 0
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.score - b.score || b.updatedAt - a.updatedAt || a.title.localeCompare(b.title));
+
+  const searchableProjects = getProjectsForWorkspace()
+    .map((project) => {
+      const text = `${project.name ?? ''}`.toLowerCase();
+      if (!text.includes(needle)) return null;
+      return {
+        kind: 'project',
+        id: project.id,
+        title: project.name ?? 'Untitled project',
+        meta: 'Project',
+        score: getTextMatchScore(project.name, needle)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.score - b.score || a.title.localeCompare(b.title));
+
+  const searchablePeople = getUsersForCurrentWorkspace()
+    .map((user) => {
+      const text = `${user.display_name ?? ''} ${user.email ?? ''}`.toLowerCase();
+      if (!text.includes(needle)) return null;
+      return {
+        kind: 'person',
+        id: user.id,
+        title: user.display_name ?? user.email ?? 'Unknown user',
+        meta: user.email ?? 'User',
+        score: Math.min(
+          getTextMatchScore(user.display_name, needle),
+          getTextMatchScore(user.email, needle) + 1
+        )
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.score - b.score || a.title.localeCompare(b.title));
+
+  const searchableWorkflows = getWorkflowsForWorkspace()
+    .map((workflow) => {
+      const text = `${workflow.name ?? ''} ${workflow.description ?? ''}`.toLowerCase();
+      if (!text.includes(needle)) return null;
+      return {
+        kind: 'workflow',
+        id: workflow.id,
+        title: workflow.name ?? 'Untitled workflow',
+        meta: 'Workflow',
+        score: Math.min(
+          getTextMatchScore(workflow.name, needle),
+          getTextMatchScore(workflow.description, needle) + 1
+        )
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.score - b.score || a.title.localeCompare(b.title));
+
+  return {
+    tasks: searchableTasks,
+    projects: searchableProjects,
+    people: searchablePeople,
+    workflows: searchableWorkflows
+  };
+}
+
+function handleGlobalSearchResultSelect(kind, id) {
+  if (!id) return;
+  if (kind === 'task') {
+    const task = state.tasks?.[id];
+    if (!task) return;
+    setActiveView('tasks');
+    clearActiveWorkflowChecklistInstanceId();
+    if (task.project_id) {
+      setActiveTaskFilter(task.project_id);
+    } else {
+      setActiveTaskFilter('all');
+    }
+    scheduleTaskSearchRefresh(true);
+    render();
+    openTaskEditor(id);
+    return;
+  }
+  if (kind === 'project') {
+    setActiveTaskFilter(id);
+    clearActiveWorkflowChecklistInstanceId();
+    setActiveView('tasks');
+    scheduleTaskSearchRefresh(true);
+    render();
+    return;
+  }
+  if (kind === 'person') {
+    openProfile();
+    return;
+  }
+  if (kind === 'workflow') {
+    setActiveWorkflowId(id);
+    setWorkflowViewMode('runs');
+    setActiveView('workflows');
+    render();
+  }
+}
+
+function getGlobalSearchPrimaryResult(results, scope) {
+  const orderedScopes = [scope, ...['tasks', 'projects', 'people', 'workflows'].filter(item => item !== scope)];
+  for (const key of orderedScopes) {
+    const row = (results[key] ?? [])[0];
+    if (row) return row;
+  }
+  return null;
+}
+
+function renderGlobalSearch() {
+  if (!globalSearchInput || !globalSearchMenu) return;
+  const query = getGlobalSearchQuery();
+  if (document.activeElement !== globalSearchInput) {
+    globalSearchInput.value = query;
+  }
+  if (!query) {
+    globalSearchMenu.innerHTML = '';
+    closeGlobalSearchMenu();
+    return;
+  }
+
+  const results = getGlobalSearchResults(query);
+  const total = Object.values(results).reduce((sum, rows) => sum + rows.length, 0);
+  const scope = getGlobalSearchScope();
+  const tasksExpanded = getGlobalSearchExpandTasks();
+  const orderedScopes = [scope, ...['tasks', 'projects', 'people', 'workflows'].filter(item => item !== scope)];
+  const scopeLabels = {
+    tasks: 'Tasks',
+    projects: 'Projects',
+    people: 'People',
+    workflows: 'Workflows'
+  };
+
+  globalSearchMenu.innerHTML = '';
+
+  const scopesRow = document.createElement('div');
+  scopesRow.className = 'global-search-scopes';
+  Object.entries(scopeLabels).forEach(([key, label]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `global-search-scope-chip${scope === key ? ' is-active' : ''}`;
+    button.dataset.scope = key;
+    button.textContent = label;
+    scopesRow.appendChild(button);
+  });
+  globalSearchMenu.appendChild(scopesRow);
+
+  const resultsWrap = document.createElement('div');
+  resultsWrap.className = 'global-search-results';
+
+  if (!total) {
+    const empty = document.createElement('div');
+    empty.className = 'global-search-empty';
+    empty.textContent = 'No results found.';
+    resultsWrap.appendChild(empty);
+  } else {
+    orderedScopes.forEach((key) => {
+      const rows = results[key] ?? [];
+      if (!rows.length) return;
+      const section = document.createElement('div');
+      section.className = 'global-search-section';
+      const title = document.createElement('div');
+      title.className = 'global-search-section-title';
+      title.textContent = scopeLabels[key];
+      section.appendChild(title);
+      const limit = key === 'tasks' ? (tasksExpanded ? 15 : 5) : 4;
+      rows.slice(0, limit).forEach((row) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'global-search-result';
+        button.dataset.kind = row.kind;
+        button.dataset.id = row.id;
+
+        const resultTitle = document.createElement('span');
+        resultTitle.className = 'global-search-result-title';
+        resultTitle.textContent = row.title;
+
+        const resultMeta = document.createElement('span');
+        resultMeta.className = 'global-search-result-meta';
+        resultMeta.textContent = row.meta;
+
+        button.appendChild(resultTitle);
+        button.appendChild(resultMeta);
+        section.appendChild(button);
+      });
+
+      if (key === 'tasks' && rows.length > 5) {
+        const toggleButton = document.createElement('button');
+        toggleButton.type = 'button';
+        toggleButton.className = 'global-search-toggle-more';
+        toggleButton.dataset.action = 'toggle-task-results';
+        toggleButton.textContent = tasksExpanded ? 'Show less' : 'Show more tasks';
+        section.appendChild(toggleButton);
+      }
+      resultsWrap.appendChild(section);
+    });
+  }
+
+  globalSearchMenu.appendChild(resultsWrap);
+
+  const footer = document.createElement('div');
+  footer.className = 'global-search-footer';
+  const footerButton = document.createElement('button');
+  footerButton.type = 'button';
+  footerButton.className = 'global-search-footer-button';
+  footerButton.dataset.action = 'view-all-results';
+  footerButton.textContent = 'View all results';
+  footer.appendChild(footerButton);
+  globalSearchMenu.appendChild(footer);
+
+  openGlobalSearchMenu();
+}
+
 function getTaskSearchText() {
   return String(state.ui?.taskSearchText ?? '').trim();
+}
+
+function getTaskTagFilter() {
+  return String(state.ui?.taskTagFilter ?? '').trim();
 }
 
 function getTaskSearchStatusFilter() {
@@ -9738,8 +11251,14 @@ function taskMatchesSearchText(task, query) {
   return haystack.includes(needle);
 }
 
-function getTaskSearchResultKey(workspaceId, text, status) {
-  return `${workspaceId ?? ''}|${String(text ?? '').trim().toLowerCase()}|${status ?? ''}`;
+function taskMatchesTag(task, query) {
+  const needle = String(query ?? '').trim().toLowerCase();
+  if (!needle) return true;
+  return normalizeTagList(task?.tags ?? []).some(tag => tag.toLowerCase().includes(needle));
+}
+
+function getTaskSearchResultKey(workspaceId, text, status, tag) {
+  return `${workspaceId ?? ''}|${String(text ?? '').trim().toLowerCase()}|${status ?? ''}|${String(tag ?? '').trim().toLowerCase()}`;
 }
 
 function clearTaskSearchResult() {
@@ -9751,9 +11270,10 @@ function clearTaskSearchResult() {
 async function refreshTaskSearchResults() {
   const workspaceId = state.workspace?.id ?? null;
   const text = getTaskSearchText();
+  const tag = getTaskTagFilter();
   const status = getTaskSearchStatusFilter();
-  const queryKey = getTaskSearchResultKey(workspaceId, text, status);
-  if (!workspaceId || !text) {
+  const queryKey = getTaskSearchResultKey(workspaceId, text, status, tag);
+  if (!workspaceId || (!text && !tag)) {
     clearTaskSearchResult();
     return;
   }
@@ -9770,7 +11290,8 @@ async function refreshTaskSearchResults() {
     const rows = await api.searchTasks({
       workspaceId,
       text,
-      status
+      status,
+      tag
     });
     if (requestSeq !== taskSearchRequestSeq) return;
     const ids = new Set((rows ?? []).map(item => item.id).filter(Boolean));
@@ -9829,20 +11350,28 @@ function getFilteredTasks() {
       });
     }
   }
-  const nonWorkflowTasks = tasks.filter(task => !getChecklistLinkForTask(task.id, null));
+  const nonWorkflowTasks = tasks.filter(task => !isWorkflowTaskRecord(task, null));
   const filter = getActiveTaskFilter();
   let filtered = nonWorkflowTasks;
   if (filter === TASK_FILTER_UNASSIGNED) {
     filtered = filtered.filter(task => !task.project_id);
   } else if (filter === TASK_FILTER_INBOX) {
-    filtered = filtered.filter(task => isInboxStatusKey(task.status ?? getDefaultStatusKey()));
+    filtered = filtered.filter(task => !task.project_id && isInboxStatusKey(normalizeTaskStatusValue(task.status)));
   } else if (filter) {
     filtered = filtered.filter(task => task.project_id === filter);
+  } else {
+    // "My Tasks" view excludes project-scoped tasks.
+    filtered = filtered.filter(task => !task.project_id);
+  }
+
+  const tagFilter = getTaskTagFilter();
+  if (tagFilter) {
+    filtered = filtered.filter(task => taskMatchesTag(task, tagFilter));
   }
 
   const query = getTaskSearchText();
-  if (!query) return filtered;
-  const queryKey = getTaskSearchResultKey(state.workspace.id, query, getTaskSearchStatusFilter());
+  if (!query && !tagFilter) return filtered;
+  const queryKey = getTaskSearchResultKey(state.workspace.id, query, getTaskSearchStatusFilter(), tagFilter);
   if (
     navigator.onLine
     && !hasPendingLocalChanges()
@@ -9881,6 +11410,10 @@ function renderTaskFilter() {
     taskFilterSearchInput.value = getTaskSearchText();
     taskFilterSearchInput.disabled = checklistViewActive;
   }
+  if (taskFilterTagInput) {
+    taskFilterTagInput.value = getTaskTagFilter();
+    taskFilterTagInput.disabled = checklistViewActive;
+  }
   taskFilterButton.classList.toggle('task-filter-title', checklistViewActive);
   if (checklistViewActive) {
     taskFilterButton.textContent = label;
@@ -9909,105 +11442,20 @@ function getTaskFilterLabel() {
     return 'Checklist';
   }
   const active = getActiveTaskFilter();
-  let label = 'All tasks';
+  let label = 'My tasks';
   if (active === TASK_FILTER_UNASSIGNED) {
     return 'Unassigned';
   } else if (active === TASK_FILTER_INBOX) {
     return 'Inbox';
   } else if (active) {
     const project = (state.projects ?? []).find(item => item.id === active);
-    label = project?.name ?? 'All tasks';
+    label = project?.name ?? 'My tasks';
   }
   return label;
 }
 
-function cycleTaskFilterSelection() {
-  const projectIds = getProjectsForWorkspace().map(project => project.id);
-  const cycle = [null, TASK_FILTER_INBOX, TASK_FILTER_UNASSIGNED, ...projectIds];
-  const active = getActiveTaskFilter();
-  const activeKey = active === undefined ? null : active;
-  const currentIndex = cycle.findIndex(item => item === activeKey);
-  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % cycle.length : 0;
-  state.ui = state.ui ?? {};
-  state.ui.activeProjectId = cycle[nextIndex] ?? null;
-  clearActiveWorkflowChecklistInstanceId();
-  scheduleTaskSearchRefresh(true);
-}
-
-function cycleTaskSortSelection() {
-  const cycle = isWorkflowChecklistViewActive()
-    ? ['default', 'due-asc', 'due-desc']
-    : ['default', 'due-asc', 'due-desc', 'ai-queue'];
-  const current = getTaskSortKey();
-  const currentIndex = cycle.indexOf(current);
-  const next = cycle[(currentIndex + 1) % cycle.length] ?? 'default';
-  setTaskSortKey(next);
-  return next;
-}
-
-function cycleTaskGroupSelection() {
-  const cycle = ['none', 'section', 'task-type', 'priority'];
-  const current = getTaskGroupMode();
-  const currentIndex = cycle.indexOf(current);
-  const next = cycle[(currentIndex + 1) % cycle.length] ?? 'none';
-  setTaskGroupMode(next);
-}
-
-function cycleTaskViewSelection() {
-  const cycle = ['list', 'kanban', 'calendar'];
-  const current = getTaskView();
-  const currentIndex = cycle.indexOf(current);
-  const next = cycle[(currentIndex + 1) % cycle.length] ?? 'list';
-  setTaskView(next);
-}
-
 function renderTaskTools() {
-  if (!taskToolsToggleQuickAdd) return;
-  const mobile = isMobileViewport();
   const checklistViewActive = isWorkflowChecklistViewActive();
-  const taskToolsWrapper = taskToolsButton?.closest('.task-tools');
-  taskToolsWrapper?.classList.toggle('hidden', checklistViewActive);
-  if (checklistViewActive) {
-    taskToolsMenu?.classList.add('hidden');
-    if (openMenu === taskToolsMenu) {
-      openMenu = null;
-    }
-  }
-  taskToolsToggleQuickAdd.classList.toggle('hidden', mobile);
-  taskToolsToggleQuickAdd.textContent = `${getTaskQuickAddVisible() ? 'Hide' : 'Show'} quick add`;
-  taskToolsMobileFilter?.classList.toggle('hidden', !mobile || checklistViewActive);
-  taskToolsMobileSort?.classList.toggle('hidden', !mobile);
-  taskToolsMobileGroup?.classList.toggle('hidden', !mobile);
-  taskToolsMobileView?.classList.toggle('hidden', !mobile);
-  if (taskToolsMobileFilter) {
-    taskToolsMobileFilter.textContent = `Filter: ${getTaskFilterLabel()}`;
-  }
-  if (taskToolsMobileSort) {
-    const sortLabelMap = {
-      default: 'Default',
-      'due-asc': 'Due (Soonest)',
-      'due-desc': 'Due (Latest)',
-      'ai-queue': 'AI queue'
-    };
-    taskToolsMobileSort.textContent = `Sort: ${sortLabelMap[getTaskSortKey()] ?? 'Default'}`;
-  }
-  if (taskToolsMobileGroup) {
-    const groupLabelMap = {
-      none: 'None',
-      section: 'Section',
-      'task-type': 'Task type',
-      priority: 'Priority'
-    };
-    taskToolsMobileGroup.textContent = `Group: ${groupLabelMap[getTaskGroupMode()] ?? 'None'}`;
-  }
-  if (taskToolsMobileView) {
-    const viewLabelMap = {
-      list: 'List',
-      kanban: 'Kanban',
-      calendar: 'Calendar'
-    };
-    taskToolsMobileView.textContent = `View: ${viewLabelMap[getTaskView()] ?? 'List'}`;
-  }
   if (taskAiButton) {
     const aiWrapper = taskAiButton.closest('.task-ai');
     aiWrapper?.classList.toggle('hidden', checklistViewActive);
@@ -10024,6 +11472,112 @@ function renderTaskTools() {
     taskAiButton.dataset.count = pending > 0 ? String(pending) : '';
     taskAiButton.title = pending > 0 ? `AI suggestions (${pending})` : 'AI suggestions';
   }
+}
+
+function renderTaskUiSettings() {
+  if (taskUiQuickAddInput) {
+    taskUiQuickAddInput.checked = getTaskQuickAddVisible();
+  }
+
+  if (taskUiCompletedVisibilitySelect && document.activeElement !== taskUiCompletedVisibilitySelect) {
+    taskUiCompletedVisibilitySelect.value = getTaskCompletedVisibility();
+  }
+
+  if (taskUiFutureDaysInput && document.activeElement !== taskUiFutureDaysInput) {
+    taskUiFutureDaysInput.value = String(getTaskFutureVisibilityDays());
+  }
+
+  if (taskUiFilterSelect) {
+    const projects = getProjectsForWorkspace()
+      .slice()
+      .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+    const options = [
+      { value: 'all', label: 'My tasks' },
+      { value: TASK_FILTER_INBOX, label: 'Inbox' },
+      { value: TASK_FILTER_UNASSIGNED, label: 'Unassigned' },
+      ...projects.map(project => ({ value: project.id, label: project.name }))
+    ];
+    const optionsKey = options.map(option => `${option.value}:${option.label}`).join('|');
+    if (taskUiFilterSelect.dataset.optionsKey !== optionsKey) {
+      taskUiFilterSelect.innerHTML = '';
+      options.forEach(({ value, label }) => {
+        const optionEl = document.createElement('option');
+        optionEl.value = value;
+        optionEl.textContent = label;
+        taskUiFilterSelect.appendChild(optionEl);
+      });
+      taskUiFilterSelect.dataset.optionsKey = optionsKey;
+    }
+    if (document.activeElement !== taskUiFilterSelect) {
+      const currentFilter = getActiveTaskFilter() ?? 'all';
+      taskUiFilterSelect.value = currentFilter;
+      if (taskUiFilterSelect.value !== currentFilter) {
+        taskUiFilterSelect.value = 'all';
+      }
+    }
+  }
+
+  if (taskUiSortSelect && document.activeElement !== taskUiSortSelect) {
+    taskUiSortSelect.value = getTaskSortKey();
+  }
+
+  if (taskUiGroupSelect && document.activeElement !== taskUiGroupSelect) {
+    taskUiGroupSelect.value = getTaskGroupMode();
+  }
+
+  if (taskUiViewSelect && document.activeElement !== taskUiViewSelect) {
+    taskUiViewSelect.value = getTaskView();
+  }
+
+  renderTaskHolidaySettings();
+}
+
+function renderSchedulingUiSettings() {
+  if (schedulingUiWeekModeSelect && document.activeElement !== schedulingUiWeekModeSelect) {
+    schedulingUiWeekModeSelect.value = getSchedulingWeekMode();
+  }
+}
+
+function renderTaskHolidaySettings() {
+  if (!taskUiHolidayList) return;
+  const options = US_HOLIDAY_RULES.map(rule => ({ key: rule.key, title: rule.title }));
+  const optionsKey = options.map(option => `${option.key}:${option.title}`).join('|');
+  if (taskUiHolidayList.dataset.optionsKey !== optionsKey) {
+    taskUiHolidayList.innerHTML = '';
+    options.forEach((option) => {
+      const label = document.createElement('label');
+      label.className = 'setting-checkbox setting-checkbox-holiday';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.holidayKey = option.key;
+      checkbox.addEventListener('change', () => {
+        const key = String(checkbox.dataset.holidayKey ?? '');
+        if (!US_HOLIDAY_RULE_KEYS.has(key)) return;
+        const hidden = new Set(getCalendarHiddenHolidayKeys());
+        if (checkbox.checked) {
+          hidden.delete(key);
+        } else {
+          hidden.add(key);
+        }
+        setCalendarHiddenHolidayKeys(Array.from(hidden));
+        queueUserSettingsSave();
+        render();
+      });
+      const text = document.createElement('span');
+      text.textContent = option.title;
+      label.appendChild(checkbox);
+      label.appendChild(text);
+      taskUiHolidayList.appendChild(label);
+    });
+    taskUiHolidayList.dataset.optionsKey = optionsKey;
+  }
+  const hidden = new Set(getCalendarHiddenHolidayKeys());
+  const checkboxes = taskUiHolidayList.querySelectorAll('input[data-holiday-key]');
+  checkboxes.forEach((checkbox) => {
+    const key = String(checkbox.dataset.holidayKey ?? '');
+    if (document.activeElement === checkbox) return;
+    checkbox.checked = !hidden.has(key);
+  });
 }
 
 function renderTaskSort() {
@@ -10137,6 +11691,16 @@ function normalizeActorEmail(email) {
   return text;
 }
 
+function normalizeOrgRole(role) {
+  return String(role ?? '').trim().toLowerCase() === 'admin' ? 'admin' : 'member';
+}
+
+function isOwnerEmail(email, ownerEmail) {
+  const normalizedEmail = normalizeActorEmail(email);
+  const normalizedOwner = normalizeActorEmail(ownerEmail);
+  return Boolean(normalizedEmail && normalizedOwner && normalizedEmail === normalizedOwner);
+}
+
 function getAuthState() {
   state.ui = state.ui ?? {};
   if (!state.ui.auth || typeof state.ui.auth !== 'object') {
@@ -10145,7 +11709,10 @@ function getAuthState() {
       requireAuth: false,
       user: null,
       session: null,
-      workspaces: []
+      workspaces: [],
+      ownerEmail: DEFAULT_OWNER_EMAIL,
+      isOwner: false,
+      isAdmin: false
     };
   }
   return state.ui.auth;
@@ -10161,7 +11728,7 @@ function isAuthenticatedActor() {
 }
 
 function shouldShowAuthGatePage() {
-  return isAuthGateEnabled() && !isAuthenticatedActor();
+  return (isAuthGateEnabled() || Boolean(state.ui?.forceAuthGate)) && !isAuthenticatedActor();
 }
 
 function syncAuthGatePage() {
@@ -10201,11 +11768,13 @@ function setAuthModalMode(mode = 'login') {
   if (authLoginForm) {
     const isLogin = authModalMode === 'login';
     authLoginForm.classList.toggle('hidden', !isLogin);
+    authLoginForm.hidden = !isLogin;
     authLoginForm.setAttribute('aria-hidden', isLogin ? 'false' : 'true');
   }
   if (authInviteForm) {
     const isInvite = authModalMode === 'invite';
     authInviteForm.classList.toggle('hidden', !isInvite);
+    authInviteForm.hidden = !isInvite;
     authInviteForm.setAttribute('aria-hidden', isInvite ? 'false' : 'true');
   }
   if (authModalTitle) {
@@ -10239,6 +11808,7 @@ function applyAuthPayload(payload, { persistProfile = true } = {}) {
   const user = payload?.user && typeof payload.user === 'object' ? payload.user : null;
   const session = payload?.session && typeof payload.session === 'object' ? payload.session : null;
   const workspaces = Array.isArray(payload?.workspaces) ? payload.workspaces : [];
+  const ownerEmail = normalizeActorEmail(payload?.owner_email ?? '') || auth.ownerEmail || DEFAULT_OWNER_EMAIL;
   if (payload && Object.prototype.hasOwnProperty.call(payload, 'require_auth')) {
     auth.requireAuth = Boolean(payload.require_auth);
   }
@@ -10247,46 +11817,148 @@ function applyAuthPayload(payload, { persistProfile = true } = {}) {
     id: user.id,
     org_id: user.org_id,
     display_name: user.display_name,
-    email: user.email
+    email: user.email,
+    org_role: user.org_role ?? 'member'
   } : null;
   auth.session = auth.authenticated ? {
     id: session?.id ?? null,
     expires_at: session?.expires_at ?? null
   } : null;
   auth.workspaces = workspaces;
+  auth.ownerEmail = ownerEmail;
+  auth.isOwner = Boolean(payload?.is_owner && auth.authenticated);
+  auth.isAdmin = Boolean(
+    auth.authenticated
+    && (payload?.is_admin ?? (auth.isOwner || normalizeOrgRole(user?.org_role) === 'admin'))
+  );
   if (persistProfile) {
     state.ui.profile = auth.user
       ? { name: auth.user.display_name, email: auth.user.email }
       : { name: '', email: '' };
   }
+  if (!auth.authenticated) {
+    applyUserSettingsPayload(null);
+  }
+}
+
+function getDefaultUserSettings() {
+  return {
+    notifications_enabled: false,
+    checkin_extend_minutes: 60,
+    task_ui: {
+      quick_add_visible: true,
+      completed_visibility: 'show',
+      future_visibility_days: 0,
+      default_filter: 'all',
+      default_sort: 'default',
+      default_group: 'none',
+      default_view: 'list',
+      hidden_holiday_keys: []
+    }
+  };
+}
+
+function normalizeUserSettings(settings) {
+  const defaults = getDefaultUserSettings();
+  const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+  const taskUi = source.task_ui && typeof source.task_ui === 'object' && !Array.isArray(source.task_ui)
+    ? source.task_ui
+    : {};
+  const normalized = {
+    notifications_enabled: Boolean(source.notifications_enabled),
+    checkin_extend_minutes: Number(source.checkin_extend_minutes),
+    task_ui: {
+      quick_add_visible: taskUi.quick_add_visible !== undefined
+        ? Boolean(taskUi.quick_add_visible)
+        : defaults.task_ui.quick_add_visible,
+      completed_visibility: taskUi.completed_visibility === 'hide' ? 'hide' : 'show',
+      future_visibility_days: Number.isFinite(Number(taskUi.future_visibility_days)) && Number(taskUi.future_visibility_days) >= 0
+        ? Math.floor(Number(taskUi.future_visibility_days))
+        : defaults.task_ui.future_visibility_days,
+      default_filter: String(taskUi.default_filter ?? defaults.task_ui.default_filter),
+      default_sort: String(taskUi.default_sort ?? defaults.task_ui.default_sort),
+      default_group: String(taskUi.default_group ?? defaults.task_ui.default_group),
+      default_view: String(taskUi.default_view ?? defaults.task_ui.default_view),
+      hidden_holiday_keys: normalizeHiddenHolidayKeys(taskUi.hidden_holiday_keys ?? defaults.task_ui.hidden_holiday_keys)
+    }
+  };
+  if (!Number.isFinite(normalized.checkin_extend_minutes) || normalized.checkin_extend_minutes <= 0) {
+    normalized.checkin_extend_minutes = defaults.checkin_extend_minutes;
+  }
+  return normalized;
+}
+
+function buildUserSettingsPayload() {
+  return normalizeUserSettings({
+    notifications_enabled: Boolean(state.ui?.notificationsEnabled),
+    checkin_extend_minutes: getCheckinExtendMinutes(),
+    task_ui: {
+      quick_add_visible: getTaskQuickAddVisible(),
+      completed_visibility: getTaskCompletedVisibility(),
+      future_visibility_days: getTaskFutureVisibilityDays(),
+      default_filter: getActiveTaskFilter(),
+      default_sort: getTaskSortKey(),
+      default_group: getTaskGroupMode(),
+      default_view: getTaskView(),
+      hidden_holiday_keys: getCalendarHiddenHolidayKeys()
+    }
+  });
+}
+
+function applyUserSettingsPayload(settings) {
+  const next = normalizeUserSettings(settings);
+  state.ui = state.ui ?? {};
+  state.ui.notificationsEnabled = next.notifications_enabled;
+  setCheckinExtendMinutes(next.checkin_extend_minutes);
+  setTaskQuickAddVisible(next.task_ui.quick_add_visible);
+  setTaskCompletedVisibility(next.task_ui.completed_visibility);
+  setTaskFutureVisibilityDays(next.task_ui.future_visibility_days);
+  setActiveTaskFilter(next.task_ui.default_filter);
+  setTaskSortKey(next.task_ui.default_sort);
+  setTaskGroupMode(next.task_ui.default_group);
+  setTaskView(next.task_ui.default_view);
+  setCalendarHiddenHolidayKeys(next.task_ui.hidden_holiday_keys);
+}
+
+async function hydrateUserSettingsFromServer() {
+  if (!isAuthenticatedActor()) {
+    applyUserSettingsPayload(null);
+    return;
+  }
+  try {
+    const response = await api.getAuthSettings();
+    applyUserSettingsPayload(response?.settings ?? null);
+  } catch {
+    applyUserSettingsPayload(null);
+  }
+}
+
+function queueUserSettingsSave({ immediate = false } = {}) {
+  if (!isAuthenticatedActor()) return;
+  if (userSettingsSaveTimer) {
+    clearTimeout(userSettingsSaveTimer);
+    userSettingsSaveTimer = null;
+  }
+  const run = async () => {
+    userSettingsSaveTimer = null;
+    try {
+      await api.updateAuthSettings({ settings: buildUserSettingsPayload() });
+    } catch {
+      // Keep UI responsive; settings save can retry on next change.
+    }
+  };
+  if (immediate) {
+    void run();
+    return;
+  }
+  userSettingsSaveTimer = setTimeout(() => {
+    void run();
+  }, USER_SETTINGS_SAVE_DEBOUNCE_MS);
 }
 
 function clearWorkspaceDomainData() {
+  // Keep local domain data intact; auth gating should hide UI, not erase local state.
   state.workspace = null;
-  state.workspaces = [];
-  state.projects = [];
-  state.templates = [];
-  state.workflows = [];
-  state.workflowVariants = [];
-  state.workflowPhases = [];
-  state.workflowVariantPhases = [];
-  state.workflowPhaseTasks = [];
-  state.workflowPatterns = [];
-  state.workflowPatternTasks = [];
-  state.workflowInstances = [];
-  state.workflowInstanceTasks = [];
-  state.statuses = [];
-  state.taskTypes = [];
-  state.users = [];
-  state.workspaceMemberships = [];
-  state.taskSections = [];
-  state.storeRules = [];
-  state.tasks = {};
-  state.taskDependencies = [];
-  state.notices = [];
-  state.noticeTypes = [];
-  state.shoppingLists = [];
-  state.shoppingItems = {};
   if (activeTaskId) {
     closeTaskEditor();
   }
@@ -10302,12 +11974,15 @@ async function hydrateAuthSession() {
   try {
     const session = await api.getAuthMe();
     applyAuthPayload(session, { persistProfile: true });
+    await hydrateUserSettingsFromServer();
   } catch {
     applyAuthPayload({ authenticated: false }, { persistProfile: false });
+    applyUserSettingsPayload(null);
   }
 }
 
 async function reloadWorkspaceAfterAuthChange() {
+  await hydrateUserSettingsFromServer();
   await loadWorkspaces();
   await refreshWorkspace();
   await primeSyncCursor();
@@ -10330,9 +12005,12 @@ async function submitAuthLogin() {
   try {
     const payload = await api.login({ email, password });
     applyAuthPayload(payload, { persistProfile: true });
+    state.ui = state.ui ?? {};
+    state.ui.forceAuthGate = false;
     authLoginPassword.value = '';
     closeAuthModal();
     await reloadWorkspaceAfterAuthChange();
+    setActiveView('tasks');
     render();
     showToast({ type: 'success', message: 'Signed in.' });
   } catch (err) {
@@ -10374,10 +12052,13 @@ async function submitInviteAccept() {
       password
     });
     applyAuthPayload(payload, { persistProfile: true });
+    state.ui = state.ui ?? {};
+    state.ui.forceAuthGate = false;
     authInvitePassword.value = '';
     clearInviteTokenFromUrl();
     closeAuthModal();
     await reloadWorkspaceAfterAuthChange();
+    setActiveView('tasks');
     render();
     showToast({ type: 'success', message: 'Account created and signed in.' });
   } catch (err) {
@@ -10392,6 +12073,12 @@ async function handleAccountAuthAction() {
     } catch {
       // Clear local auth state even if server logout fails.
     }
+    if (userSettingsSaveTimer) {
+      clearTimeout(userSettingsSaveTimer);
+      userSettingsSaveTimer = null;
+    }
+    state.ui = state.ui ?? {};
+    state.ui.forceAuthGate = true;
     applyAuthPayload({ authenticated: false }, { persistProfile: true });
     if (isAuthGateEnabled()) {
       clearWorkspaceDomainData();
@@ -10406,12 +12093,17 @@ async function handleAccountAuthAction() {
   openAuthModal('login');
 }
 
-function isOwnerSuperAdminEmail(email) {
-  return normalizeActorEmail(email) === OWNER_SUPER_ADMIN_EMAIL;
+function getCurrentOwnerEmail() {
+  const auth = getAuthState();
+  return normalizeActorEmail(auth.ownerEmail) || DEFAULT_OWNER_EMAIL;
 }
 
 function isCurrentActorOwnerSuperAdmin() {
-  return isOwnerSuperAdminEmail(getProfileEmail());
+  return Boolean(getAuthState().isOwner);
+}
+
+function isCurrentActorAdmin() {
+  return Boolean(getAuthState().isAdmin || getAuthState().isOwner);
 }
 
 function getAccountInitials(name) {
@@ -10436,7 +12128,7 @@ function renderAccountMenu() {
   if (accountLogout) accountLogout.textContent = authenticated ? 'Log out' : 'Log in';
   if (mobileMenuAuth) mobileMenuAuth.textContent = authenticated ? 'Log out' : 'Log in';
   if (accountAdmin) {
-    accountAdmin.classList.toggle('hidden', !isCurrentActorOwnerSuperAdmin());
+    accountAdmin.classList.toggle('hidden', !isCurrentActorAdmin());
   }
 }
 
@@ -10472,7 +12164,7 @@ function renderProfilePage() {
   }
 }
 
-function saveProfilePage() {
+async function saveProfilePage() {
   if (!profilePageName || !profilePageEmail) return;
   const name = normalizeTitleInput(profilePageName.value);
   if (!name) {
@@ -10486,67 +12178,151 @@ function saveProfilePage() {
     profilePageEmail.focus();
     return;
   }
-  state.ui = state.ui ?? {};
-  state.ui.profile = {
-    name,
-    email
-  };
-  appendCrudEvent({
-    source: 'profile',
-    event: 'updated',
-    entity_type: 'profile',
-    entity_id: 'self',
-    data: { name, email }
-  });
-  render();
-}
-
-function populateAdminInviteWorkspaceSelect() {
-  if (!adminInviteWorkspace) return;
-  const activeWorkspaceId = state.workspace?.id ?? '';
-  const workspaces = (state.workspaces ?? []).filter(item => !item.archived);
-  const previous = adminInviteWorkspace.value || activeWorkspaceId;
-  adminInviteWorkspace.innerHTML = '';
-  workspaces.forEach((workspace) => {
-    const option = document.createElement('option');
-    option.value = workspace.id;
-    option.textContent = workspace.name;
-    adminInviteWorkspace.appendChild(option);
-  });
-  if (workspaces.some(item => item.id === previous)) {
-    adminInviteWorkspace.value = previous;
-  } else if (activeWorkspaceId && workspaces.some(item => item.id === activeWorkspaceId)) {
-    adminInviteWorkspace.value = activeWorkspaceId;
+  if (!isAuthenticatedActor()) {
+    state.ui = state.ui ?? {};
+    state.ui.profile = { name, email };
+    render();
+    return;
+  }
+  try {
+    const response = await api.updateAuthProfile({
+      display_name: name,
+      email: email || null
+    });
+    const updatedUser = response?.user;
+    if (updatedUser?.id) {
+      const auth = getAuthState();
+      auth.user = {
+        ...auth.user,
+        ...updatedUser
+      };
+      if (response?.owner_email) {
+        auth.ownerEmail = normalizeActorEmail(response.owner_email) || auth.ownerEmail;
+        auth.isOwner = isOwnerEmail(auth.user?.email, auth.ownerEmail);
+        auth.isAdmin = auth.isOwner || normalizeOrgRole(auth.user?.org_role) === 'admin';
+      }
+      upsertUser(updatedUser);
+    }
+    state.ui.profile = { name, email };
+    appendCrudEvent({
+      source: 'profile',
+      event: 'updated',
+      entity_type: 'profile',
+      entity_id: 'self',
+      data: { name, email }
+    });
+    render();
+    showToast({ type: 'success', message: 'Profile updated.' });
+  } catch (err) {
+    showToast({ type: 'error', message: err?.message ?? 'Unable to update profile.' });
   }
 }
 
-function getAdminInvitesState() {
+function getAdminState() {
   state.ui = state.ui ?? {};
-  if (!state.ui.admin) {
-    state.ui.admin = {
-      invites: [],
-      loading: false,
-      error: ''
-    };
+  if (!state.ui.admin || typeof state.ui.admin !== 'object') {
+    state.ui.admin = {};
   }
-  return state.ui.admin;
+  const adminState = state.ui.admin;
+  if (!Array.isArray(adminState.invites)) adminState.invites = [];
+  if (!Array.isArray(adminState.users)) adminState.users = [];
+  if (typeof adminState.invitesLoading !== 'boolean') adminState.invitesLoading = false;
+  if (typeof adminState.usersLoading !== 'boolean') adminState.usersLoading = false;
+  if (typeof adminState.invitesError !== 'string') adminState.invitesError = '';
+  if (typeof adminState.usersError !== 'string') adminState.usersError = '';
+  if (typeof adminState.invitesLoaded !== 'boolean') adminState.invitesLoaded = false;
+  if (typeof adminState.usersLoaded !== 'boolean') adminState.usersLoaded = false;
+  if (!Number.isFinite(Number(adminState.invitesRequestedAt))) adminState.invitesRequestedAt = 0;
+  if (!Number.isFinite(Number(adminState.usersRequestedAt))) adminState.usersRequestedAt = 0;
+  if (typeof adminState.ownerEmail !== 'string') adminState.ownerEmail = getCurrentOwnerEmail();
+  if (typeof adminState.statusMessage !== 'string') adminState.statusMessage = '';
+  if (typeof adminState.statusTone !== 'string') adminState.statusTone = 'info';
+  if (typeof adminState.selectedUserId !== 'string') adminState.selectedUserId = '';
+  return adminState;
+}
+
+function syncAdminOwnerEmail(ownerEmail) {
+  const normalizedOwnerEmail = normalizeActorEmail(ownerEmail);
+  if (!normalizedOwnerEmail) return;
+  const adminState = getAdminState();
+  adminState.ownerEmail = normalizedOwnerEmail;
+  const auth = getAuthState();
+  auth.ownerEmail = normalizedOwnerEmail;
+  auth.isOwner = isOwnerEmail(auth.user?.email, normalizedOwnerEmail);
+  auth.isAdmin = auth.isOwner || normalizeOrgRole(auth.user?.org_role) === 'admin';
+  renderAccountMenu();
+}
+
+function getSelectedAdminUser() {
+  const adminState = getAdminState();
+  if (!adminState.selectedUserId) return null;
+  return adminState.users.find((user) => user.id === adminState.selectedUserId) ?? null;
+}
+
+function setAdminInviteToken(token = '') {
+  if (!adminInviteTokenWrap || !adminInviteToken) return;
+  const safeToken = String(token ?? '').trim();
+  adminInviteToken.value = safeToken;
+  adminInviteTokenWrap.classList.toggle('hidden', !safeToken);
+}
+
+function setAdminInviteStatus(message, type = 'info') {
+  if (!adminInviteStatus) return;
+  adminInviteStatus.textContent = message;
+  adminInviteStatus.dataset.pinned = type === 'info' ? '' : '1';
+}
+
+function setAdminUsersStatus(message, tone = 'info') {
+  if (!adminUsersStatus) return;
+  adminUsersStatus.textContent = String(message ?? '');
+  if (tone) {
+    adminUsersStatus.dataset.tone = tone;
+  } else {
+    delete adminUsersStatus.dataset.tone;
+  }
+}
+
+function buildInviteLinkFromToken(token) {
+  const safeToken = String(token ?? '').trim();
+  if (!safeToken || typeof window === 'undefined') return '';
+  const base = window.location.origin.replace(/\/$/, '');
+  return `${base}/apps/web/?invite_token=${encodeURIComponent(safeToken)}`;
+}
+
+async function copyInviteLinkToClipboard(token) {
+  const inviteUrl = buildInviteLinkFromToken(token);
+  if (!inviteUrl) {
+    setAdminInviteStatus('No invite token available.', 'error');
+    showToast({ type: 'error', message: 'No invite link available to copy.' });
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(inviteUrl);
+    setAdminInviteStatus('Invite link copied to clipboard.');
+    showToast({ type: 'success', message: 'Invite link copied to clipboard.' });
+    return true;
+  } catch {
+    setAdminInviteStatus('Could not copy invite link. Copy it manually from the token field.', 'error');
+    showToast({ type: 'error', message: 'Could not copy invite link.' });
+    return false;
+  }
 }
 
 function renderAdminInvitesList() {
   if (!adminInvitesList) return;
-  const adminState = getAdminInvitesState();
+  const adminState = getAdminState();
   adminInvitesList.innerHTML = '';
-  if (adminState.loading) {
+  if (adminState.invitesLoading) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
     note.textContent = 'Loading invites...';
     adminInvitesList.appendChild(note);
     return;
   }
-  if (adminState.error) {
+  if (adminState.invitesError) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = adminState.error;
+    note.textContent = adminState.invitesError;
     adminInvitesList.appendChild(note);
     return;
   }
@@ -10559,6 +12335,8 @@ function renderAdminInvitesList() {
     return;
   }
   invites.forEach((invite) => {
+    const inviteId = String(invite?.id ?? '').trim();
+    if (!inviteId) return;
     const row = document.createElement('div');
     row.className = 'workspace-row notice-row';
     const info = document.createElement('div');
@@ -10569,69 +12347,329 @@ function renderAdminInvitesList() {
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
     const workspaceName = invite.workspace_name ? ` • ${invite.workspace_name}` : '';
-    meta.textContent = `${invite.role} • expires ${formatDateTime(invite.expires_at)}${workspaceName}`;
+    const inviteStatus = String(invite.status ?? 'pending').toLowerCase();
+    meta.textContent = `${inviteStatus} • ${invite.role} • expires ${formatNoticeDateTimeDisplay(invite.expires_at)}${workspaceName}`;
     info.appendChild(title);
     info.appendChild(meta);
     row.appendChild(info);
+    const actions = document.createElement('div');
+    actions.className = 'admin-invite-row-actions';
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'subtle-button admin-invite-copy-link';
+    copyBtn.textContent = 'Copy link';
+    const inviteToken = String(invite.invite_token ?? '').trim();
+    if (inviteToken) {
+      copyBtn.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        await copyInviteLinkToClipboard(inviteToken);
+      });
+    } else {
+      copyBtn.disabled = true;
+      copyBtn.title = 'Token not available for this invite';
+    }
+    actions.appendChild(copyBtn);
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'subtle-button admin-invite-delete-link';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await deletePendingInvite(invite);
+    });
+    actions.appendChild(deleteBtn);
+    row.appendChild(actions);
     adminInvitesList.appendChild(row);
   });
 }
 
+function renderAdminUsersList() {
+  if (!adminUsersList) return;
+  const adminState = getAdminState();
+  adminUsersList.innerHTML = '';
+  if (adminState.usersLoading) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Loading users...';
+    adminUsersList.appendChild(note);
+    return;
+  }
+  if (adminState.usersError) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = adminState.usersError;
+    adminUsersList.appendChild(note);
+    return;
+  }
+  if (!adminState.users.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No users found.';
+    adminUsersList.appendChild(note);
+    return;
+  }
+  adminState.users.forEach((user) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'workspace-row notice-row admin-user-row';
+    row.classList.toggle('active', user.id === adminState.selectedUserId);
+    row.addEventListener('click', () => {
+      adminState.selectedUserId = user.id;
+      renderAdminUsersList();
+      renderAdminUserEditor();
+    });
+
+    const info = document.createElement('div');
+    info.className = 'notice-row-info';
+    const title = document.createElement('div');
+    title.className = 'notice-row-title';
+    title.textContent = user.display_name || user.email;
+    const meta = document.createElement('div');
+    meta.className = 'notice-row-meta';
+    const roleLabel = user.is_owner ? 'owner' : (user.org_role ?? 'member');
+    const stateLabel = Number(user.archived) ? 'disabled' : 'active';
+    meta.textContent = `${user.email} • ${roleLabel} • ${stateLabel}`;
+    info.appendChild(title);
+    info.appendChild(meta);
+    row.appendChild(info);
+    adminUsersList.appendChild(row);
+  });
+}
+
+function renderAdminUserEditor() {
+  const adminState = getAdminState();
+  const users = adminState.users ?? [];
+  if (adminUserSelect) {
+    const currentOptionsKey = users.map((user) => `${user.id}:${user.email}`).join('|');
+    if (adminUserSelect.dataset.optionsKey !== currentOptionsKey) {
+      adminUserSelect.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = users.length ? 'Select user' : 'No users';
+      adminUserSelect.appendChild(placeholder);
+      users.forEach((user) => {
+        const option = document.createElement('option');
+        option.value = user.id;
+        option.textContent = `${user.display_name || user.email} (${user.email})`;
+        adminUserSelect.appendChild(option);
+      });
+      adminUserSelect.dataset.optionsKey = currentOptionsKey;
+    }
+    adminUserSelect.value = adminState.selectedUserId || '';
+  }
+
+  const selected = getSelectedAdminUser();
+  const ownerEmail = normalizeActorEmail(adminState.ownerEmail || getCurrentOwnerEmail());
+  const isOwnerActor = isCurrentActorOwnerSuperAdmin();
+  const canEditSelected = Boolean(selected);
+  const selectedIsOwner = Boolean(selected?.is_owner || isOwnerEmail(selected?.email, ownerEmail));
+  const canEditRole = Boolean(canEditSelected && isOwnerActor && !selectedIsOwner);
+
+  if (adminUserName && document.activeElement !== adminUserName) {
+    adminUserName.value = selected?.display_name ?? '';
+  }
+  if (adminUserEmail && document.activeElement !== adminUserEmail) {
+    adminUserEmail.value = selected?.email ?? '';
+  }
+  if (adminUserRole) {
+    if (selected) {
+      adminUserRole.value = normalizeOrgRole(selected.org_role);
+    } else {
+      adminUserRole.value = 'member';
+    }
+    adminUserRole.disabled = !canEditRole;
+  }
+  if (adminUserArchived) {
+    adminUserArchived.value = selected ? (Number(selected.archived) ? '1' : '0') : '0';
+    adminUserArchived.disabled = !canEditSelected || selectedIsOwner;
+  }
+  if (adminUserSettings && document.activeElement !== adminUserSettings) {
+    adminUserSettings.value = selected
+      ? JSON.stringify(selected.settings ?? {}, null, 2)
+      : '{}';
+  }
+  if (adminUserPassword) {
+    adminUserPassword.disabled = !canEditSelected;
+  }
+  if (adminUserSave) adminUserSave.disabled = !canEditSelected;
+  if (adminUserPasswordReset) adminUserPasswordReset.disabled = !canEditSelected || (!isOwnerActor && selectedIsOwner);
+  if (adminUserExport) adminUserExport.disabled = !canEditSelected;
+  if (adminUserDelete) adminUserDelete.disabled = !canEditSelected || selectedIsOwner;
+  if (adminOwnershipTransfer) {
+    adminOwnershipTransfer.disabled = !canEditSelected || !isOwnerActor || selectedIsOwner;
+    adminOwnershipTransfer.classList.toggle('hidden', !isOwnerActor);
+  }
+}
+
 function renderAdminPage() {
   if (!adminPage) return;
-  if (adminInviteRole && !adminInviteRole.value) {
-    adminInviteRole.value = 'member';
+  if (adminInviteRole) {
+    if (!adminInviteRole.value) {
+      adminInviteRole.value = 'member';
+    }
+    const canInviteAdmins = isCurrentActorOwnerSuperAdmin();
+    const adminRoleOption = Array.from(adminInviteRole.options ?? []).find((option) => option.value === 'admin');
+    if (adminRoleOption) {
+      adminRoleOption.disabled = !canInviteAdmins;
+    }
+    if (!canInviteAdmins && adminInviteRole.value === 'admin') {
+      adminInviteRole.value = 'member';
+    }
   }
   if (adminInviteStatus && !adminInviteStatus.dataset.pinned) {
-    adminInviteStatus.textContent = isCurrentActorOwnerSuperAdmin()
-      ? `Owner: ${OWNER_SUPER_ADMIN_EMAIL}`
-      : 'Owner access required.';
+    const roleLabel = isCurrentActorOwnerSuperAdmin() ? 'Owner' : (isCurrentActorAdmin() ? 'Admin' : 'Member');
+    const ownerEmail = normalizeActorEmail(getAdminState().ownerEmail || getCurrentOwnerEmail());
+    adminInviteStatus.textContent = `${roleLabel} console • owner ${ownerEmail}`;
   }
-  populateAdminInviteWorkspaceSelect();
   renderAdminInvitesList();
+  renderAdminUsersList();
+  renderAdminUserEditor();
+
+  if (getActiveView() !== 'admin') return;
+  const adminState = getAdminState();
+  const now = Date.now();
+  if (!adminState.invitesLoading && (!adminState.invitesLoaded || now - Number(adminState.invitesRequestedAt ?? 0) > ADMIN_INVITES_AUTO_REFRESH_MS)) {
+    void refreshAdminInvites();
+  }
+  if (!adminState.usersLoading && (!adminState.usersLoaded || now - Number(adminState.usersRequestedAt ?? 0) > ADMIN_USERS_AUTO_REFRESH_MS)) {
+    void refreshAdminUsers();
+  }
 }
 
 async function refreshAdminInvites() {
-  const adminState = getAdminInvitesState();
-  const workspaceId = adminInviteWorkspace?.value || state.workspace?.id || null;
+  const adminState = getAdminState();
+  if (adminState.invitesLoading) return;
+  const workspaceId = state.workspace?.id || null;
   if (!workspaceId) {
     adminState.invites = [];
-    adminState.error = 'Select a workspace first.';
-    adminState.loading = false;
+    adminState.invitesError = 'Select an active workspace to manage pending invites.';
+    adminState.invitesLoading = false;
+    adminState.invitesLoaded = true;
     renderAdminInvitesList();
     return;
   }
-  adminState.loading = true;
-  adminState.error = '';
+  adminState.invitesRequestedAt = Date.now();
+  adminState.invitesLoading = true;
+  adminState.invitesError = '';
   renderAdminInvitesList();
   try {
     const response = await api.listAdminInvites({ workspaceId, status: 'pending' });
     adminState.invites = response?.invites ?? [];
   } catch (err) {
-    adminState.error = err?.message ?? 'Unable to load invites.';
+    adminState.invitesError = err?.message ?? 'Unable to load invites.';
   } finally {
-    adminState.loading = false;
+    adminState.invitesLoading = false;
+    adminState.invitesLoaded = true;
     renderAdminInvitesList();
   }
 }
 
-function setAdminInviteStatus(message, type = 'info') {
-  if (!adminInviteStatus) return;
-  adminInviteStatus.textContent = message;
-  adminInviteStatus.dataset.pinned = type === 'info' ? '' : '1';
+async function refreshAdminUsers() {
+  const adminState = getAdminState();
+  if (adminState.usersLoading) return;
+  const orgId = state.workspace?.org_id ?? getAuthState().user?.org_id ?? null;
+  const workspaceId = state.workspace?.id ?? null;
+  if (!orgId && !workspaceId) {
+    adminState.users = [];
+    adminState.usersError = 'Select a workspace to manage users.';
+    adminState.usersLoading = false;
+    adminState.usersLoaded = true;
+    renderAdminUsersList();
+    renderAdminUserEditor();
+    return;
+  }
+  adminState.usersRequestedAt = Date.now();
+  adminState.usersLoading = true;
+  adminState.usersError = '';
+  renderAdminUsersList();
+  try {
+    const response = await api.listAdminUsers({ orgId, workspaceId, includeArchived: true });
+    const users = Array.isArray(response?.users) ? response.users : [];
+    adminState.users = users.map((user) => ({
+      ...user,
+      org_role: normalizeOrgRole(user.org_role),
+      archived: Number(user.archived) ? 1 : 0,
+      settings: user.settings && typeof user.settings === 'object' ? user.settings : {}
+    }));
+    syncAdminOwnerEmail(response?.owner_email ?? adminState.ownerEmail);
+    if (!adminState.selectedUserId || !adminState.users.some((user) => user.id === adminState.selectedUserId)) {
+      adminState.selectedUserId = adminState.users[0]?.id ?? '';
+    }
+    setAdminUsersStatus('');
+  } catch (err) {
+    adminState.usersError = err?.message ?? 'Unable to load users.';
+  } finally {
+    adminState.usersLoading = false;
+    adminState.usersLoaded = true;
+    renderAdminUsersList();
+    renderAdminUserEditor();
+    renderAccountMenu();
+  }
+}
+
+function stopAdminInvitesAutoRefresh() {
+  if (adminInvitesAutoRefreshTimer) {
+    clearInterval(adminInvitesAutoRefreshTimer);
+    adminInvitesAutoRefreshTimer = null;
+  }
+}
+
+function startAdminInvitesAutoRefresh() {
+  stopAdminInvitesAutoRefresh();
+  adminInvitesAutoRefreshTimer = setInterval(() => {
+    if (getActiveView() !== 'admin') return;
+    void refreshAdminInvites();
+  }, ADMIN_INVITES_AUTO_REFRESH_MS);
+}
+
+function stopAdminUsersAutoRefresh() {
+  if (adminUsersAutoRefreshTimer) {
+    clearInterval(adminUsersAutoRefreshTimer);
+    adminUsersAutoRefreshTimer = null;
+  }
+}
+
+function startAdminUsersAutoRefresh() {
+  stopAdminUsersAutoRefresh();
+  adminUsersAutoRefreshTimer = setInterval(() => {
+    if (getActiveView() !== 'admin') return;
+    void refreshAdminUsers();
+  }, ADMIN_USERS_AUTO_REFRESH_MS);
+}
+
+async function deletePendingInvite(invite) {
+  const inviteId = String(invite?.id ?? '').trim();
+  if (!inviteId) {
+    setAdminInviteStatus('Invite is missing a valid id.', 'error');
+    showToast({ type: 'error', message: 'Invite could not be deleted because its id is invalid.' });
+    return;
+  }
+  const inviteEmail = String(invite?.email ?? 'this invite').trim() || 'this invite';
+  const confirmed = confirm(`Delete pending invite for ${inviteEmail}?`);
+  if (!confirmed) return;
+  try {
+    await api.deleteAdminInvite(inviteId);
+    setAdminInviteStatus(`Deleted pending invite for ${inviteEmail}.`);
+    showToast({ type: 'success', message: `Deleted invite for ${inviteEmail}.` });
+    await refreshAdminInvites();
+  } catch (err) {
+    const message = err?.message ?? 'Unable to delete invite.';
+    setAdminInviteStatus(message, 'error');
+    showToast({ type: 'error', message });
+  }
 }
 
 async function submitAdminInvite() {
-  if (!adminInviteEmail || !adminInviteWorkspace) return;
+  if (!adminInviteEmail) return;
   const email = normalizeActorEmail(adminInviteEmail.value);
   if (!email) {
     setAdminInviteStatus('Enter a valid email address.', 'error');
     adminInviteEmail.focus();
     return;
   }
-  const workspaceId = adminInviteWorkspace.value;
+  const workspaceId = state.workspace?.id || '';
   if (!workspaceId) {
-    setAdminInviteStatus('Select a workspace.', 'error');
+    setAdminInviteStatus('Select an active workspace first.', 'error');
     return;
   }
   const role = adminInviteRole?.value || 'member';
@@ -10644,23 +12682,199 @@ async function submitAdminInvite() {
     });
     const inviteToken = String(response?.invite?.invite_token ?? '').trim();
     if (inviteToken) {
-      const base = window.location.origin.replace(/\/$/, '');
-      const inviteUrl = `${base}/apps/web/?invite_token=${encodeURIComponent(inviteToken)}`;
-      try {
-        await navigator.clipboard.writeText(inviteUrl);
-        setAdminInviteStatus(`Invite created for ${response?.invite?.email ?? email}. Link copied to clipboard.`);
-      } catch {
-        setAdminInviteStatus(`Invite created for ${response?.invite?.email ?? email}. Link: ${inviteUrl}`);
-      }
+      setAdminInviteToken(inviteToken);
+      setAdminInviteStatus(`Invite token generated for ${response?.invite?.email ?? email}.`);
+      await copyInviteLinkToClipboard(inviteToken);
     } else {
-      setAdminInviteStatus(`Invite sent to ${response?.invite?.email ?? email}.`);
+      setAdminInviteToken('');
+      setAdminInviteStatus('Invite created, but token is hidden by server configuration.', 'error');
     }
     adminInviteEmail.value = '';
     await refreshAdminInvites();
+    await refreshAdminUsers();
   } catch (err) {
+    setAdminInviteToken('');
     setAdminInviteStatus(err?.message ?? 'Unable to send invite.', 'error');
   } finally {
     adminInviteSend?.removeAttribute('disabled');
+  }
+}
+
+async function submitAdminUserUpdate() {
+  const selected = getSelectedAdminUser();
+  if (!selected) {
+    setAdminUsersStatus('Select a user first.', 'error');
+    return;
+  }
+  const displayName = normalizeTitleInput(adminUserName?.value ?? selected.display_name);
+  const email = normalizeActorEmail(adminUserEmail?.value ?? selected.email);
+  if (!displayName) {
+    setAdminUsersStatus('Display name is required.', 'error');
+    adminUserName?.focus();
+    return;
+  }
+  if (!email) {
+    setAdminUsersStatus('Valid email is required.', 'error');
+    adminUserEmail?.focus();
+    return;
+  }
+  let parsedSettings = {};
+  try {
+    parsedSettings = JSON.parse(adminUserSettings?.value || '{}');
+    if (!parsedSettings || typeof parsedSettings !== 'object' || Array.isArray(parsedSettings)) {
+      throw new Error('Settings must be a JSON object.');
+    }
+  } catch (err) {
+    setAdminUsersStatus(err?.message ?? 'Invalid settings JSON.', 'error');
+    adminUserSettings?.focus();
+    return;
+  }
+  const patch = {
+    display_name: displayName,
+    email,
+    settings: parsedSettings
+  };
+  if (adminUserArchived && !adminUserArchived.disabled) {
+    patch.archived = adminUserArchived.value === '1' ? 1 : 0;
+  }
+  if (adminUserRole && !adminUserRole.disabled) {
+    patch.org_role = adminUserRole.value || 'member';
+  }
+  try {
+    const response = await api.updateAdminUser(selected.id, patch);
+    const updatedUser = response?.user ?? null;
+    if (updatedUser) {
+      const adminState = getAdminState();
+      adminState.users = adminState.users.map((user) =>
+        user.id === updatedUser.id
+          ? {
+            ...user,
+            ...updatedUser,
+            org_role: normalizeOrgRole(updatedUser.org_role),
+            archived: Number(updatedUser.archived) ? 1 : 0,
+            settings: updatedUser.settings && typeof updatedUser.settings === 'object' ? updatedUser.settings : {}
+          }
+          : user
+      );
+      syncAdminOwnerEmail(response?.owner_email ?? adminState.ownerEmail);
+      if (getAuthState().user?.id === updatedUser.id) {
+        getAuthState().user = {
+          ...getAuthState().user,
+          display_name: updatedUser.display_name,
+          email: updatedUser.email,
+          org_role: normalizeOrgRole(updatedUser.org_role)
+        };
+        state.ui.profile = {
+          name: updatedUser.display_name,
+          email: updatedUser.email
+        };
+        applyUserSettingsPayload(updatedUser.settings ?? {});
+      }
+      upsertUser(updatedUser);
+      render();
+    }
+    setAdminUsersStatus('User updated.');
+    showToast({ type: 'success', message: 'User updated.' });
+  } catch (err) {
+    setAdminUsersStatus(err?.message ?? 'Unable to update user.', 'error');
+    showToast({ type: 'error', message: err?.message ?? 'Unable to update user.' });
+  }
+}
+
+async function submitAdminPasswordReset() {
+  const selected = getSelectedAdminUser();
+  if (!selected) {
+    setAdminUsersStatus('Select a user first.', 'error');
+    return;
+  }
+  const password = String(adminUserPassword?.value ?? '');
+  if (!password) {
+    setAdminUsersStatus('Enter a temporary password.', 'error');
+    adminUserPassword?.focus();
+    return;
+  }
+  try {
+    await api.resetAdminUserPassword(selected.id, password);
+    if (adminUserPassword) adminUserPassword.value = '';
+    setAdminUsersStatus(`Password reset for ${selected.email}.`);
+    showToast({ type: 'success', message: `Password reset for ${selected.email}.` });
+  } catch (err) {
+    setAdminUsersStatus(err?.message ?? 'Unable to reset password.', 'error');
+    showToast({ type: 'error', message: err?.message ?? 'Unable to reset password.' });
+  }
+}
+
+async function exportAdminSelectedUser() {
+  const selected = getSelectedAdminUser();
+  if (!selected) {
+    setAdminUsersStatus('Select a user first.', 'error');
+    return;
+  }
+  try {
+    const response = await api.exportAdminUser(selected.id);
+    const safeName = sanitizeExportFilenamePart(selected.email || selected.display_name || selected.id);
+    const fileName = `${safeName}-account-export-${new Date().toISOString().slice(0, 10)}.json`;
+    downloadExportBlob(JSON.stringify(response?.data ?? response ?? {}, null, 2), 'application/json', fileName);
+    setAdminUsersStatus(`Exported ${selected.email}.`);
+    showToast({ type: 'success', message: `Exported ${selected.email}.` });
+  } catch (err) {
+    setAdminUsersStatus(err?.message ?? 'Unable to export user.', 'error');
+    showToast({ type: 'error', message: err?.message ?? 'Unable to export user.' });
+  }
+}
+
+async function deleteAdminSelectedUser() {
+  const selected = getSelectedAdminUser();
+  if (!selected) {
+    setAdminUsersStatus('Select a user first.', 'error');
+    return;
+  }
+  const confirmed = confirm(`Delete user ${selected.email}? This cannot be undone.`);
+  if (!confirmed) return;
+  try {
+    await api.deleteAdminUser(selected.id);
+    const deletedCurrentUser = getAuthState().user?.id === selected.id;
+    const adminState = getAdminState();
+    adminState.users = adminState.users.filter((user) => user.id !== selected.id);
+    if (adminState.selectedUserId === selected.id) {
+      adminState.selectedUserId = adminState.users[0]?.id ?? '';
+    }
+    setAdminUsersStatus(`Deleted ${selected.email}.`);
+    showToast({ type: 'success', message: `Deleted ${selected.email}.` });
+    renderAdminUsersList();
+    renderAdminUserEditor();
+    if (deletedCurrentUser) {
+      await handleAccountAuthAction();
+    }
+  } catch (err) {
+    setAdminUsersStatus(err?.message ?? 'Unable to delete user.', 'error');
+    showToast({ type: 'error', message: err?.message ?? 'Unable to delete user.' });
+  }
+}
+
+async function transferOwnershipToSelectedUser() {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminUsersStatus('Only the current owner can transfer ownership.', 'error');
+    return;
+  }
+  const selected = getSelectedAdminUser();
+  if (!selected) {
+    setAdminUsersStatus('Select a user first.', 'error');
+    return;
+  }
+  const confirmed = confirm(`Transfer ownership to ${selected.email}?`);
+  if (!confirmed) return;
+  try {
+    const response = await api.transferOwnership({
+      target_user_id: selected.id
+    });
+    syncAdminOwnerEmail(response?.owner_email ?? selected.email);
+    await refreshAdminUsers();
+    setAdminUsersStatus(`Ownership transferred to ${selected.email}.`);
+    showToast({ type: 'success', message: `Ownership transferred to ${selected.email}.` });
+  } catch (err) {
+    setAdminUsersStatus(err?.message ?? 'Unable to transfer ownership.', 'error');
+    showToast({ type: 'error', message: err?.message ?? 'Unable to transfer ownership.' });
   }
 }
 
@@ -10884,12 +13098,18 @@ function populateParentSelect(selectEl, taskId = null, selectedParentId = null) 
     return;
   }
   const disallowed = new Set();
+  const currentTask = taskId ? (state.tasks?.[taskId] ?? null) : null;
+  const scopeProjectId = normalizeSectionScopeProjectId(currentTask?.project_id);
   if (taskId) {
     disallowed.add(taskId);
     getDescendants(taskId).forEach(task => disallowed.add(task.id));
   }
   const candidates = Object.values(state.tasks ?? {})
-    .filter(task => task.workspace_id === state.workspace.id && !disallowed.has(task.id))
+    .filter(task =>
+      task.workspace_id === state.workspace.id
+      && !disallowed.has(task.id)
+      && normalizeSectionScopeProjectId(task.project_id) === scopeProjectId
+    )
     .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
   candidates.forEach(task => {
     const option = document.createElement('option');
@@ -10910,14 +13130,22 @@ function populateStatusSelect(selectEl, selectedKey = null) {
   if (!selectEl) return;
   const statuses = getStatusDefinitions();
   selectEl.innerHTML = '';
+  const noneOption = document.createElement('option');
+  noneOption.value = '';
+  noneOption.textContent = 'None';
+  selectEl.appendChild(noneOption);
   statuses.forEach(status => {
     const option = document.createElement('option');
     option.value = status.key;
     option.textContent = status.label;
     selectEl.appendChild(option);
   });
-  const fallback = selectedKey ?? getDefaultStatusKey();
-  selectEl.value = statuses.some(status => status.key === fallback) ? fallback : (statuses[0]?.key ?? '');
+  const selected = normalizeTaskStatusValue(selectedKey);
+  if (selected && statuses.some(status => status.key === selected)) {
+    selectEl.value = selected;
+  } else {
+    selectEl.value = '';
+  }
 }
 
 function populateTaskTypeSelect(selectEl, selectedName = null) {
@@ -12475,10 +14703,7 @@ function renderWorkflowsPage() {
   }
 
   if (!workflow) {
-    const empty = document.createElement('div');
-    empty.className = 'sidebar-note';
-    empty.textContent = 'Select a workflow to view runs.';
-    workflowDetailEl.appendChild(empty);
+    // Subtitle already communicates this empty state; avoid duplicate copy in the detail pane.
     return;
   }
 
@@ -13058,8 +15283,10 @@ function renderNotificationStatus() {
 
 function renderTaskList(roots) {
   const inlineAddDisabled = isMobileViewport();
-  const quickAddVisible = getTaskQuickAddVisible();
   const checklistInstanceId = getActiveWorkflowChecklistInstanceId();
+  const quickAddVisible = !checklistInstanceId && getTaskQuickAddVisible();
+  const appCompletedVisibility = getTaskCompletedVisibility();
+  const appFutureVisibilityDays = getTaskFutureVisibilityDays();
   const groupMode = checklistInstanceId
     ? 'workflow-phase'
     : (getTaskSortKey() === 'ai-queue' ? 'none' : getTaskGroupMode());
@@ -13072,12 +15299,20 @@ function renderTaskList(roots) {
 
   const list = document.createElement('div');
   list.className = 'task-list';
+  const appendTaskNode = (container, task, options = {}) => {
+    const rendered = renderTask(task, {
+      completedVisibility: options.completedVisibility ?? appCompletedVisibility,
+      futureVisibilityDays: options.futureVisibilityDays ?? appFutureVisibilityDays
+    });
+    if (rendered) container.appendChild(rendered);
+  };
   if (groupMode === 'none') {
     attachTaskDropzone(list, { parentId: null });
   }
   let defaultGroupList = null;
   if (groupMode === 'section') {
     const sections = getSectionsForWorkspace();
+    const sectionScopeProjectId = getActiveTaskSectionScopeProjectId();
     const grouped = new Map();
     const ungrouped = [];
 
@@ -13098,13 +15333,17 @@ function renderTaskList(roots) {
       addInput.type = 'text';
       addInput.className = 'task-add-input';
       addInput.placeholder = 'Add task...';
-      attachQuickAddClick(addInput, () => createTaskRecord({ title: '', group_label: sectionLabel }));
+      attachQuickAddClick(addInput);
       addInput.addEventListener('keydown', async (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
           const title = addInput.value.trim();
           if (!title) return;
-          await createTaskRecord({ title, group_label: sectionLabel });
+          await createTaskRecord({
+            title,
+            group_label: sectionLabel,
+            project_id: sectionScopeProjectId
+          });
           addInput.value = '';
           render();
         }
@@ -13146,7 +15385,7 @@ function renderTaskList(roots) {
       sectionHeader.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        showTaskGroupContextMenu(label, event.clientX, event.clientY);
+        showTaskGroupContextMenu(sectionInfo, event.clientX, event.clientY);
       });
       if (isPersisted) {
         section.addEventListener('dragover', (event) => {
@@ -13173,7 +15412,12 @@ function renderTaskList(roots) {
       const groupList = document.createElement('div');
       groupList.className = 'task-group-list';
       attachTaskDropzone(groupList, { parentId: null, groupMode: 'section', groupValue: label });
-      (grouped.get(label) ?? []).forEach(node => groupList.appendChild(renderTask(node)));
+      const sectionCompletedVisibility = getTaskSectionCompletedVisibility(sectionInfo);
+      const sectionFutureVisibilityDays = getTaskSectionFutureVisibilityDays(sectionInfo);
+      (grouped.get(label) ?? []).forEach(node => appendTaskNode(groupList, node, {
+        completedVisibility: sectionCompletedVisibility,
+        futureVisibilityDays: sectionFutureVisibilityDays
+      }));
       if (!inlineAddDisabled && quickAddVisible) {
         groupList.appendChild(createSectionAddRow(label));
       }
@@ -13185,7 +15429,7 @@ function renderTaskList(roots) {
       const ungroupedList = document.createElement('div');
       ungroupedList.className = 'task-group-list task-ungrouped-list';
       attachTaskDropzone(ungroupedList, { parentId: null, groupMode: 'section', groupValue: null });
-      ungrouped.forEach(node => ungroupedList.appendChild(renderTask(node)));
+      ungrouped.forEach(node => appendTaskNode(ungroupedList, node));
       list.appendChild(ungroupedList);
     }
 
@@ -13218,13 +15462,16 @@ function renderTaskList(roots) {
       addInput.type = 'text';
       addInput.className = 'task-add-input';
       addInput.placeholder = 'Add task...';
-      attachQuickAddClick(addInput, () => createTaskRecord({ title: '' }));
+      attachQuickAddClick(addInput);
       addInput.addEventListener('keydown', async (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
           const title = addInput.value.trim();
           if (!title) return;
-          await createTaskRecord({ title });
+          await createTaskRecord({
+            title,
+            project_id: sectionScopeProjectId
+          });
           addInput.value = '';
           render();
         }
@@ -13326,7 +15573,7 @@ function renderTaskList(roots) {
         groupMode: 'workflow-phase',
         groupValue: group.id
       });
-      group.tasks.forEach(node => groupList.appendChild(renderTask(node)));
+      group.tasks.forEach(node => appendTaskNode(groupList, node));
       section.appendChild(groupList);
       list.appendChild(section);
     });
@@ -13335,7 +15582,7 @@ function renderTaskList(roots) {
       const ungroupedList = document.createElement('div');
       ungroupedList.className = 'task-group-list task-ungrouped-list';
       attachTaskDropzone(ungroupedList, { parentId: null });
-      ungrouped.forEach(node => ungroupedList.appendChild(renderTask(node)));
+      ungrouped.forEach(node => appendTaskNode(ungroupedList, node));
       list.appendChild(ungroupedList);
     }
   } else if (groupMode !== 'none') {
@@ -13417,7 +15664,7 @@ function renderTaskList(roots) {
         groupMode,
         groupValue: group.value
       });
-      group.tasks.forEach(node => groupList.appendChild(renderTask(node)));
+      group.tasks.forEach(node => appendTaskNode(groupList, node));
       section.appendChild(groupList);
       list.appendChild(section);
       if (group.key === '__none__' || groupMode === 'priority' && group.value === 'medium') {
@@ -13425,7 +15672,7 @@ function renderTaskList(roots) {
       }
     });
   } else {
-    roots.forEach(node => list.appendChild(renderTask(node)));
+    roots.forEach(node => appendTaskNode(list, node));
   }
   let addInput = null;
   if (quickAddVisible && !inlineAddDisabled) {
@@ -13436,7 +15683,7 @@ function renderTaskList(roots) {
     addInput.className = 'task-add-input';
     addInput.placeholder = 'Add task...';
     addInput.value = state.ui?.taskAddDraft ?? '';
-    attachQuickAddClick(addInput, () => createTaskRecord({ title: '' }));
+    attachQuickAddClick(addInput);
     addInput.addEventListener('focus', () => {
       state.ui = state.ui ?? {};
       state.ui.taskAddFocused = true;
@@ -13507,14 +15754,165 @@ function getCalendarMonth() {
   return new Date();
 }
 
+function getSchedulingCalendarMonth() {
+  const value = state.ui?.schedulingCalendarMonth ?? null;
+  if (value) {
+    const date = new Date(`${value}-01T00:00:00`);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  return new Date();
+}
+
+function setSchedulingCalendarMonth(date) {
+  state.ui = state.ui ?? {};
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  state.ui.schedulingCalendarMonth = `${date.getFullYear()}-${month}`;
+}
+
+function getSchedulingCalendarWeekStart() {
+  const value = state.ui?.schedulingCalendarWeekStart ?? null;
+  if (value) {
+    const parsed = getWeekStartDate(`${value}T00:00:00`);
+    if (parsed) return parsed;
+  }
+  return getWeekStartDate(new Date()) ?? new Date();
+}
+
+function setSchedulingCalendarWeekStart(date) {
+  const weekStart = getWeekStartDate(date);
+  if (!weekStart) return;
+  state.ui = state.ui ?? {};
+  const y = weekStart.getFullYear();
+  const m = String(weekStart.getMonth() + 1).padStart(2, '0');
+  const d = String(weekStart.getDate()).padStart(2, '0');
+  state.ui.schedulingCalendarWeekStart = `${y}-${m}-${d}`;
+  setSchedulingCalendarMonth(weekStart);
+}
+
+function getSchedulingCalendarRange() {
+  return state.ui?.schedulingCalendarRange === 'week' ? 'week' : 'month';
+}
+
+function setSchedulingCalendarRange(value) {
+  const next = value === 'week' ? 'week' : 'month';
+  state.ui = state.ui ?? {};
+  state.ui.schedulingCalendarRange = next;
+  if (next === 'week' && !state.ui.schedulingCalendarWeekStart) {
+    setSchedulingCalendarWeekStart(new Date());
+  }
+}
+
 function setCalendarMonth(date) {
   state.ui = state.ui ?? {};
   const month = String(date.getMonth() + 1).padStart(2, '0');
   state.ui.calendarMonth = `${date.getFullYear()}-${month}`;
 }
 
+function getWeekStartDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - date.getDay());
+  return date;
+}
+
+function getCalendarWeekStart() {
+  const value = state.ui?.calendarWeekStart ?? null;
+  if (value) {
+    const parsed = getWeekStartDate(`${value}T00:00:00`);
+    if (parsed) return parsed;
+  }
+  return getWeekStartDate(new Date()) ?? new Date();
+}
+
+function setCalendarWeekStart(date) {
+  const weekStart = getWeekStartDate(date);
+  if (!weekStart) return;
+  state.ui = state.ui ?? {};
+  const y = weekStart.getFullYear();
+  const m = String(weekStart.getMonth() + 1).padStart(2, '0');
+  const d = String(weekStart.getDate()).padStart(2, '0');
+  state.ui.calendarWeekStart = `${y}-${m}-${d}`;
+  setCalendarMonth(weekStart);
+}
+
+function getCalendarRange() {
+  return state.ui?.calendarRange === 'week' ? 'week' : 'month';
+}
+
+function setCalendarRange(value) {
+  const next = value === 'week' ? 'week' : 'month';
+  state.ui = state.ui ?? {};
+  state.ui.calendarRange = next;
+  if (next === 'week' && !state.ui.calendarWeekStart) {
+    setCalendarWeekStart(new Date());
+  }
+}
+
+function formatDateOnlyValue(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateOnlyValue(value) {
+  const match = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day, 12, 0, 0, 0);
+  if (Number.isNaN(date.getTime())) return null;
+  if (date.getFullYear() !== year || date.getMonth() !== monthIndex || date.getDate() !== day) return null;
+  return date;
+}
+
+function parseMonthValue(value) {
+  const match = String(value ?? '').match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const date = new Date(year, monthIndex, 1, 12, 0, 0, 0);
+  if (Number.isNaN(date.getTime())) return null;
+  if (date.getFullYear() !== year || date.getMonth() !== monthIndex) return null;
+  return date;
+}
+
+function getCalendarIncludeHolidays() {
+  return Boolean(state.ui?.calendarIncludeHolidays);
+}
+
+function setCalendarIncludeHolidays(value) {
+  state.ui = state.ui ?? {};
+  state.ui.calendarIncludeHolidays = Boolean(value);
+}
+
+function normalizeHiddenHolidayKeys(value) {
+  if (!Array.isArray(value)) return [];
+  const hidden = [];
+  const seen = new Set();
+  value.forEach((entry) => {
+    const key = String(entry ?? '').trim();
+    if (!key || seen.has(key) || !US_HOLIDAY_RULE_KEYS.has(key)) return;
+    seen.add(key);
+    hidden.push(key);
+  });
+  return hidden;
+}
+
+function getCalendarHiddenHolidayKeys() {
+  return normalizeHiddenHolidayKeys(state.ui?.calendarHiddenHolidayKeys);
+}
+
+function setCalendarHiddenHolidayKeys(value) {
+  state.ui = state.ui ?? {};
+  state.ui.calendarHiddenHolidayKeys = normalizeHiddenHolidayKeys(value);
+}
+
 function getCalendarIncludeNotices() {
-  return Boolean(state.ui?.calendarIncludeNotices);
+  return state.ui?.calendarIncludeNotices !== false;
 }
 
 function setCalendarIncludeNotices(value) {
@@ -13522,7 +15920,620 @@ function setCalendarIncludeNotices(value) {
   state.ui.calendarIncludeNotices = Boolean(value);
 }
 
+function getNthWeekdayOfMonth(year, monthIndex, weekday, nth) {
+  if (nth <= 0) return null;
+  const date = new Date(year, monthIndex, 1, 12, 0, 0, 0);
+  const firstOffset = (7 + weekday - date.getDay()) % 7;
+  date.setDate(1 + firstOffset + (nth - 1) * 7);
+  if (date.getMonth() !== monthIndex) return null;
+  return date;
+}
+
+function getLastWeekdayOfMonth(year, monthIndex, weekday) {
+  const date = new Date(year, monthIndex + 1, 0, 12, 0, 0, 0);
+  while (date.getDay() !== weekday) {
+    date.setDate(date.getDate() - 1);
+  }
+  return date;
+}
+
+function getChineseNewYearDate(year) {
+  if (!CHINESE_CALENDAR_FORMATTER) return null;
+  for (let monthIndex = 0; monthIndex <= 1; monthIndex += 1) {
+    const startDay = monthIndex === 0 ? 21 : 1;
+    const endDay = monthIndex === 0 ? 31 : 20;
+    for (let day = startDay; day <= endDay; day += 1) {
+      const candidate = new Date(year, monthIndex, day, 12, 0, 0, 0);
+      if (Number.isNaN(candidate.getTime())) continue;
+      const parts = CHINESE_CALENDAR_FORMATTER.formatToParts(candidate);
+      const monthPart = parts.find(part => part.type === 'month')?.value ?? '';
+      const dayPart = parts.find(part => part.type === 'day')?.value ?? '';
+      const lunarMonth = Number.parseInt(monthPart, 10);
+      const lunarDay = Number.parseInt(dayPart, 10);
+      if (lunarMonth === 1 && lunarDay === 1) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+function getUsHolidayDefinitionsForYear(year) {
+  const hiddenKeys = new Set(getCalendarHiddenHolidayKeys());
+  return US_HOLIDAY_RULES
+    .filter(rule => !hiddenKeys.has(rule.key))
+    .map(rule => ({
+      key: rule.key,
+      title: rule.title,
+      date: rule.getDate(year)
+    }))
+    .filter(entry => entry.date && !Number.isNaN(entry.date.getTime()));
+}
+
+function getHolidayEntriesInRange(rangeStart, rangeEnd) {
+  const startTime = rangeStart?.getTime?.();
+  const endTime = rangeEnd?.getTime?.();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) return [];
+  const startYear = rangeStart.getFullYear();
+  const endYear = rangeEnd.getFullYear();
+  const entries = [];
+  for (let year = startYear; year <= endYear; year += 1) {
+    const holidays = getUsHolidayDefinitionsForYear(year);
+    holidays.forEach((holiday) => {
+      const time = holiday.date.getTime();
+      if (time < startTime || time > endTime) return;
+      entries.push({
+        id: `holiday-${holiday.key}-${year}`,
+        title: holiday.title,
+        date: holiday.date
+      });
+    });
+  }
+  return entries;
+}
+
+function getScheduleEventDateRange(event, rangeStart, rangeEnd) {
+  const startDate = event?.start_at ? new Date(event.start_at) : null;
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return [];
+  const endDate = event?.end_at ? new Date(event.end_at) : startDate;
+  if (Number.isNaN(endDate.getTime())) return [];
+  const rangeStartDay = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate(), 0, 0, 0, 0);
+  const rangeEndDay = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate(), 23, 59, 59, 999);
+  const eventStartDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0, 0);
+  const eventEndDay = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 0, 0, 0, 0);
+  if (eventEndDay.getTime() < rangeStartDay.getTime() || eventStartDay.getTime() > rangeEndDay.getTime()) {
+    return [];
+  }
+  const dates = [];
+  const cursor = new Date(Math.max(eventStartDay.getTime(), rangeStartDay.getTime()));
+  const finalTime = Math.min(eventEndDay.getTime(), rangeEndDay.getTime());
+  while (cursor.getTime() <= finalTime) {
+    dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function getDateIsoKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function formatCalendarHourLabel(hour) {
+  const normalized = ((Number(hour) % 24) + 24) % 24;
+  const suffix = normalized >= 12 ? 'PM' : 'AM';
+  const base = normalized % 12 || 12;
+  return `${base} ${suffix}`;
+}
+
+function formatCalendarTimeLabel(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatCalendarTimeRangeLabel(startDate, endDate) {
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return '';
+  const startLabel = formatCalendarTimeLabel(startDate);
+  if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) return startLabel;
+  return `${startLabel} - ${formatCalendarTimeLabel(endDate)}`;
+}
+
+function renderSchedulingPage() {
+  if (!schedulingCalendar) return;
+  schedulingCalendar.innerHTML = '';
+  if (!state.workspace) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Select a workspace to view scheduling.';
+    schedulingCalendar.appendChild(note);
+    return;
+  }
+
+  const mobileViewport = isMobileViewport();
+  const rangeMode = getSchedulingCalendarRange();
+  const weekMode = getSchedulingWeekMode();
+  const monthDate = getSchedulingCalendarMonth();
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const totalDays = lastDay.getDate();
+  const startOffset = firstDay.getDay();
+  const weekStart = getSchedulingCalendarWeekStart();
+  const weekEnd = new Date(weekStart.getTime());
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  const visibleWeekDates = (() => {
+    if (weekMode === 'workweek') {
+      const monday = new Date(weekStart.getTime());
+      monday.setDate(monday.getDate() + 1);
+      return Array.from({ length: 5 }, (_, index) => {
+        const date = new Date(monday.getTime());
+        date.setDate(monday.getDate() + index);
+        return date;
+      });
+    }
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(weekStart.getTime());
+      date.setDate(weekStart.getDate() + index);
+      return date;
+    });
+  })();
+  const weekDisplayStart = visibleWeekDates[0] ?? weekStart;
+  const weekDisplayEnd = visibleWeekDates[visibleWeekDates.length - 1] ?? weekEnd;
+  const rangeStart = rangeMode === 'week'
+    ? new Date(weekDisplayStart.getFullYear(), weekDisplayStart.getMonth(), weekDisplayStart.getDate(), 0, 0, 0, 0)
+    : new Date(year, month, 1, 0, 0, 0, 0);
+  const rangeEnd = rangeMode === 'week'
+    ? new Date(weekDisplayEnd.getFullYear(), weekDisplayEnd.getMonth(), weekDisplayEnd.getDate(), 23, 59, 59, 999)
+    : new Date(year, month, totalDays, 23, 59, 59, 999);
+
+  const header = document.createElement('div');
+  header.className = 'calendar-header';
+  header.classList.add('scheduling-calendar-header');
+  if (mobileViewport) {
+    header.classList.add('is-mobile');
+  }
+  const navControls = document.createElement('div');
+  navControls.className = 'calendar-nav-controls';
+  const title = document.createElement('div');
+  title.className = 'calendar-title';
+  if (rangeMode === 'week') {
+    const rangeLabel = `${weekDisplayStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} - ${new Date(weekDisplayEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    const sameMonth = weekDisplayStart.getFullYear() === weekDisplayEnd.getFullYear() && weekDisplayStart.getMonth() === weekDisplayEnd.getMonth();
+    title.textContent = mobileViewport && sameMonth
+      ? weekDisplayStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+      : rangeLabel;
+  } else {
+    title.textContent = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+  const controls = document.createElement('div');
+  controls.className = 'calendar-controls';
+  const rangeSelect = document.createElement('select');
+  rangeSelect.className = 'calendar-range-select';
+  rangeSelect.innerHTML = `
+    <option value="month">Month</option>
+    <option value="week">Week</option>
+  `;
+  rangeSelect.value = rangeMode;
+  rangeSelect.addEventListener('change', () => {
+    setSchedulingCalendarRange(rangeSelect.value);
+    if (rangeSelect.value === 'week') {
+      const anchor = rangeMode === 'week' ? weekStart : new Date(year, month, 1);
+      setSchedulingCalendarWeekStart(anchor);
+    }
+    render();
+  });
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.className = 'icon-button';
+  prevBtn.textContent = '‹';
+  prevBtn.title = rangeMode === 'week' ? 'Previous week' : 'Previous month';
+  prevBtn.addEventListener('click', () => {
+    if (rangeMode === 'week') {
+      const prevWeek = new Date(weekStart.getTime());
+      prevWeek.setDate(prevWeek.getDate() - 7);
+      setSchedulingCalendarWeekStart(prevWeek);
+    } else {
+      const prev = new Date(year, month - 1, 1);
+      setSchedulingCalendarMonth(prev);
+    }
+    render();
+  });
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.className = 'icon-button';
+  nextBtn.textContent = '›';
+  nextBtn.title = rangeMode === 'week' ? 'Next week' : 'Next month';
+  nextBtn.addEventListener('click', () => {
+    if (rangeMode === 'week') {
+      const nextWeek = new Date(weekStart.getTime());
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      setSchedulingCalendarWeekStart(nextWeek);
+    } else {
+      const next = new Date(year, month + 1, 1);
+      setSchedulingCalendarMonth(next);
+    }
+    render();
+  });
+  const todayBtn = document.createElement('button');
+  todayBtn.type = 'button';
+  todayBtn.className = 'subtle-button calendar-today-button';
+  todayBtn.textContent = 'Today';
+  todayBtn.title = 'Jump to today';
+  todayBtn.addEventListener('click', () => {
+    const today = new Date();
+    setSchedulingCalendarMonth(today);
+    if (rangeMode === 'week') {
+      setSchedulingCalendarWeekStart(today);
+    }
+    render();
+  });
+  const monthJumpInput = document.createElement('input');
+  monthJumpInput.type = 'month';
+  monthJumpInput.className = 'calendar-jump-input';
+  monthJumpInput.title = 'Jump to month';
+  monthJumpInput.value = state.ui?.schedulingCalendarMonth ?? `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}`;
+  monthJumpInput.addEventListener('change', () => {
+    const monthValue = parseMonthValue(monthJumpInput.value);
+    if (!monthValue) return;
+    setSchedulingCalendarMonth(monthValue);
+    if (rangeMode === 'week') {
+      setSchedulingCalendarWeekStart(monthValue);
+    }
+    render();
+  });
+  const dateJumpInput = document.createElement('input');
+  dateJumpInput.type = 'date';
+  dateJumpInput.className = 'calendar-jump-input';
+  dateJumpInput.title = 'Jump to specific date';
+  dateJumpInput.value = formatDateOnlyValue(rangeMode === 'week' ? weekDisplayStart : firstDay);
+  dateJumpInput.addEventListener('change', () => {
+    const dateValue = parseDateOnlyValue(dateJumpInput.value);
+    if (!dateValue) return;
+    setSchedulingCalendarMonth(dateValue);
+    if (rangeMode === 'week') {
+      setSchedulingCalendarWeekStart(dateValue);
+    }
+    render();
+  });
+  navControls.appendChild(prevBtn);
+  navControls.appendChild(nextBtn);
+  navControls.appendChild(todayBtn);
+  if (!mobileViewport) {
+    navControls.appendChild(monthJumpInput);
+    navControls.appendChild(dateJumpInput);
+  }
+  controls.appendChild(rangeSelect);
+  header.appendChild(navControls);
+  header.appendChild(title);
+  header.appendChild(controls);
+  schedulingCalendar.appendChild(header);
+
+  const allDayByDate = new Map();
+  const timedByDate = new Map();
+  const pushAllDayEntry = (key, entry) => {
+    const list = allDayByDate.get(key) ?? [];
+    list.push(entry);
+    allDayByDate.set(key, list);
+  };
+  const pushTimedEntry = (key, entry) => {
+    const list = timedByDate.get(key) ?? [];
+    list.push(entry);
+    timedByDate.set(key, list);
+  };
+  getScheduleEventsForWorkspace()
+    .filter(event => isSchedulingKindVisible(event.kind))
+    .forEach((event) => {
+    const startDate = event?.start_at ? new Date(event.start_at) : null;
+    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return;
+    const endDate = event?.end_at ? new Date(event.end_at) : new Date(startDate);
+    if (Number.isNaN(endDate.getTime())) return;
+    const isAllDay = Number(event.all_day) === 1 || normalizeScheduleEventKind(event.kind) === 'day-off';
+    const dates = getScheduleEventDateRange(event, rangeStart, rangeEnd);
+    dates.forEach((date) => {
+      const key = getDateIsoKey(date);
+      if (!key) return;
+      if (isAllDay) {
+        pushAllDayEntry(key, {
+          type: 'schedule',
+          id: event.id,
+          kind: event.kind,
+          title: event.title,
+          all_day: true
+        });
+        return;
+      }
+      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+      const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+      const segmentStart = new Date(Math.max(startDate.getTime(), dayStart.getTime()));
+      const segmentEnd = new Date(Math.min(endDate.getTime(), dayEnd.getTime()));
+      if (segmentEnd.getTime() <= segmentStart.getTime()) {
+        segmentEnd.setTime(segmentStart.getTime() + (30 * 60 * 1000));
+      }
+      pushTimedEntry(key, {
+        type: 'schedule',
+        id: event.id,
+        kind: event.kind,
+        title: event.title,
+        all_day: false,
+        start: segmentStart,
+        end: segmentEnd
+      });
+    });
+    });
+
+  if (getSchedulingShowTasks()) {
+    const completedVisibility = getTaskCompletedVisibility();
+    const futureVisibilityDays = getTaskFutureVisibilityDays();
+    Object.values(state.tasks ?? {}).forEach((task) => {
+      if (task.workspace_id !== state.workspace?.id) return;
+      if (isTaskCompletedAndHidden(task, completedVisibility)) return;
+      if (isTaskBeyondDueHorizon(task, futureVisibilityDays)) return;
+      if (!task.due_at) return;
+      const due = new Date(task.due_at);
+      if (Number.isNaN(due.getTime())) return;
+      const dueTime = due.getTime();
+      if (dueTime < rangeStart.getTime() || dueTime > rangeEnd.getTime()) return;
+      const key = getDateIsoKey(due);
+      if (!key) return;
+      pushAllDayEntry(key, {
+        type: 'task',
+        id: task.id,
+        title: task.title,
+        all_day: true,
+        due: due
+      });
+    });
+  }
+
+  if (getCalendarIncludeHolidays()) {
+    const holidays = getHolidayEntriesInRange(rangeStart, rangeEnd);
+    holidays.forEach((holiday) => {
+      const key = getDateIsoKey(holiday.date);
+      if (!key) return;
+      pushAllDayEntry(key, {
+        type: 'holiday',
+        id: holiday.id,
+        title: holiday.title,
+        all_day: true
+      });
+    });
+  }
+
+  if (rangeMode === 'week') {
+    const todayKey = getDateIsoKey(new Date());
+    const isMobileWeek = mobileViewport;
+    const hourHeight = isMobileWeek ? 58 : 84;
+    const weekWrap = document.createElement('div');
+    weekWrap.className = 'scheduling-week-wrap';
+    if (isMobileWeek) {
+      weekWrap.classList.add('is-mobile');
+    }
+    const weekHeader = document.createElement('div');
+    weekHeader.className = 'scheduling-week-header';
+    weekHeader.style.setProperty('--week-day-count', String(visibleWeekDates.length));
+    const corner = document.createElement('div');
+    corner.className = 'scheduling-week-corner';
+    weekHeader.appendChild(corner);
+    visibleWeekDates.forEach((date) => {
+      const dayCell = document.createElement('div');
+      dayCell.className = 'scheduling-week-day-header';
+      const key = getDateIsoKey(date);
+      if (key === todayKey) dayCell.classList.add('is-today');
+      if (isMobileWeek) {
+        const dayName = document.createElement('span');
+        dayName.className = 'scheduling-week-day-name';
+        dayName.textContent = date.toLocaleDateString(undefined, { weekday: 'short' });
+        const dayDate = document.createElement('span');
+        dayDate.className = 'scheduling-week-day-date';
+        dayDate.textContent = String(date.getDate());
+        dayCell.appendChild(dayName);
+        dayCell.appendChild(dayDate);
+      } else {
+        dayCell.textContent = date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      }
+      weekHeader.appendChild(dayCell);
+    });
+    weekWrap.appendChild(weekHeader);
+
+    const allDayRow = document.createElement('div');
+    allDayRow.className = 'scheduling-week-all-day-row';
+    allDayRow.style.setProperty('--week-day-count', String(visibleWeekDates.length));
+    const allDayLabel = document.createElement('div');
+    allDayLabel.className = 'scheduling-week-all-day-label';
+    allDayLabel.textContent = 'All day';
+    allDayRow.appendChild(allDayLabel);
+    visibleWeekDates.forEach((date) => {
+      const dayCell = document.createElement('div');
+      dayCell.className = 'scheduling-week-all-day-cell';
+      const key = getDateIsoKey(date);
+      const entries = allDayByDate.get(key) ?? [];
+      entries.slice(0, 4).forEach((entry) => {
+        const chip = document.createElement('div');
+        if (entry.type === 'schedule') {
+          chip.className = `calendar-item schedule-${toCssToken(entry.kind ?? 'event')}`;
+        } else {
+          chip.className = `calendar-item ${entry.type}`;
+        }
+        chip.textContent = entry.title;
+        if (entry.type === 'schedule') {
+          chip.addEventListener('click', () => {
+            const current = (state.scheduleEvents ?? []).find(item => item.id === entry.id);
+            if (current) openScheduleEventModal(current);
+          });
+        } else if (entry.type === 'task') {
+          chip.addEventListener('click', () => openTaskEditor(entry.id));
+        }
+        dayCell.appendChild(chip);
+      });
+      if (entries.length > 4) {
+        const more = document.createElement('div');
+        more.className = 'calendar-more';
+        more.textContent = `+${entries.length - 4} more`;
+        dayCell.appendChild(more);
+      }
+      allDayRow.appendChild(dayCell);
+    });
+    weekWrap.appendChild(allDayRow);
+
+    const body = document.createElement('div');
+    body.className = 'scheduling-week-body';
+    if (isMobileWeek) {
+      body.classList.add('is-mobile');
+    }
+    body.style.setProperty('--week-day-count', String(visibleWeekDates.length));
+    body.style.setProperty('--hour-height', `${hourHeight}px`);
+    const gutter = document.createElement('div');
+    gutter.className = 'scheduling-week-time-gutter';
+    for (let hour = 0; hour < 24; hour += 1) {
+      const label = document.createElement('div');
+      label.className = 'scheduling-week-time-label';
+      label.style.top = `${hour * hourHeight}px`;
+      label.textContent = formatCalendarHourLabel(hour);
+      gutter.appendChild(label);
+    }
+    body.appendChild(gutter);
+    const days = document.createElement('div');
+    days.className = 'scheduling-week-days';
+    visibleWeekDates.forEach((date) => {
+      const key = getDateIsoKey(date);
+      const column = document.createElement('div');
+      column.className = 'scheduling-week-day-column';
+      for (let hour = 1; hour < 24; hour += 1) {
+        const line = document.createElement('div');
+        line.className = 'scheduling-week-hour-line';
+        line.style.top = `${hour * hourHeight}px`;
+        column.appendChild(line);
+      }
+      const timedEntries = (timedByDate.get(key) ?? [])
+        .map((entry) => {
+          const startMin = (entry.start.getHours() * 60) + entry.start.getMinutes();
+          const endMin = (entry.end.getHours() * 60) + entry.end.getMinutes();
+          const safeEnd = Math.max(endMin, startMin + 30);
+          return {
+            ...entry,
+            startMin,
+            endMin: safeEnd
+          };
+        })
+        .sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+
+      const laneEnds = [];
+      timedEntries.forEach((entry) => {
+        let lane = laneEnds.findIndex((laneEnd) => entry.startMin >= laneEnd);
+        if (lane < 0) lane = laneEnds.length;
+        laneEnds[lane] = entry.endMin;
+        entry.lane = lane;
+      });
+      const laneCount = Math.max(1, laneEnds.length);
+      timedEntries.forEach((entry) => {
+        const block = document.createElement('button');
+        block.type = 'button';
+        block.className = `scheduling-week-event schedule-${toCssToken(entry.kind ?? 'event')}`;
+        const top = (entry.startMin / 60) * hourHeight;
+        const height = Math.max(28, ((entry.endMin - entry.startMin) / 60) * hourHeight);
+        block.style.top = `${top}px`;
+        block.style.height = `${height}px`;
+        block.style.left = `calc(${(entry.lane / laneCount) * 100}% + 2px)`;
+        block.style.width = `calc(${(100 / laneCount)}% - 4px)`;
+        const titleEl = document.createElement('div');
+        titleEl.className = 'scheduling-week-event-title';
+        titleEl.textContent = entry.title;
+        const metaEl = document.createElement('div');
+        metaEl.className = 'scheduling-week-event-meta';
+        metaEl.textContent = formatCalendarTimeRangeLabel(entry.start, entry.end);
+        block.appendChild(titleEl);
+        block.appendChild(metaEl);
+        block.addEventListener('click', () => {
+          const current = (state.scheduleEvents ?? []).find(item => item.id === entry.id);
+          if (current) openScheduleEventModal(current);
+        });
+        column.appendChild(block);
+      });
+      days.appendChild(column);
+    });
+    body.appendChild(days);
+    weekWrap.appendChild(body);
+    schedulingCalendar.appendChild(weekWrap);
+    if (isMobileWeek) {
+      body.scrollTop = Math.max(0, (new Date().getHours() - 2) * hourHeight);
+    }
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'calendar-grid';
+  const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  weekdayLabels.forEach((label) => {
+    const cell = document.createElement('div');
+    cell.className = 'calendar-weekday';
+    cell.textContent = label;
+    grid.appendChild(cell);
+  });
+
+  for (let i = 0; i < startOffset; i += 1) {
+    const empty = document.createElement('div');
+    empty.className = 'calendar-day empty';
+    grid.appendChild(empty);
+  }
+
+  const calendarDates = [];
+  for (let day = 1; day <= totalDays; day += 1) {
+    calendarDates.push(new Date(year, month, day));
+  }
+
+  calendarDates.forEach((date) => {
+    const key = getDateIsoKey(date);
+    const cell = document.createElement('div');
+    cell.className = 'calendar-day';
+    const dayLabel = document.createElement('div');
+    dayLabel.className = 'calendar-day-number';
+    dayLabel.textContent = String(date.getDate());
+    cell.appendChild(dayLabel);
+    const items = [
+      ...(allDayByDate.get(key) ?? []),
+      ...(timedByDate.get(key) ?? [])
+    ];
+    items.slice(0, 6).forEach((entry) => {
+      const item = document.createElement('div');
+      if (entry.type === 'schedule') {
+        item.className = `calendar-item schedule-${toCssToken(entry.kind ?? 'event')}`;
+        if (!entry.all_day && entry.start instanceof Date && entry.end instanceof Date) {
+          item.textContent = `${formatCalendarTimeLabel(entry.start)} · ${entry.title}`;
+        } else {
+          item.textContent = entry.title;
+        }
+      } else {
+        item.className = `calendar-item ${entry.type}`;
+        item.textContent = entry.title;
+      }
+      if (entry.type === 'schedule') {
+        item.addEventListener('click', () => {
+          const event = (state.scheduleEvents ?? []).find(current => current.id === entry.id);
+          if (event) openScheduleEventModal(event);
+        });
+      } else if (entry.type === 'task') {
+        item.addEventListener('click', () => openTaskEditor(entry.id));
+      }
+      cell.appendChild(item);
+    });
+    if (items.length > 6) {
+      const more = document.createElement('div');
+      more.className = 'calendar-more';
+      more.textContent = `+${items.length - 6} more`;
+      cell.appendChild(more);
+    }
+    grid.appendChild(cell);
+  });
+
+  schedulingCalendar.appendChild(grid);
+}
+
 function renderCalendarView(tasks) {
+  const completedVisibility = getTaskCompletedVisibility();
+  const futureVisibilityDays = getTaskFutureVisibilityDays();
+  const rangeMode = getCalendarRange();
   const monthDate = getCalendarMonth();
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
@@ -13530,32 +16541,114 @@ function renderCalendarView(tasks) {
   const lastDay = new Date(year, month + 1, 0);
   const startOffset = firstDay.getDay();
   const totalDays = lastDay.getDate();
+  const weekStart = getCalendarWeekStart();
+  const weekEnd = new Date(weekStart.getTime());
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  const rangeStart = rangeMode === 'week'
+    ? new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate(), 0, 0, 0, 0)
+    : new Date(year, month, 1, 0, 0, 0, 0);
+  const rangeEnd = rangeMode === 'week'
+    ? weekEnd
+    : new Date(year, month, totalDays, 23, 59, 59, 999);
 
   const header = document.createElement('div');
   header.className = 'calendar-header';
+  const navControls = document.createElement('div');
+  navControls.className = 'calendar-nav-controls';
   const title = document.createElement('div');
   title.className = 'calendar-title';
-  title.textContent = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  title.textContent = rangeMode === 'week'
+    ? `${weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} - ${new Date(weekEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+    : firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const controls = document.createElement('div');
   controls.className = 'calendar-controls';
+  const rangeSelect = document.createElement('select');
+  rangeSelect.className = 'calendar-range-select';
+  rangeSelect.innerHTML = `
+    <option value="month">Month</option>
+    <option value="week">Week</option>
+  `;
+  rangeSelect.value = rangeMode;
+  rangeSelect.addEventListener('change', () => {
+    setCalendarRange(rangeSelect.value);
+    if (rangeSelect.value === 'week') {
+      const anchor = rangeMode === 'week' ? weekStart : new Date(year, month, 1);
+      setCalendarWeekStart(anchor);
+    }
+    render();
+  });
   const prevBtn = document.createElement('button');
   prevBtn.type = 'button';
   prevBtn.className = 'icon-button';
   prevBtn.textContent = '‹';
-  prevBtn.title = 'Previous month';
+  prevBtn.title = rangeMode === 'week' ? 'Previous week' : 'Previous month';
   prevBtn.addEventListener('click', () => {
-    const prev = new Date(year, month - 1, 1);
-    setCalendarMonth(prev);
+    if (rangeMode === 'week') {
+      const prevWeek = new Date(weekStart.getTime());
+      prevWeek.setDate(prevWeek.getDate() - 7);
+      setCalendarWeekStart(prevWeek);
+    } else {
+      const prev = new Date(year, month - 1, 1);
+      setCalendarMonth(prev);
+    }
     render();
   });
   const nextBtn = document.createElement('button');
   nextBtn.type = 'button';
   nextBtn.className = 'icon-button';
   nextBtn.textContent = '›';
-  nextBtn.title = 'Next month';
+  nextBtn.title = rangeMode === 'week' ? 'Next week' : 'Next month';
   nextBtn.addEventListener('click', () => {
-    const next = new Date(year, month + 1, 1);
-    setCalendarMonth(next);
+    if (rangeMode === 'week') {
+      const nextWeek = new Date(weekStart.getTime());
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      setCalendarWeekStart(nextWeek);
+    } else {
+      const next = new Date(year, month + 1, 1);
+      setCalendarMonth(next);
+    }
+    render();
+  });
+  const todayBtn = document.createElement('button');
+  todayBtn.type = 'button';
+  todayBtn.className = 'subtle-button calendar-today-button';
+  todayBtn.textContent = 'Today';
+  todayBtn.title = 'Jump to today';
+  todayBtn.addEventListener('click', () => {
+    const today = new Date();
+    setCalendarMonth(today);
+    if (rangeMode === 'week') {
+      setCalendarWeekStart(today);
+    }
+    render();
+  });
+  const monthJumpInput = document.createElement('input');
+  monthJumpInput.type = 'month';
+  monthJumpInput.className = 'calendar-jump-input';
+  monthJumpInput.title = 'Jump to month';
+  monthJumpInput.value = state.ui?.calendarMonth ?? `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}`;
+  monthJumpInput.addEventListener('change', () => {
+    const monthValue = parseMonthValue(monthJumpInput.value);
+    if (!monthValue) return;
+    setCalendarMonth(monthValue);
+    if (rangeMode === 'week') {
+      setCalendarWeekStart(monthValue);
+    }
+    render();
+  });
+  const dateJumpInput = document.createElement('input');
+  dateJumpInput.type = 'date';
+  dateJumpInput.className = 'calendar-jump-input';
+  dateJumpInput.title = 'Jump to specific date';
+  dateJumpInput.value = formatDateOnlyValue(rangeMode === 'week' ? weekStart : firstDay);
+  dateJumpInput.addEventListener('change', () => {
+    const dateValue = parseDateOnlyValue(dateJumpInput.value);
+    if (!dateValue) return;
+    setCalendarMonth(dateValue);
+    if (rangeMode === 'week') {
+      setCalendarWeekStart(dateValue);
+    }
     render();
   });
   const includeLabel = document.createElement('label');
@@ -13568,18 +16661,40 @@ function renderCalendarView(tasks) {
     render();
   });
   const includeText = document.createElement('span');
-  includeText.textContent = 'Include notices';
+  includeText.textContent = 'Show notices';
   includeLabel.appendChild(includeCheckbox);
   includeLabel.appendChild(includeText);
-  controls.appendChild(prevBtn);
-  controls.appendChild(nextBtn);
+  const holidayLabel = document.createElement('label');
+  holidayLabel.className = 'inline calendar-toggle';
+  const holidayCheckbox = document.createElement('input');
+  holidayCheckbox.type = 'checkbox';
+  holidayCheckbox.checked = getCalendarIncludeHolidays();
+  holidayCheckbox.addEventListener('change', () => {
+    setCalendarIncludeHolidays(holidayCheckbox.checked);
+    render();
+  });
+  const holidayText = document.createElement('span');
+  holidayText.textContent = 'Show holidays';
+  holidayLabel.appendChild(holidayCheckbox);
+  holidayLabel.appendChild(holidayText);
+  navControls.appendChild(prevBtn);
+  navControls.appendChild(nextBtn);
+  navControls.appendChild(todayBtn);
+  navControls.appendChild(monthJumpInput);
+  navControls.appendChild(dateJumpInput);
+  controls.appendChild(rangeSelect);
   controls.appendChild(includeLabel);
+  controls.appendChild(holidayLabel);
+  header.appendChild(navControls);
   header.appendChild(title);
   header.appendChild(controls);
   taskTreeEl.appendChild(header);
 
   const grid = document.createElement('div');
   grid.className = 'calendar-grid';
+  if (rangeMode === 'week') {
+    grid.classList.add('calendar-grid-week');
+  }
   const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   weekdayLabels.forEach(label => {
     const cell = document.createElement('div');
@@ -13590,6 +16705,8 @@ function renderCalendarView(tasks) {
 
   const entriesByDate = new Map();
   tasks.forEach(task => {
+    if (isTaskCompletedAndHidden(task, completedVisibility)) return;
+    if (isTaskBeyondDueHorizon(task, futureVisibilityDays)) return;
     if (!task.due_at) return;
     const due = new Date(task.due_at);
     if (Number.isNaN(due.getTime())) return;
@@ -13602,38 +16719,78 @@ function renderCalendarView(tasks) {
   if (getCalendarIncludeNotices()) {
     (state.notices ?? []).forEach(notice => {
       if (notice.dismissed_at) return;
-      const date = new Date(notice.notify_at);
-      if (Number.isNaN(date.getTime())) return;
-      const key = date.toISOString().slice(0, 10);
+      const occurrences = getNoticeOccurrencesInRange(notice, rangeStart, rangeEnd);
+      occurrences.forEach((occurrenceDate) => {
+        const key = occurrenceDate.toISOString().slice(0, 10);
+        const list = entriesByDate.get(key) ?? [];
+        list.push({
+          type: 'notice',
+          id: notice.id,
+          title: notice.title,
+          noticeType: notice.notice_type ?? 'general'
+        });
+        entriesByDate.set(key, list);
+      });
+    });
+  }
+
+  if (getCalendarIncludeHolidays()) {
+    const holidays = getHolidayEntriesInRange(rangeStart, rangeEnd);
+    holidays.forEach((holiday) => {
+      const key = holiday.date.toISOString().slice(0, 10);
       const list = entriesByDate.get(key) ?? [];
-      list.push({ type: 'notice', id: notice.id, title: notice.title });
+      list.push({
+        type: 'holiday',
+        id: holiday.id,
+        title: holiday.title
+      });
       entriesByDate.set(key, list);
     });
   }
 
-  for (let i = 0; i < startOffset; i += 1) {
-    const empty = document.createElement('div');
-    empty.className = 'calendar-day empty';
-    grid.appendChild(empty);
+  if (rangeMode === 'month') {
+    for (let i = 0; i < startOffset; i += 1) {
+      const empty = document.createElement('div');
+      empty.className = 'calendar-day empty';
+      grid.appendChild(empty);
+    }
   }
 
-  for (let day = 1; day <= totalDays; day += 1) {
-    const date = new Date(year, month, day);
+  const calendarDates = [];
+  if (rangeMode === 'week') {
+    for (let i = 0; i < 7; i += 1) {
+      const date = new Date(weekStart.getTime());
+      date.setDate(weekStart.getDate() + i);
+      calendarDates.push(date);
+    }
+  } else {
+    for (let day = 1; day <= totalDays; day += 1) {
+      calendarDates.push(new Date(year, month, day));
+    }
+  }
+
+  calendarDates.forEach((date) => {
     const key = date.toISOString().slice(0, 10);
     const cell = document.createElement('div');
     cell.className = 'calendar-day';
     const dayLabel = document.createElement('div');
     dayLabel.className = 'calendar-day-number';
-    dayLabel.textContent = String(day);
+    dayLabel.textContent = rangeMode === 'week'
+      ? date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+      : String(date.getDate());
     cell.appendChild(dayLabel);
     const items = entriesByDate.get(key) ?? [];
     items.slice(0, 4).forEach(entry => {
       const item = document.createElement('div');
-      item.className = `calendar-item ${entry.type}`;
+      if (entry.type === 'notice') {
+        item.className = `calendar-item notice notice-${toCssToken(entry.noticeType ?? 'general')}`;
+      } else {
+        item.className = `calendar-item ${entry.type}`;
+      }
       item.textContent = entry.title;
       if (entry.type === 'task') {
         item.addEventListener('click', () => openTaskEditor(entry.id));
-      } else {
+      } else if (entry.type === 'notice') {
         item.addEventListener('click', () => {
           const notice = (state.notices ?? []).find(r => r.id === entry.id);
           if (notice) openNoticeModalWithNotice(notice);
@@ -13648,7 +16805,7 @@ function renderCalendarView(tasks) {
       cell.appendChild(more);
     }
     grid.appendChild(cell);
-  }
+  });
 
   taskTreeEl.appendChild(grid);
 }
@@ -13656,11 +16813,15 @@ function renderCalendarView(tasks) {
 function renderKanban(roots) {
   const inlineAddDisabled = isMobileViewport();
   const quickAddVisible = getTaskQuickAddVisible();
+  const completedVisibility = getTaskCompletedVisibility();
+  const futureVisibilityDays = getTaskFutureVisibilityDays();
   if ((inlineAddDisabled || !quickAddVisible) && state.ui?.kanbanQuickAdd) {
     setKanbanQuickAdd(null);
   }
   const grouped = new Map();
   roots.forEach(task => {
+    if (isTaskCompletedAndHidden(task, completedVisibility)) return;
+    if (isTaskBeyondDueHorizon(task, futureVisibilityDays)) return;
     const status = task.status ?? getDefaultStatusKey();
     if (!grouped.has(status)) grouped.set(status, []);
     grouped.get(status).push(task);
@@ -14073,7 +17234,20 @@ function createWorkspaceManageRow(workspace, isArchivedView) {
   return row;
 }
 
-function renderTask(task) {
+function renderTask(task, options = {}) {
+  const completedVisibility = normalizeTaskCompletedVisibility(
+    options.completedVisibility ?? getTaskCompletedVisibility()
+  );
+  const futureVisibilityDays = normalizeTaskFutureVisibilityDays(
+    options.futureVisibilityDays ?? getTaskFutureVisibilityDays()
+  );
+  const statusKey = normalizeTaskStatusValue(task.status);
+  if (isTaskCompletedAndHidden(task, completedVisibility)) {
+    return null;
+  }
+  if (isTaskBeyondDueHorizon(task, futureVisibilityDays)) {
+    return null;
+  }
   const template = document.getElementById('task-item-template');
   const node = template.content.cloneNode(true);
   const item = node.querySelector('.task-item');
@@ -14081,6 +17255,11 @@ function renderTask(task) {
   const metaEl = node.querySelector('.task-meta');
   const statusTag = node.querySelector('.task-status-tag');
   const typeBadge = node.querySelector('.task-type-badge');
+  const rowMetaDue = node.querySelector('.task-row-meta-due');
+  const rowMetaRepeat = node.querySelector('.task-row-meta-repeat');
+  const rowMetaType = node.querySelector('.task-row-meta-type');
+  const rowMetaAssignee = node.querySelector('.task-row-meta-assignee');
+  const rowMetaStatus = node.querySelector('.task-row-meta-status');
   const toggleBtn = node.querySelector('.task-toggle');
   const completeButton = node.querySelector('.task-complete-button');
   const menuButton = node.querySelector('.task-menu-button');
@@ -14092,7 +17271,6 @@ function renderTask(task) {
   const hasChildren = task.children && task.children.length > 0;
   const collapsedMap = state.ui?.collapsedTasks ?? {};
   const isCollapsed = Boolean(collapsedMap[task.id]);
-  const statusKey = task.status ?? getDefaultStatusKey();
   const checklistViewActive = isWorkflowChecklistViewActive();
   const checklistInstanceId = checklistViewActive ? getActiveWorkflowChecklistInstanceId() : null;
   const workflowLink = checklistViewActive ? getChecklistLinkForTask(task.id, checklistInstanceId) : null;
@@ -14102,10 +17280,12 @@ function renderTask(task) {
 
   titleEl.textContent = task.title;
   titleEl.addEventListener('click', (event) => {
-    event.stopPropagation();
     if (event.button !== 0) return;
     if (suppressTaskClick) return;
     if (isChecklistRowDisabled) return;
+    const selected = getSelectedTaskIds();
+    if (selected.length) return;
+    event.stopPropagation();
     beginInlineTaskEdit(task, item, titleEl);
   });
   item.dataset.status = statusKey;
@@ -14117,16 +17297,20 @@ function renderTask(task) {
   item.style.borderLeft = `3px solid ${getStatusColor(statusKey)}`;
   item.setAttribute('aria-disabled', isChecklistRowDisabled ? 'true' : 'false');
   if (statusTag) {
-    statusTag.textContent = getStatusLabel(statusKey);
-    statusTag.style.background = `${getStatusColor(statusKey)}33`;
-    statusTag.style.color = getStatusColor(statusKey);
+    if (statusKey) {
+      statusTag.hidden = false;
+      statusTag.textContent = getStatusLabel(statusKey);
+      statusTag.style.background = `${getStatusColor(statusKey)}33`;
+      statusTag.style.color = getStatusColor(statusKey);
+    } else {
+      statusTag.hidden = true;
+      statusTag.textContent = '';
+    }
   }
-  const projectName = getProjectName(task.project_id);
-  const projectText = projectName ? ` · ${projectName}` : '';
   const childCount = countDescendants(task);
   const childText = childCount ? ` · ${childCount} subtask${childCount > 1 ? 's' : ''}` : '';
   const waitingText = isWaitingStatusKey(statusKey) ? ` · ${formatFollowupMeta(task)}` : '';
-  metaEl.textContent = `priority ${task.priority}${projectText}${childText}${waitingText}`;
+  metaEl.textContent = `priority ${task.priority}${childText}${waitingText}`;
   const recurrenceText = task.recurrence_interval && task.recurrence_unit
     ? ` · repeats every ${task.recurrence_interval} ${task.recurrence_unit}${task.recurrence_interval > 1 ? 's' : ''}`
     : '';
@@ -14135,6 +17319,53 @@ function renderTask(task) {
   if (recurrenceText || reminderText) {
     metaEl.textContent += `${recurrenceText}${reminderText}`;
   }
+
+  const dueMeta = formatTaskDueMeta(task.due_at);
+  if (rowMetaDue) {
+    rowMetaDue.textContent = dueMeta;
+    rowMetaDue.title = task.due_at ? `Due ${dueMeta}` : 'No due date';
+    const dueDate = task.due_at ? new Date(task.due_at) : null;
+    const isOverdue = Boolean(
+      dueDate
+      && !Number.isNaN(dueDate.getTime())
+      && dueDate.getTime() < Date.now()
+      && !isDoneStatusKey(statusKey)
+    );
+    rowMetaDue.classList.toggle('is-overdue', isOverdue);
+  }
+
+  if (rowMetaRepeat) {
+    const repeatMeta = formatTaskRepeatMeta(task.recurrence_interval, task.recurrence_unit);
+    rowMetaRepeat.textContent = repeatMeta;
+    rowMetaRepeat.title = repeatMeta;
+  }
+
+  if (rowMetaType) {
+    const typeMeta = task.type_label ? task.type_label : 'No type';
+    rowMetaType.textContent = typeMeta;
+    rowMetaType.title = typeMeta;
+  }
+
+  if (rowMetaAssignee) {
+    const assigneeMeta = getTaskAssigneeDisplay(task) || 'Unassigned';
+    rowMetaAssignee.textContent = assigneeMeta;
+    rowMetaAssignee.title = assigneeMeta;
+  }
+
+  if (rowMetaStatus) {
+    const statusMeta = getStatusLabel(statusKey) || 'No status';
+    rowMetaStatus.textContent = statusMeta;
+    rowMetaStatus.title = statusMeta;
+    const statusColor = getStatusColor(statusKey);
+    if (statusColor) {
+      rowMetaStatus.style.color = statusColor;
+      rowMetaStatus.style.borderColor = `${statusColor}66`;
+    } else {
+      rowMetaStatus.style.color = '';
+      rowMetaStatus.style.borderColor = '';
+    }
+  }
+
   if (task.type_label) {
     typeBadge.textContent = task.type_label;
     typeBadge.style.display = 'inline-flex';
@@ -14283,7 +17514,12 @@ function renderTask(task) {
       if (action === 'subtask') {
         const title = prompt('Subtask title');
         if (!title) return;
-        await createTaskRecord({ title, parent_id: task.id, project_id: task.project_id ?? null });
+        await createTaskRecord({
+          title,
+          parent_id: task.id,
+          project_id: task.project_id ?? null,
+          task_type: isWorkflowTaskRecord(task, null) ? TASK_TYPE_WORKFLOW : (task.task_type ?? 'task')
+        });
         render();
       }
       if (action === 'duplicate') {
@@ -14292,7 +17528,7 @@ function renderTask(task) {
           parent_id: task.parent_id,
           project_id: task.project_id ?? null,
           priority: task.priority,
-          status: getDefaultStatusKey(),
+          status: normalizeTaskStatusValue(task.status),
           start_at: task.start_at,
           due_at: task.due_at,
           description_md: task.description_md ?? '',
@@ -14351,12 +17587,15 @@ function renderTask(task) {
     }
   });
 
-  if (state.ui?.inlineEditTaskId === task.id) {
+  if (state.ui?.inlineEditTaskId === task.id && !getSelectedTaskIds().length) {
     state.ui.inlineEditTaskId = null;
     beginInlineTaskEdit(task, item, titleEl, { selectAll: true });
   }
 
-  task.children.forEach(child => childrenEl.appendChild(renderTask(child)));
+  task.children.forEach(child => {
+    const childNode = renderTask(child, { completedVisibility, futureVisibilityDays });
+    if (childNode) childrenEl.appendChild(childNode);
+  });
 
   return item;
 }
@@ -14486,7 +17725,7 @@ async function restoreTasksFromSnapshots(snapshots) {
     const created = await createTaskRecord({
       title: task.title,
       description_md: task.description_md ?? '',
-      status: task.status ?? getDefaultStatusKey(),
+      status: normalizeTaskStatusValue(task.status),
       priority: task.priority ?? 'medium',
       type_label: task.type_label ?? null,
       project_id: task.project_id ?? null,
@@ -14653,9 +17892,28 @@ function formatTemplateSteps(steps = []) {
     .join('\n');
 }
 
-function openTemplateModal(template = null) {
+function openTemplateManagerModal() {
   if (settingsModal && !settingsModal.classList.contains('hidden')) {
     closeSettings();
+  }
+  templateManagerModal?.classList.remove('hidden');
+  renderTemplateList();
+}
+
+function closeTemplateManagerModal({ reopenSettings = true } = {}) {
+  templateManagerModal?.classList.add('hidden');
+  if (reopenSettings) openSettings();
+}
+
+function openTemplateModal(template = null) {
+  if (templateManagerModal && !templateManagerModal.classList.contains('hidden')) {
+    templateEditorReturnTo = 'template-manager';
+    closeTemplateManagerModal({ reopenSettings: false });
+  } else if (settingsModal && !settingsModal.classList.contains('hidden')) {
+    templateEditorReturnTo = 'settings';
+    closeSettings();
+  } else {
+    templateEditorReturnTo = 'settings';
   }
   editingTemplateId = template?.id ?? null;
   templateName.value = template?.name ?? '';
@@ -14672,7 +17930,12 @@ function openTemplateModal(template = null) {
 function closeTemplateModal() {
   templateModal.classList.add('hidden');
   editingTemplateId = null;
-  openSettings();
+  if (templateEditorReturnTo === 'template-manager') {
+    openTemplateManagerModal();
+  } else {
+    openSettings();
+  }
+  templateEditorReturnTo = 'settings';
 }
 
 function openWorkflowModal(workflow = null) {
@@ -14728,8 +17991,11 @@ function closeWorkflowInstanceModal() {
   workflowInstanceModal?.classList.add('hidden');
 }
 
-function openSettings() {
+function openSettings(preferredTab = null) {
+  templateManagerModal?.classList.add('hidden');
+  setSettingsTab(preferredTab ?? getDefaultSettingsTab());
   settingsModal?.classList.remove('hidden');
+  renderSettingsTabs();
   renderAuditLogOutput();
 }
 
@@ -14740,6 +18006,7 @@ function closeSettings() {
 function openSettingsLinkedPage(view) {
   state.ui = state.ui ?? {};
   state.ui.settingsReturnView = getActiveView();
+  state.ui.settingsReturnTab = getSettingsTab();
   closeSettings();
   setActiveView(view);
   render();
@@ -14748,8 +18015,9 @@ function openSettingsLinkedPage(view) {
 function returnFromSettingsLinkedPage() {
   state.ui = state.ui ?? {};
   const returnView = state.ui.settingsReturnView ?? 'tasks';
+  const returnTab = state.ui.settingsReturnTab ?? null;
   setActiveView(returnView);
-  openSettings();
+  openSettings(returnTab);
   render();
 }
 
@@ -14772,8 +18040,8 @@ function closeProfile() {
 }
 
 function openAdminConsole() {
-  if (!isCurrentActorOwnerSuperAdmin()) {
-    alert('Owner access required.');
+  if (!isCurrentActorAdmin()) {
+    alert('Admin access required.');
     return;
   }
   state.ui = state.ui ?? {};
@@ -14785,9 +18053,14 @@ function openAdminConsole() {
   setActiveView('admin');
   render();
   void refreshAdminInvites();
+  void refreshAdminUsers();
+  startAdminInvitesAutoRefresh();
+  startAdminUsersAutoRefresh();
 }
 
 function closeAdminConsole() {
+  stopAdminInvitesAutoRefresh();
+  stopAdminUsersAutoRefresh();
   state.ui = state.ui ?? {};
   const returnView = normalizeNavigationView(state.ui.adminReturnView ?? 'tasks');
   setActiveView(returnView === 'admin' ? 'tasks' : returnView);
@@ -14822,10 +18095,15 @@ function closeBulkEditModal() {
   bulkEditModal?.classList.add('hidden');
 }
 
-function openGroupRenameModal(label) {
+function openGroupRenameModal(sectionInfo) {
   if (!groupRenameModal || !groupRenameInput) return;
-  renameGroupLabel = label;
-  groupRenameInput.value = label;
+  if (!sectionInfo?.label) return;
+  renameGroupTarget = {
+    id: sectionInfo.id ?? null,
+    label: String(sectionInfo.label ?? ''),
+    project_id: normalizeSectionScopeProjectId(sectionInfo.project_id)
+  };
+  groupRenameInput.value = renameGroupTarget.label;
   groupRenameModal.classList.remove('hidden');
   groupRenameInput.focus();
   groupRenameInput.select();
@@ -14833,7 +18111,37 @@ function openGroupRenameModal(label) {
 
 function closeGroupRenameModal() {
   groupRenameModal?.classList.add('hidden');
-  renameGroupLabel = null;
+  renameGroupTarget = null;
+}
+
+function openSectionSettingsModal(sectionInfo) {
+  if (!sectionSettingsModal || !sectionSettingsCompleted || !sectionSettingsFutureDays) return;
+  if (!sectionInfo?.label) return;
+  sectionSettingsTarget = {
+    id: sectionInfo.id ?? null,
+    label: String(sectionInfo.label ?? ''),
+    project_id: normalizeSectionScopeProjectId(sectionInfo.project_id)
+  };
+  const completedOverride = getTaskSectionCompletedVisibilityOverride(sectionInfo);
+  const futureDaysOverride = getTaskSectionFutureVisibilityOverrideDays(sectionInfo);
+  const appCompleted = getTaskCompletedVisibility();
+  const appFutureDays = getTaskFutureVisibilityDays();
+  if (sectionSettingsTitle) {
+    sectionSettingsTitle.textContent = `Section settings: ${sectionSettingsTarget.label}`;
+  }
+  sectionSettingsCompleted.value = completedOverride ?? 'default';
+  sectionSettingsFutureDays.value = futureDaysOverride === null ? '' : String(futureDaysOverride);
+  if (sectionSettingsDefaults) {
+    const appCompletedLabel = appCompleted === 'hide' ? 'Hide completed' : 'Show crossed out';
+    const appFutureLabel = `${appFutureDays} day${appFutureDays === 1 ? '' : 's'}`;
+    sectionSettingsDefaults.textContent = `App defaults: ${appCompletedLabel}; horizon ${appFutureLabel}.`;
+  }
+  sectionSettingsModal.classList.remove('hidden');
+}
+
+function closeSectionSettingsModal() {
+  sectionSettingsModal?.classList.add('hidden');
+  sectionSettingsTarget = null;
 }
 
 function buildBulkEditTemplate() {
@@ -14958,38 +18266,78 @@ async function handleBulkDelete() {
   render();
 }
 
-async function renameTaskGroup(label, nextName) {
+async function renameTaskGroup(sectionInfo, nextName) {
+  if (!sectionInfo?.label) return;
+  const sourceLabel = String(sectionInfo.label ?? '').trim();
+  if (!sourceLabel) return;
   const updatedName = normalizeTitleInput(nextName);
-  if (!updatedName || updatedName === label) return;
+  if (!updatedName || updatedName === sourceLabel) return;
   const workspaceId = state.workspace?.id;
   if (!workspaceId) return;
-  const sections = state.taskSections ?? [];
-  const existingSection = sections.find(section => section.workspace_id === workspaceId && section.label === label);
-  const duplicateSection = sections.find(section => section.workspace_id === workspaceId && section.label === updatedName);
+  const scopeProjectId = normalizeSectionScopeProjectId(sectionInfo.project_id);
+  const sections = [...(state.taskSections ?? [])].map(normalizeTaskSection);
+  const sectionId = sectionInfo.id ?? null;
+  let existingIndex = sections.findIndex((section) =>
+    section.id === sectionId
+    && section.workspace_id === workspaceId
+    && normalizeSectionScopeProjectId(section.project_id) === scopeProjectId
+  );
+  if (existingIndex < 0) {
+    existingIndex = sections.findIndex((section) =>
+      section.workspace_id === workspaceId
+      && section.label === sourceLabel
+      && normalizeSectionScopeProjectId(section.project_id) === scopeProjectId
+    );
+  }
+  const existingSection = existingIndex >= 0 ? sections[existingIndex] : null;
+  const duplicateIndex = sections.findIndex((section, index) =>
+    index !== existingIndex
+    && section.workspace_id === workspaceId
+    && section.label === updatedName
+    && normalizeSectionScopeProjectId(section.project_id) === scopeProjectId
+  );
   if (existingSection) {
-    if (duplicateSection && duplicateSection !== existingSection) {
-      state.taskSections = sections.filter(section => section !== existingSection);
+    if (duplicateIndex >= 0) {
+      sections.splice(existingIndex, 1);
     } else {
-      existingSection.label = updatedName;
-      existingSection.updated_at = nowIso();
+      sections[existingIndex] = {
+        ...existingSection,
+        label: updatedName,
+        updated_at: nowIso()
+      };
     }
+    state.taskSections = sections;
+    persistLocalData();
   }
   const tasks = Object.values(state.tasks ?? {});
   for (const task of tasks) {
     if (task.workspace_id !== workspaceId) continue;
+    if (!taskMatchesSectionScope(task, scopeProjectId)) continue;
     const currentLabel = (task.group_label ?? '').trim();
-    if (currentLabel !== label) continue;
+    if (currentLabel !== sourceLabel) continue;
     await updateTaskRecord(task.id, { group_label: updatedName });
   }
   render();
 }
 
-function showTaskGroupContextMenu(label, x, y) {
+function showTaskGroupContextMenu(sectionInfo, x, y) {
+  if (!sectionInfo?.label) return;
   if (!taskContextMenu) return;
   if (openMenu && openMenu !== taskContextMenu) {
     openMenu.classList.add('hidden');
   }
   taskContextMenu.innerHTML = '';
+
+  const settingsItem = document.createElement('button');
+  settingsItem.type = 'button';
+  settingsItem.className = 'workspace-menu-item';
+  settingsItem.textContent = 'Section settings';
+  settingsItem.addEventListener('click', () => {
+    taskContextMenu.classList.add('hidden');
+    openMenu = null;
+    openSectionSettingsModal(sectionInfo);
+  });
+  taskContextMenu.appendChild(settingsItem);
 
   const renameItem = document.createElement('button');
   renameItem.type = 'button';
@@ -14998,7 +18346,7 @@ function showTaskGroupContextMenu(label, x, y) {
   renameItem.addEventListener('click', () => {
     taskContextMenu.classList.add('hidden');
     openMenu = null;
-    openGroupRenameModal(label);
+    openGroupRenameModal(sectionInfo);
   });
   taskContextMenu.appendChild(renameItem);
 
@@ -15009,9 +18357,9 @@ function showTaskGroupContextMenu(label, x, y) {
   deleteItem.addEventListener('click', async () => {
     taskContextMenu.classList.add('hidden');
     openMenu = null;
-    const confirmed = confirm(`Delete section "${label}"? Tasks will be moved out of the section.`);
+    const confirmed = confirm(`Delete section "${sectionInfo.label}"? Tasks will be moved out of the section.`);
     if (!confirmed) return;
-    await deleteTaskSection(label);
+    await deleteTaskSection(sectionInfo);
   });
   taskContextMenu.appendChild(deleteItem);
 
@@ -15030,94 +18378,79 @@ function showTaskContextMenu(taskId, x, y) {
     openMenu.classList.add('hidden');
   }
   const selected = getSelectedTaskIds();
+  const hasSelection = selected.length > 0;
   const isSelected = selected.includes(taskId);
   taskContextMenu.innerHTML = '';
 
-  const selectItem = document.createElement('button');
-  selectItem.type = 'button';
-  selectItem.className = 'workspace-menu-item';
-  selectItem.textContent = isSelected ? 'Deselect task' : 'Select task';
-  selectItem.addEventListener('click', () => {
-    if (isSelected) {
-      setSelectedTaskIds(selected.filter(id => id !== taskId));
-    } else {
-      setSelectedTaskIds([...selected, taskId]);
-    }
-    taskContextMenu.classList.add('hidden');
-    openMenu = null;
-  });
-  taskContextMenu.appendChild(selectItem);
+  if (!hasSelection) {
+    const deleteItem = document.createElement('button');
+    deleteItem.type = 'button';
+    deleteItem.className = 'workspace-menu-item';
+    deleteItem.textContent = 'Delete Task';
+    deleteItem.addEventListener('click', async () => {
+      taskContextMenu.classList.add('hidden');
+      openMenu = null;
+      const task = state.tasks?.[taskId];
+      if (!task) return;
+      const confirmed = confirm(`Delete "${task.title}" and all subtasks?`);
+      if (!confirmed) return;
+      await deleteTaskSubtree(taskId);
+      render();
+    });
+    taskContextMenu.appendChild(deleteItem);
 
-  const workflowLink = getWorkflowInstanceLinkByTaskId(taskId);
-  if (workflowLink && (workflowLink.if_applicable || workflowLink.dismissed_at)) {
-    const dismissItem = document.createElement('button');
-    dismissItem.type = 'button';
-    dismissItem.className = 'workspace-menu-item';
-    if (workflowLink.dismissed_at) {
-      dismissItem.textContent = 'Restore workflow task';
-      dismissItem.addEventListener('click', () => {
-        restoreWorkflowTask(taskId);
-        taskContextMenu.classList.add('hidden');
-        openMenu = null;
-        render();
-      });
-    } else {
-      dismissItem.textContent = 'Mark not applicable';
-      dismissItem.addEventListener('click', () => {
-        dismissWorkflowTask(taskId);
-        taskContextMenu.classList.add('hidden');
-        openMenu = null;
-        render();
-      });
-    }
-    taskContextMenu.appendChild(dismissItem);
+    const selectItem = document.createElement('button');
+    selectItem.type = 'button';
+    selectItem.className = 'workspace-menu-item';
+    selectItem.textContent = 'Select Task';
+    selectItem.addEventListener('click', () => {
+      setSelectedTaskIds([taskId]);
+      taskContextMenu.classList.add('hidden');
+      openMenu = null;
+      render();
+    });
+    taskContextMenu.appendChild(selectItem);
+  } else {
+    const bulkEditItem = document.createElement('button');
+    bulkEditItem.type = 'button';
+    bulkEditItem.className = 'workspace-menu-item';
+    bulkEditItem.textContent = 'Bulk edit';
+    bulkEditItem.addEventListener('click', () => {
+      if (!isSelected) {
+        setSelectedTaskIds([...selected, taskId]);
+      }
+      openBulkEditModal();
+      taskContextMenu.classList.add('hidden');
+      openMenu = null;
+    });
+    taskContextMenu.appendChild(bulkEditItem);
+
+    const bulkDeleteItem = document.createElement('button');
+    bulkDeleteItem.type = 'button';
+    bulkDeleteItem.className = 'workspace-menu-item';
+    bulkDeleteItem.textContent = 'Bulk delete';
+    bulkDeleteItem.addEventListener('click', async () => {
+      if (!isSelected) {
+        setSelectedTaskIds([...selected, taskId]);
+      }
+      taskContextMenu.classList.add('hidden');
+      openMenu = null;
+      await handleBulkDelete();
+    });
+    taskContextMenu.appendChild(bulkDeleteItem);
+
+    const clearItem = document.createElement('button');
+    clearItem.type = 'button';
+    clearItem.className = 'workspace-menu-item';
+    clearItem.textContent = 'Clear selection';
+    clearItem.addEventListener('click', () => {
+      clearSelectedTasks();
+      taskContextMenu.classList.add('hidden');
+      openMenu = null;
+      render();
+    });
+    taskContextMenu.appendChild(clearItem);
   }
-
-  const bulkEditItem = document.createElement('button');
-  bulkEditItem.type = 'button';
-  bulkEditItem.className = 'workspace-menu-item';
-  bulkEditItem.textContent = 'Bulk edit';
-  bulkEditItem.disabled = selected.length === 0 && !isSelected;
-  bulkEditItem.addEventListener('click', () => {
-    if (!selected.length) {
-      setSelectedTaskIds([taskId]);
-    } else if (!isSelected) {
-      setSelectedTaskIds([...selected, taskId]);
-    }
-    openBulkEditModal();
-    taskContextMenu.classList.add('hidden');
-    openMenu = null;
-  });
-  taskContextMenu.appendChild(bulkEditItem);
-
-  const bulkDeleteItem = document.createElement('button');
-  bulkDeleteItem.type = 'button';
-  bulkDeleteItem.className = 'workspace-menu-item';
-  bulkDeleteItem.textContent = 'Bulk delete';
-  bulkDeleteItem.disabled = selected.length === 0 && !isSelected;
-  bulkDeleteItem.addEventListener('click', async () => {
-    if (!selected.length) {
-      setSelectedTaskIds([taskId]);
-    } else if (!isSelected) {
-      setSelectedTaskIds([...selected, taskId]);
-    }
-    taskContextMenu.classList.add('hidden');
-    openMenu = null;
-    await handleBulkDelete();
-  });
-  taskContextMenu.appendChild(bulkDeleteItem);
-
-  const clearItem = document.createElement('button');
-  clearItem.type = 'button';
-  clearItem.className = 'workspace-menu-item';
-  clearItem.textContent = 'Clear selection';
-  clearItem.disabled = selected.length === 0;
-  clearItem.addEventListener('click', () => {
-    clearSelectedTasks();
-    taskContextMenu.classList.add('hidden');
-    openMenu = null;
-  });
-  taskContextMenu.appendChild(clearItem);
 
   taskContextMenu.classList.remove('hidden');
   openMenu = taskContextMenu;
@@ -15301,8 +18634,11 @@ function populateTaskEditor(task) {
   try {
     editorTitle.value = task.title ?? '';
     populateTaskTypeSelect(editorType, task.type_label ?? '');
+    if (editorTags) editorTags.value = formatTagList(task.tags ?? []);
     editorPriority.value = task.priority ?? 'medium';
-    populateProjectSelect(editorProject, task.project_id ?? '', true);
+    if (editorProject) {
+      populateProjectSelect(editorProject, task.project_id ?? '', true);
+    }
     populateParentSelect(editorParent, task.id, task.parent_id ?? null);
     if (editorAssigneeLabel) editorAssigneeLabel.value = task.assignee_label ?? '';
     populateAssigneeSelect(
@@ -15314,7 +18650,7 @@ function populateTaskEditor(task) {
     );
     setRecurrenceState('editor', task.recurrence_interval ?? null, task.recurrence_unit ?? 'month');
     editorReminder.value = task.reminder_offset_days ?? '';
-    populateStatusSelect(editorStatus, task.status ?? getDefaultStatusKey());
+    populateStatusSelect(editorStatus, normalizeTaskStatusValue(task.status));
     updateEditorFollowupVisibility(editorStatus.value);
     const followupValue = task.waiting_followup_at ?? task.next_checkin_at ?? null;
     setEditorFollowupValue(followupValue);
@@ -15352,7 +18688,7 @@ function renderTaskEditorSubtasks(task) {
     title.textContent = subtask.title;
     const meta = document.createElement('span');
     meta.className = 'task-editor-subtask-meta';
-    meta.textContent = getStatusLabel(subtask.status ?? getDefaultStatusKey());
+    meta.textContent = getStatusLabel(normalizeTaskStatusValue(subtask.status)) || 'No status';
     row.appendChild(title);
     row.appendChild(meta);
     editorSubtaskList.appendChild(row);
@@ -15654,6 +18990,12 @@ function getNextNoticeNotifyAt(notice) {
   if (!rule || !notice?.notify_at) return null;
   const base = new Date(notice.notify_at);
   if (Number.isNaN(base.getTime())) return null;
+  const getEndBoundary = (value) => {
+    if (value?.endType !== 'on' || !value.endDate) return null;
+    const [year, month, day] = String(value.endDate).split('-').map(Number);
+    if (![year, month, day].every(Number.isFinite)) return null;
+    return new Date(year, month - 1, day, 23, 59, 59, 999);
+  };
 
   const getWeekStart = (date) => {
     const value = new Date(date);
@@ -15687,29 +19029,114 @@ function getNextNoticeNotifyAt(notice) {
     return null;
   };
 
-  const endBoundary = (() => {
-    if (rule.endType !== 'on' || !rule.endDate) return null;
-    const [year, month, day] = rule.endDate.split('-').map(Number);
-    if (![year, month, day].every(Number.isFinite)) return null;
-    return new Date(year, month - 1, day, 23, 59, 59, 999);
-  })();
+  const endBoundary = getEndBoundary(rule);
+  const isAllowed = (candidate, occurrenceIndex) => {
+    if (!candidate || Number.isNaN(candidate.getTime())) return false;
+    if (rule.endType === 'after' && Number(rule.endCount) > 0 && occurrenceIndex > Number(rule.endCount)) {
+      return false;
+    }
+    if (endBoundary && candidate.getTime() > endBoundary.getTime()) return false;
+    return true;
+  };
 
-  const nextCount = Number(notice.recurrence_occurrence_count ?? 0) + 1;
-  if (rule.endType === 'after' && Number(rule.endCount) > 0 && nextCount >= Number(rule.endCount)) {
-    return null;
-  }
-
+  const currentCount = Number(notice.recurrence_occurrence_count ?? 0);
+  let occurrenceIndex = Number.isFinite(currentCount) && currentCount >= 0 ? currentCount + 2 : 2;
   let next = getNextFrom(base);
-  if (!next || Number.isNaN(next.getTime())) return null;
+  if (!isAllowed(next, occurrenceIndex)) return null;
   const now = Date.now();
   let guard = 0;
   while (next.getTime() <= now && guard < 1000) {
     next = getNextFrom(next);
-    if (!next || Number.isNaN(next.getTime())) return null;
+    occurrenceIndex += 1;
+    if (!isAllowed(next, occurrenceIndex)) return null;
     guard += 1;
   }
-  if (endBoundary && next.getTime() > endBoundary.getTime()) return null;
   return next;
+}
+
+function getNoticeOccurrencesInRange(notice, rangeStart, rangeEnd) {
+  const startTime = rangeStart?.getTime?.();
+  const endTime = rangeEnd?.getTime?.();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) return [];
+  const first = new Date(notice?.notify_at ?? '');
+  if (Number.isNaN(first.getTime())) return [];
+  const rule = getNoticeRecurrenceRule(notice);
+  if (!rule) {
+    const time = first.getTime();
+    return time >= startTime && time <= endTime ? [first] : [];
+  }
+
+  const getEndBoundary = (value) => {
+    if (value?.endType !== 'on' || !value.endDate) return null;
+    const [year, month, day] = String(value.endDate).split('-').map(Number);
+    if (![year, month, day].every(Number.isFinite)) return null;
+    return new Date(year, month - 1, day, 23, 59, 59, 999);
+  };
+
+  const getWeekStart = (date) => {
+    const value = new Date(date);
+    value.setHours(0, 0, 0, 0);
+    value.setDate(value.getDate() - value.getDay());
+    return value;
+  };
+
+  const getNextFrom = (current) => {
+    if (rule.unit !== 'week') {
+      return addInterval(current, rule.interval, rule.unit);
+    }
+    const days = normalizeWeekdays(rule.weekdays);
+    if (!days.length) {
+      return addInterval(current, rule.interval, 'week');
+    }
+    const anchor = (() => {
+      const anchorDate = rule.anchorDate ? new Date(rule.anchorDate) : null;
+      return anchorDate && !Number.isNaN(anchorDate.getTime()) ? anchorDate : first;
+    })();
+    const anchorWeekStart = getWeekStart(anchor).getTime();
+    for (let offset = 1; offset <= 3660; offset += 1) {
+      const candidate = new Date(current.getTime());
+      candidate.setDate(candidate.getDate() + offset);
+      if (!days.includes(candidate.getDay())) continue;
+      const weekDiff = Math.floor((getWeekStart(candidate).getTime() - anchorWeekStart) / (7 * 24 * 60 * 60 * 1000));
+      if (weekDiff < 0) continue;
+      if (weekDiff % rule.interval !== 0) continue;
+      return candidate;
+    }
+    return null;
+  };
+
+  const endBoundary = getEndBoundary(rule);
+  const isAllowed = (candidate, occurrenceIndex) => {
+    if (!candidate || Number.isNaN(candidate.getTime())) return false;
+    if (rule.endType === 'after' && Number(rule.endCount) > 0 && occurrenceIndex > Number(rule.endCount)) {
+      return false;
+    }
+    if (endBoundary && candidate.getTime() > endBoundary.getTime()) return false;
+    return true;
+  };
+
+  const occurrences = [];
+  let current = first;
+  let occurrenceIndex = Number(notice?.recurrence_occurrence_count ?? 0) + 1;
+  if (!Number.isFinite(occurrenceIndex) || occurrenceIndex < 1) occurrenceIndex = 1;
+  let guard = 0;
+
+  while (guard < 8000) {
+    if (!isAllowed(current, occurrenceIndex)) break;
+    const currentTime = current.getTime();
+    if (currentTime > endTime) break;
+    if (currentTime >= startTime) {
+      occurrences.push(new Date(currentTime));
+    }
+    const next = getNextFrom(current);
+    const nextTime = next?.getTime?.();
+    if (!Number.isFinite(nextTime) || nextTime <= currentTime) break;
+    current = next;
+    occurrenceIndex += 1;
+    guard += 1;
+  }
+
+  return occurrences;
 }
 
 async function checkNotices() {
@@ -15770,6 +19197,97 @@ function fromDatetimeLocal(value) {
   return date.toISOString();
 }
 
+function toDateInputValue(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return formatDateOnlyValue(date);
+}
+
+function fromDateInputValue(value) {
+  const date = parseDateOnlyValue(value);
+  if (!date) return null;
+  return date.toISOString();
+}
+
+function normalizeScheduleEventFormKind(kind) {
+  return normalizeScheduleEventKind(kind);
+}
+
+function syncScheduleEventDatetimeInputs() {
+  if (!scheduleEventStart || !scheduleEventEnd || !scheduleEventAllDay) return;
+  const allDay = Boolean(scheduleEventAllDay.checked);
+  const nextType = allDay ? 'date' : 'datetime-local';
+  const startValue = scheduleEventStart.value;
+  const endValue = scheduleEventEnd.value;
+  if (scheduleEventStart.type !== nextType) {
+    scheduleEventStart.type = nextType;
+    scheduleEventStart.value = allDay
+      ? toDateInputValue(fromDatetimeLocal(startValue))
+      : toDatetimeLocal(fromDateInputValue(startValue));
+  }
+  if (scheduleEventEnd.type !== nextType) {
+    scheduleEventEnd.type = nextType;
+    scheduleEventEnd.value = allDay
+      ? toDateInputValue(fromDatetimeLocal(endValue))
+      : toDatetimeLocal(fromDateInputValue(endValue));
+  }
+}
+
+function openScheduleEventModal(event = null, defaults = {}) {
+  activeScheduleEventId = event?.id ?? null;
+  const startAt = defaults.start_at ?? event?.start_at ?? nowIso();
+  const endAt = defaults.end_at ?? event?.end_at ?? null;
+  const allDay = defaults.all_day ?? event?.all_day ?? false;
+  if (scheduleEventModalTitle) {
+    scheduleEventModalTitle.textContent = activeScheduleEventId ? 'Edit event' : 'New event';
+  }
+  if (scheduleEventTitle) {
+    scheduleEventTitle.value = event?.title ?? defaults.title ?? '';
+  }
+  if (scheduleEventKind) {
+    scheduleEventKind.value = normalizeScheduleEventFormKind(event?.kind ?? defaults.kind ?? 'event');
+  }
+  if (scheduleEventAllDay) {
+    scheduleEventAllDay.checked = Boolean(allDay);
+  }
+  syncScheduleEventDatetimeInputs();
+  if (scheduleEventStart) {
+    scheduleEventStart.value = scheduleEventAllDay?.checked ? toDateInputValue(startAt) : toDatetimeLocal(startAt);
+  }
+  if (scheduleEventEnd) {
+    scheduleEventEnd.value = scheduleEventAllDay?.checked ? toDateInputValue(endAt) : toDatetimeLocal(endAt);
+  }
+  if (scheduleEventNotes) {
+    scheduleEventNotes.value = event?.notes ?? defaults.notes ?? '';
+  }
+  if (scheduleEventDelete) {
+    scheduleEventDelete.classList.toggle('hidden', !activeScheduleEventId);
+  }
+  scheduleEventModal?.classList.remove('hidden');
+  scheduleEventTitle?.focus();
+}
+
+function closeScheduleEventModal() {
+  scheduleEventModal?.classList.add('hidden');
+  activeScheduleEventId = null;
+}
+
+function openScheduleEventCreate(kind = 'event') {
+  const normalizedKind = normalizeScheduleEventFormKind(kind);
+  const now = new Date();
+  const startAt = now.toISOString();
+  const isDayOff = normalizedKind === 'day-off';
+  openScheduleEventModal(null, {
+    title: '',
+    kind: normalizedKind,
+    all_day: isDayOff,
+    start_at: startAt,
+    end_at: startAt,
+    notes: ''
+  });
+}
+
 function shouldNotifyNotice(notice) {
   if (!notice?.notify_at) return false;
   if (notice.dismissed_at) return false;
@@ -15787,11 +19305,12 @@ function openTaskModal(defaults = {}) {
   taskModalDefaults = defaults ?? {};
   modalTitle.value = '';
   modalPriority.value = 'medium';
-  const defaultStatus = taskModalDefaults.status ?? getDefaultStatusKey();
+  const defaultStatus = normalizeTaskStatusValue(taskModalDefaults.status);
   populateStatusSelect(modalStatus, defaultStatus);
   modalStart.value = '';
   modalDue.value = '';
   modalDesc.value = '';
+  if (modalTags) modalTags.value = formatTagList(taskModalDefaults.tags ?? []);
   const defaultType = taskModalDefaults.type_label ?? getDefaultTaskTypeName();
   populateTaskTypeSelect(modalType, defaultType);
   const defaultAssigneeUserId = taskModalDefaults.assignee_user_id ?? null;
@@ -15820,6 +19339,27 @@ function closeTaskModal() {
 
 modalCancel.addEventListener('click', closeTaskModal);
 taskModal.querySelector('.modal-backdrop').addEventListener('click', closeTaskModal);
+scheduleEventCancel?.addEventListener('click', closeScheduleEventModal);
+scheduleEventModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeScheduleEventModal);
+scheduleEventAllDay?.addEventListener('change', () => {
+  syncScheduleEventDatetimeInputs();
+});
+scheduleEventKind?.addEventListener('change', () => {
+  const kind = normalizeScheduleEventFormKind(scheduleEventKind.value);
+  if (!scheduleEventAllDay) return;
+  if (kind === 'day-off') {
+    scheduleEventAllDay.checked = true;
+    syncScheduleEventDatetimeInputs();
+  }
+});
+scheduleEventDelete?.addEventListener('click', () => {
+  if (!activeScheduleEventId) return;
+  const confirmed = confirm('Delete this event?');
+  if (!confirmed) return;
+  deleteScheduleEventRecord(activeScheduleEventId);
+  closeScheduleEventModal();
+  render();
+});
 modalAssignee?.addEventListener('change', () => {
   setAssigneeLabelInputVisibility(modalAssignee, modalAssigneeLabelRow, modalAssigneeLabel);
 });
@@ -16008,8 +19548,17 @@ settingsOpen?.addEventListener('click', () => {
   openMenu = null;
   openSettings();
 });
+settingsTabButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const tab = String(button.dataset.settingsTab ?? '').trim();
+    if (!tab) return;
+    setSettingsTab(tab);
+    renderSettingsTabs();
+  });
+});
 settingsClose?.addEventListener('click', closeSettings);
 settingsModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeSettings);
+settingsOpenTemplates?.addEventListener('click', openTemplateManagerModal);
 settingsOpenDataTransfer?.addEventListener('click', () => {
   openSettingsLinkedPage('data-transfer');
 });
@@ -16019,6 +19568,8 @@ settingsOpenAuditLog?.addEventListener('click', () => {
 settingsOpenAutomation?.addEventListener('click', () => {
   openSettingsLinkedPage('automation');
 });
+templateManagerClose?.addEventListener('click', () => closeTemplateManagerModal());
+templateManagerModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => closeTemplateManagerModal());
 teamMemberAddBtn?.addEventListener('click', async () => {
   if (!state.workspace) return;
   const name = teamMemberNameInput?.value?.trim() ?? '';
@@ -16139,6 +19690,37 @@ accountAdmin?.addEventListener('click', () => {
   openAdminConsole();
 });
 adminPageBack?.addEventListener('click', closeAdminConsole);
+adminInviteSend?.addEventListener('click', () => {
+  void submitAdminInvite();
+});
+adminInviteTokenCopy?.addEventListener('click', async () => {
+  const token = String(adminInviteToken?.value ?? '').trim();
+  await copyInviteLinkToClipboard(token);
+});
+adminUsersRefresh?.addEventListener('click', () => {
+  void refreshAdminUsers();
+});
+adminUserSelect?.addEventListener('change', () => {
+  const adminState = getAdminState();
+  adminState.selectedUserId = adminUserSelect.value || '';
+  renderAdminUsersList();
+  renderAdminUserEditor();
+});
+adminUserSave?.addEventListener('click', () => {
+  void submitAdminUserUpdate();
+});
+adminUserPasswordReset?.addEventListener('click', () => {
+  void submitAdminPasswordReset();
+});
+adminUserExport?.addEventListener('click', () => {
+  void exportAdminSelectedUser();
+});
+adminUserDelete?.addEventListener('click', () => {
+  void deleteAdminSelectedUser();
+});
+adminOwnershipTransfer?.addEventListener('click', () => {
+  void transferOwnershipToSelectedUser();
+});
 taskTypesOpen?.addEventListener('click', openTaskTypesModal);
 taskTypesClose?.addEventListener('click', closeTaskTypesModal);
 taskTypesModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeTaskTypesModal);
@@ -16151,6 +19733,14 @@ editorClose?.addEventListener('click', closeTaskEditor);
 editorTitle?.addEventListener('input', () => scheduleTaskEditorAutosave('title', 700));
 editorTitle?.addEventListener('blur', () => scheduleTaskEditorAutosave('title-blur', 200));
 editorType?.addEventListener('change', () => scheduleTaskEditorAutosave('type', 300));
+editorTags?.addEventListener('input', () => scheduleTaskEditorAutosave('tags', 500));
+editorTags?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  // Prevent implicit form submit so extension form hooks (e.g. Dashlane) do not run on tag edits.
+  event.preventDefault();
+  event.stopPropagation();
+  scheduleTaskEditorAutosave('tags-enter', 120);
+});
 editorPriority?.addEventListener('change', () => scheduleTaskEditorAutosave('priority', 300));
 editorProject?.addEventListener('change', () => scheduleTaskEditorAutosave('project', 300));
 editorAssignee?.addEventListener('change', () => {
@@ -16218,8 +19808,8 @@ groupRenameCancel?.addEventListener('click', closeGroupRenameModal);
 groupRenameModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeGroupRenameModal);
 groupRenameForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const currentLabel = renameGroupLabel;
-  if (!currentLabel) {
+  const sectionInfo = renameGroupTarget;
+  if (!sectionInfo?.label) {
     closeGroupRenameModal();
     return;
   }
@@ -16228,12 +19818,40 @@ groupRenameForm?.addEventListener('submit', async (event) => {
     groupRenameInput?.focus();
     return;
   }
-  if (nextName === currentLabel) {
+  if (nextName === sectionInfo.label) {
     closeGroupRenameModal();
     return;
   }
-  await renameTaskGroup(currentLabel, nextName);
+  await renameTaskGroup(sectionInfo, nextName);
   closeGroupRenameModal();
+});
+sectionSettingsCancel?.addEventListener('click', closeSectionSettingsModal);
+sectionSettingsModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeSectionSettingsModal);
+sectionSettingsForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const sectionInfo = sectionSettingsTarget;
+  if (!sectionInfo?.label) {
+    closeSectionSettingsModal();
+    return;
+  }
+  const completedValue = sectionSettingsCompleted?.value ?? 'default';
+  const completedOverride = completedValue === 'default' ? null : normalizeTaskCompletedVisibility(completedValue);
+
+  const rawFutureValue = sectionSettingsFutureDays?.value?.trim() ?? '';
+  let futureOverride = null;
+  if (rawFutureValue !== '') {
+    const parsed = Number(rawFutureValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      sectionSettingsFutureDays?.focus();
+      return;
+    }
+    futureOverride = Math.floor(parsed);
+  }
+
+  setTaskSectionCompletedVisibilityOverride(sectionInfo, completedOverride);
+  setTaskSectionFutureVisibilityOverrideDays(sectionInfo, futureOverride);
+  closeSectionSettingsModal();
+  render();
 });
 editorAddDependencyBtn?.addEventListener('click', async () => {
   if (!activeTaskId || !editorDependencySelect) return;
@@ -16272,6 +19890,7 @@ taskEditorForm?.addEventListener('submit', async (event) => {
   const parentChanged = (task.parent_id ?? null) !== (nextParentId ?? null);
   const description = getNotesContent();
   const typeLabel = editorType.value ? editorType.value.trim() : null;
+  const tags = normalizeTagList(editorTags?.value ?? '');
   const recurrence = editorRecurrence ?? { interval: null, unit: null };
   const startAt = editorStart ? fromDatetimeLocal(editorStart.value) : null;
   const assigneeSelection = editorAssignee?.value ?? ASSIGNEE_SELECT_NONE;
@@ -16283,10 +19902,10 @@ taskEditorForm?.addEventListener('submit', async (event) => {
     : null;
   const patch = {
     type_label: typeLabel,
+    tags,
     title,
     description_md: description,
     priority: editorPriority.value,
-    project_id: editorProject.value || null,
     assignee_user_id: assigneeUserId,
     assignee_label: assigneeLabel || null,
     recurrence_interval: recurrence.interval ?? null,
@@ -16296,6 +19915,9 @@ taskEditorForm?.addEventListener('submit', async (event) => {
     due_at: fromDatetimeLocal(editorDue.value),
     status: nextStatus
   };
+  if (editorProject) {
+    patch.project_id = editorProject.value || null;
+  }
   if (editorStart) {
     patch.start_at = startAt;
   }
@@ -16398,6 +20020,7 @@ taskModalForm.addEventListener('submit', async (event) => {
   if (!title) return;
   const description = modalDesc.value ?? '';
   const typeLabel = modalType.value ? modalType.value.trim() : null;
+  const tags = normalizeTagList(modalTags?.value ?? '');
   const parentId = taskModalDefaults.parent_id ?? null;
   const projectId = getProjectIdFromTaskFilter();
   const recurrence = modalRecurrence ?? { interval: null, unit: null };
@@ -16417,6 +20040,7 @@ taskModalForm.addEventListener('submit', async (event) => {
     priority: modalPriority.value,
     status: modalStatus.value,
     type_label: typeLabel,
+    tags,
     recurrence_interval: recurrence.interval ?? null,
     recurrence_unit: recurrence.interval ? recurrence.unit : null,
     reminder_offset_days: parseInt(modalReminder.value, 10) || null,
@@ -16427,6 +20051,50 @@ taskModalForm.addEventListener('submit', async (event) => {
   });
   closeTaskModal();
   render();
+});
+
+scheduleEventForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!state.workspace) return;
+  const title = normalizeTitleInput(scheduleEventTitle?.value ?? '');
+  const kind = normalizeScheduleEventFormKind(scheduleEventKind?.value ?? 'event');
+  const allDay = Boolean(scheduleEventAllDay?.checked) || kind === 'day-off';
+  const startAt = allDay
+    ? fromDateInputValue(scheduleEventStart?.value ?? '')
+    : fromDatetimeLocal(scheduleEventStart?.value ?? '');
+  let endAt = allDay
+    ? fromDateInputValue(scheduleEventEnd?.value ?? '')
+    : fromDatetimeLocal(scheduleEventEnd?.value ?? '');
+  if (!startAt) {
+    alert('Start date/time is required.');
+    return;
+  }
+  if (!endAt) {
+    endAt = startAt;
+  }
+  if (new Date(endAt).getTime() < new Date(startAt).getTime()) {
+    alert('End must be after start.');
+    return;
+  }
+  const payload = {
+    title: title || (kind === 'day-off' ? 'Day off' : 'Untitled event'),
+    kind,
+    all_day: allDay ? 1 : 0,
+    start_at: startAt,
+    end_at: endAt,
+    notes: scheduleEventNotes?.value ?? ''
+  };
+  if (activeScheduleEventId) {
+    updateScheduleEventRecord(activeScheduleEventId, payload);
+  } else {
+    createScheduleEventRecord(payload);
+  }
+  closeScheduleEventModal();
+  render();
+});
+
+schedulingAddBtn?.addEventListener('click', () => {
+  openScheduleEventCreate('event');
 });
 
 
@@ -16591,6 +20259,7 @@ enableNotificationsBtn?.addEventListener('change', async () => {
       category: 'notification',
       event: 'notifications_disabled'
     });
+    queueUserSettingsSave();
     render();
     return;
   }
@@ -16603,6 +20272,7 @@ enableNotificationsBtn?.addEventListener('change', async () => {
     event: state.ui.notificationsEnabled ? 'notifications_enabled' : 'notifications_blocked',
     data: { permission }
   });
+  queueUserSettingsSave();
   render();
 });
 
@@ -16687,6 +20357,17 @@ if (typeof window !== 'undefined') {
     }
     renderMobileNavigation();
   });
+
+  window.addEventListener('online', () => {
+    updateSyncOfflineNotice(false);
+  });
+
+  window.addEventListener('offline', () => {
+    updateSyncOfflineNotice(true);
+    if (syncStatus) {
+      syncStatus.textContent = `Offline · queued ${(state.local?.pendingChanges ?? []).length}`;
+    }
+  });
 }
 
 function buildFatalDiagnostics(error) {
@@ -16743,9 +20424,21 @@ function renderFatalInitOverlay(error) {
 async function init() {
   initNotesEditor();
   setAuthModalMode('login');
+  updateSyncOfflineNotice();
   const inviteToken = getInviteTokenFromUrl();
   await hydrateAuthSession();
-  if (isAuthGateEnabled() && !isAuthenticatedActor()) {
+  if (state.ui?.forceAuthGate) {
+    applyAuthPayload({ authenticated: false }, { persistProfile: false });
+    clearWorkspaceDomainData();
+    render();
+    if (inviteToken) {
+      openAuthModal('invite', { inviteToken });
+    } else {
+      openAuthModal('login');
+    }
+    return;
+  }
+  if (shouldShowAuthGatePage()) {
     clearWorkspaceDomainData();
     render();
     if (inviteToken) {

@@ -2,7 +2,13 @@ const UUID_V4_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}
 
 const uuidSchema = { type: 'string', pattern: UUID_V4_PATTERN };
 const nullableUuidSchema = { anyOf: [uuidSchema, { type: 'null' }] };
-const boolishSchema = { anyOf: [{ type: 'boolean' }, { type: 'integer', enum: [0, 1] }] };
+const boolishSchema = {
+  anyOf: [
+    { type: 'boolean' },
+    { type: 'integer', enum: [0, 1] },
+    { type: 'string', enum: ['0', '1', 'true', 'false', 'yes', 'no', 'on', 'off'] }
+  ]
+};
 const integerSchema = { type: 'integer' };
 const nullableIntegerSchema = { anyOf: [integerSchema, { type: 'null' }] };
 const dateTimeSchema = { type: 'string', format: 'date-time' };
@@ -15,6 +21,18 @@ function nonEmptyString(maxLength = 512) {
 function nullableString(maxLength = 4096) {
   return { anyOf: [{ type: 'string', maxLength }, { type: 'null' }] };
 }
+
+const taskTagsSchema = {
+  anyOf: [
+    {
+      type: 'array',
+      maxItems: 64,
+      uniqueItems: true,
+      items: nonEmptyString(64)
+    },
+    { type: 'null' }
+  ]
+};
 
 const changePayloadSchema = {
   type: 'object',
@@ -39,6 +57,7 @@ const createTaskBodySchema = {
     parent_id: nullableUuidSchema,
     project_id: nullableUuidSchema,
     group_label: nullableString(128),
+    tags: taskTagsSchema,
     title: nonEmptyString(512),
     description_md: nullableString(50000),
     type_label: nullableString(128),
@@ -57,7 +76,7 @@ const createTaskBodySchema = {
     template_prompt_pending: boolishSchema,
     assignee_user_id: nullableUuidSchema,
     assignee_label: nullableString(256),
-    status: nonEmptyString(64),
+    status: nullableString(64),
     priority: nonEmptyString(32),
     urgency: boolishSchema,
     start_at: nullableDateTimeSchema,
@@ -76,6 +95,7 @@ const updateTaskBodySchema = {
   properties: {
     project_id: nullableUuidSchema,
     group_label: nullableString(128),
+    tags: taskTagsSchema,
     title: nonEmptyString(512),
     description_md: nullableString(50000),
     type_label: nullableString(128),
@@ -94,7 +114,7 @@ const updateTaskBodySchema = {
     template_prompt_pending: boolishSchema,
     assignee_user_id: nullableUuidSchema,
     assignee_label: nullableString(256),
-    status: nonEmptyString(64),
+    status: nullableString(64),
     priority: nonEmptyString(32),
     urgency: boolishSchema,
     start_at: nullableDateTimeSchema,
@@ -139,8 +159,12 @@ const taskResponseSchema = {
     workspace_id: uuidSchema,
     parent_id: nullableUuidSchema,
     project_id: nullableUuidSchema,
+    tags: {
+      type: 'array',
+      items: nonEmptyString(64)
+    },
     title: nonEmptyString(512),
-    status: nonEmptyString(64),
+    status: { type: 'string', maxLength: 64 },
     updated_at: nullableDateTimeSchema
   }
 };
@@ -158,7 +182,8 @@ const authUserResponseSchema = {
     id: uuidSchema,
     org_id: uuidSchema,
     display_name: nonEmptyString(256),
-    email: nonEmptyString(320)
+    email: nonEmptyString(320),
+    org_role: nullableString(64)
   }
 };
 
@@ -204,7 +229,8 @@ const authSessionResponseSchema = {
       items: authWorkspaceResponseSchema
     },
     owner_email: nullableString(320),
-    is_owner: { type: 'boolean' }
+    is_owner: { type: 'boolean' },
+    is_admin: { type: 'boolean' }
   }
 };
 
@@ -315,6 +341,7 @@ const routeSchemas = new Map([
         display_name: nullableString(256),
         name: nullableString(256),
         email: nullableString(320),
+        org_role: nullableString(64),
         archived: boolishSchema
       },
       anyOf: [{ required: ['display_name'] }, { required: ['name'] }]
@@ -333,8 +360,61 @@ const routeSchemas = new Map([
       properties: {
         display_name: nullableString(256),
         email: nullableString(320),
+        org_role: nullableString(64),
         archived: boolishSchema,
         workspace_id: nullableUuidSchema
+      }
+    }
+  }],
+  ['PATCH /auth/profile', {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        display_name: nullableString(256),
+        email: nullableString(320)
+      },
+      anyOf: [{ required: ['display_name'] }, { required: ['email'] }]
+    }
+  }],
+  ['GET /auth/settings', {
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['settings'],
+        properties: {
+          settings: {
+            type: 'object',
+            additionalProperties: true
+          }
+        }
+      }
+    }
+  }],
+  ['PATCH /auth/settings', {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['settings'],
+      properties: {
+        settings: {
+          type: 'object',
+          additionalProperties: true
+        }
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['settings'],
+        properties: {
+          settings: {
+            type: 'object',
+            additionalProperties: true
+          }
+        }
       }
     }
   }],
@@ -404,9 +484,103 @@ const routeSchemas = new Map([
       properties: {
         workspace_id: uuidSchema,
         email: nonEmptyString(320),
-        role: nullableString(64),
+        role: { type: 'string', enum: ['member', 'admin'] },
         org_id: nullableUuidSchema
       }
+    }
+  }],
+  ['DELETE /admin/invites/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    }
+  }],
+  ['GET /admin/users', {
+    querystring: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        org_id: uuidSchema,
+        workspace_id: uuidSchema,
+        include_archived: boolishSchema
+      }
+    }
+  }],
+  ['PATCH /admin/users/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        display_name: nullableString(256),
+        email: nullableString(320),
+        org_role: nullableString(64),
+        archived: boolishSchema,
+        settings: {
+          type: 'object',
+          additionalProperties: true
+        }
+      }
+    }
+  }],
+  ['POST /admin/users/:id/reset-password', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['password'],
+      properties: {
+        password: nonEmptyString(200)
+      }
+    }
+  }],
+  ['POST /admin/users/:id/export', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    }
+  }],
+  ['DELETE /admin/users/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    }
+  }],
+  ['POST /admin/ownership/transfer', {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        target_user_id: uuidSchema,
+        target_email: nullableString(320)
+      },
+      anyOf: [{ required: ['target_user_id'] }, { required: ['target_email'] }]
     }
   }],
   ['GET /workspace-memberships', {

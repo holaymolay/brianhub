@@ -24,15 +24,24 @@ const DEFAULT_TASK_TYPES = [
   { name: 'General', is_default: 1 },
   { name: 'Bill Due', is_default: 1 }
 ];
+const DEFAULT_INVITE_EXPIRY_DAYS = Number(process.env.BRIANHUB_INVITE_EXPIRY_DAYS ?? 7);
 const DEFAULT_NOTICE_TYPES = [
   { key: 'general', label: 'General' },
   { key: 'bill', label: 'Bill notice' },
-  { key: 'auto-payment', label: 'Auto-payment notice' }
+  { key: 'auto-payment', label: 'Auto-payment notice' },
+  { key: 'birthday', label: 'Birthday' },
+  { key: 'holiday', label: 'Holiday' }
 ];
 const NOTICE_RECURRENCE_UNITS = new Set(['day', 'week', 'month', 'year']);
+const NOTICE_TYPE_BIRTHDAY = 'birthday';
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function addDaysIso(days) {
+  const safeDays = Number.isFinite(days) && days > 0 ? days : 7;
+  return new Date(Date.now() + safeDays * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function normalizeEmail(value) {
@@ -45,9 +54,65 @@ function normalizeRole(value) {
   return role || 'member';
 }
 
+function normalizeOrgRole(value) {
+  const role = String(value ?? '').trim().toLowerCase();
+  if (!role) return 'member';
+  if (role === 'member' || role === 'admin') return role;
+  throw new Error('Invalid org role');
+}
+
 function normalizeAssigneeLabel(value) {
   const text = String(value ?? '').trim();
   return text || null;
+}
+
+function normalizeSettingsObject(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('settings must be an object');
+  }
+  const serialized = JSON.stringify(value);
+  if (serialized.length > 200000) {
+    throw new Error('settings payload too large');
+  }
+  return JSON.parse(serialized);
+}
+
+function parseSettingsJson(settingsJson) {
+  if (!settingsJson) return {};
+  try {
+    const parsed = JSON.parse(String(settingsJson));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function normalizeTaskTagsInput(value, fieldName = 'tags') {
+  if (value === undefined) return undefined;
+  if (value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  const seen = new Set();
+  const tags = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      throw new Error(`Invalid ${fieldName}`);
+    }
+    const tag = entry.trim();
+    if (!tag) continue;
+    if (tag.length > 64) {
+      throw new Error(`Invalid ${fieldName}`);
+    }
+    const dedupeKey = tag.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    tags.push(tag);
+  }
+  return tags;
 }
 
 function assertUuid(value, fieldName = 'id') {
@@ -110,6 +175,33 @@ function normalizeNoticeOccurrenceCount(value) {
   return Math.floor(parsed);
 }
 
+function applyBirthdayNoticeDefaults(noticeType, notifyAt, recurrenceInterval, recurrenceUnit, recurrenceRuleJson) {
+  const normalizedType = String(noticeType ?? '').trim().toLowerCase();
+  if (normalizedType !== NOTICE_TYPE_BIRTHDAY) {
+    return {
+      recurrenceInterval,
+      recurrenceUnit,
+      recurrenceRuleJson
+    };
+  }
+  const nextInterval = recurrenceInterval ?? 1;
+  const nextUnit = recurrenceUnit ?? 'year';
+  const nextRuleJson = recurrenceRuleJson ?? normalizeNoticeRecurrenceRuleJson({
+    interval: 1,
+    unit: 'year',
+    weekdays: [],
+    endType: 'never',
+    endDate: null,
+    endCount: null,
+    anchorDate: notifyAt ?? null
+  });
+  return {
+    recurrenceInterval: nextInterval,
+    recurrenceUnit: nextUnit,
+    recurrenceRuleJson: nextRuleJson
+  };
+}
+
 function normalizeTemplateRow(row) {
   if (!row) return row;
   const { steps_json, ...rest } = row;
@@ -145,6 +237,75 @@ async function getRow(db, sql, params = []) {
 
 async function getRows(db, sql, params = []) {
   return db.query(sql, params);
+}
+
+async function resolveTagId(db, workspaceId, name) {
+  const existing = await getRow(
+    db,
+    'SELECT id FROM tags WHERE workspace_id = ? AND lower(name) = lower(?) ORDER BY name LIMIT 1',
+    [workspaceId, name]
+  );
+  if (existing?.id) return existing.id;
+  const id = randomUUID();
+  await run(
+    db,
+    'INSERT INTO tags (id, workspace_id, name) VALUES (?, ?, ?)',
+    [id, workspaceId, name]
+  );
+  return id;
+}
+
+async function replaceTaskTags(db, taskId, workspaceId, tags = []) {
+  const safeTaskId = assertUuid(taskId, 'task_id');
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  const normalized = normalizeTaskTagsInput(tags) ?? [];
+  await run(db, 'DELETE FROM task_tags WHERE task_id = ?', [safeTaskId]);
+  if (!normalized.length) return;
+  for (const tagName of normalized) {
+    const tagId = await resolveTagId(db, safeWorkspaceId, tagName);
+    await run(
+      db,
+      'INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES (?, ?)',
+      [safeTaskId, tagId]
+    );
+  }
+}
+
+async function attachTagsToTasks(db, tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) return [];
+  if (tasks.every(task => Array.isArray(task?.tags))) {
+    return tasks.map(task => ({ ...task, tags: normalizeTaskTagsInput(task.tags) ?? [] }));
+  }
+  const ids = tasks.map((task) => task?.id).filter((id) => UUID_V4_RE.test(String(id ?? '')));
+  if (!ids.length) {
+    return tasks.map((task) => ({ ...task, tags: [] }));
+  }
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = await getRows(
+    db,
+    `SELECT tt.task_id, t.name
+       FROM task_tags tt
+       JOIN tags t ON t.id = tt.tag_id
+      WHERE tt.task_id IN (${placeholders})
+      ORDER BY t.name COLLATE NOCASE`,
+    ids
+  );
+  const tagsByTaskId = new Map();
+  for (const row of rows) {
+    const list = tagsByTaskId.get(row.task_id) ?? [];
+    list.push(row.name);
+    tagsByTaskId.set(row.task_id, list);
+  }
+  return tasks.map((task) => ({
+    ...task,
+    tags: tagsByTaskId.get(task.id) ?? []
+  }));
+}
+
+async function attachTagsToTask(db, task) {
+  if (!task) return null;
+  const [tagged] = await attachTagsToTasks(db, [task]);
+  return tagged ?? { ...task, tags: [] };
 }
 
 async function getWorkspaceRow(db, workspaceId) {
@@ -352,6 +513,7 @@ export async function createUser(db, data, clientId = null) {
     org_id: orgId,
     display_name: displayName,
     email,
+    org_role: normalizeOrgRole(data?.org_role),
     archived: data?.archived ? 1 : 0,
     created_at: timestamp,
     updated_at: timestamp
@@ -359,9 +521,18 @@ export async function createUser(db, data, clientId = null) {
   await run(
     db,
     `INSERT INTO users
-      (id, org_id, display_name, email, archived, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [user.id, user.org_id, user.display_name, user.email, user.archived, user.created_at, user.updated_at]
+      (id, org_id, display_name, email, org_role, archived, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      user.id,
+      user.org_id,
+      user.display_name,
+      user.email,
+      user.org_role,
+      user.archived,
+      user.created_at,
+      user.updated_at
+    ]
   );
   const workspaceId = optionalUuid(data?.workspace_id, 'workspace_id');
   if (workspaceId) {
@@ -378,19 +549,358 @@ export async function updateUser(db, id, patch, clientId = null) {
     ...existing,
     display_name: patch.display_name !== undefined ? String(patch.display_name).trim() || existing.display_name : existing.display_name,
     email: patch.email !== undefined ? normalizeEmail(patch.email) : existing.email,
+    org_role: patch.org_role !== undefined ? normalizeOrgRole(patch.org_role) : normalizeOrgRole(existing.org_role),
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : Number(existing.archived) ? 1 : 0,
     updated_at: nowIso()
   };
   await run(
     db,
-    'UPDATE users SET display_name = ?, email = ?, archived = ?, updated_at = ? WHERE id = ?',
-    [next.display_name, next.email, next.archived, next.updated_at, userId]
+    'UPDATE users SET display_name = ?, email = ?, org_role = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.display_name, next.email, next.org_role, next.archived, next.updated_at, userId]
   );
   const workspaceId = optionalUuid(patch.workspace_id, 'workspace_id');
   if (workspaceId) {
     await recordChange(db, workspaceId, 'user', userId, 'update', patch, clientId);
   }
   return getRow(db, 'SELECT * FROM users WHERE id = ?', [userId]);
+}
+
+export async function getUserByEmail(db, email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  return getRow(
+    db,
+    `SELECT *
+       FROM users
+      WHERE email = ?
+      ORDER BY archived ASC, created_at ASC
+      LIMIT 1`,
+    [normalized]
+  );
+}
+
+export async function getUserSettings(db, userId) {
+  const id = assertUuid(userId, 'user id');
+  const existingUser = await getRow(db, 'SELECT id FROM users WHERE id = ?', [id]);
+  if (!existingUser) {
+    throw new Error('User not found');
+  }
+  const row = await getRow(db, 'SELECT settings_json FROM user_settings WHERE user_id = ?', [id]);
+  return parseSettingsJson(row?.settings_json ?? null);
+}
+
+export async function upsertUserSettings(db, userId, settings, { merge = false } = {}) {
+  const id = assertUuid(userId, 'user id');
+  const existingUser = await getRow(db, 'SELECT id FROM users WHERE id = ?', [id]);
+  if (!existingUser) {
+    throw new Error('User not found');
+  }
+  const normalizedPatch = normalizeSettingsObject(settings);
+  const existing = await getRow(db, 'SELECT settings_json FROM user_settings WHERE user_id = ?', [id]);
+  const existingSettings = parseSettingsJson(existing?.settings_json ?? null);
+  const nextSettings = merge ? { ...existingSettings, ...normalizedPatch } : normalizedPatch;
+  const timestamp = nowIso();
+  const serialized = JSON.stringify(nextSettings);
+  if (existing) {
+    await run(
+      db,
+      'UPDATE user_settings SET settings_json = ?, updated_at = ? WHERE user_id = ?',
+      [serialized, timestamp, id]
+    );
+  } else {
+    await run(
+      db,
+      `INSERT INTO user_settings (user_id, settings_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?)`,
+      [id, serialized, timestamp, timestamp]
+    );
+  }
+  return nextSettings;
+}
+
+export async function listUsersForAdmin(
+  db,
+  {
+    org_id: orgId = null,
+    workspace_id: workspaceId = null,
+    include_archived: includeArchived = true
+  } = {}
+) {
+  const users = await listUsers(db, orgId, workspaceId);
+  const filtered = includeArchived
+    ? users
+    : users.filter((user) => !Number(user.archived));
+  if (!filtered.length) return [];
+  const userIds = filtered.map((user) => user.id);
+  const placeholders = userIds.map(() => '?').join(', ');
+  const settingRows = await getRows(
+    db,
+    `SELECT user_id, settings_json
+       FROM user_settings
+      WHERE user_id IN (${placeholders})`,
+    userIds
+  );
+  const settingsByUserId = new Map(
+    settingRows.map((row) => [row.user_id, parseSettingsJson(row.settings_json)])
+  );
+  return filtered.map((user) => ({
+    ...user,
+    org_role: normalizeOrgRole(user.org_role),
+    settings: settingsByUserId.get(user.id) ?? {}
+  }));
+}
+
+export async function deleteUserAccount(db, userId, clientId = null) {
+  const id = assertUuid(userId, 'user id');
+  const existing = await getRow(db, 'SELECT * FROM users WHERE id = ?', [id]);
+  if (!existing) return { deleted: 0 };
+  const workspaceForChange = await getRow(
+    db,
+    `SELECT workspace_id
+       FROM workspace_memberships
+      WHERE user_id = ?
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    [id]
+  );
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      'UPDATE tasks SET assignee_label = COALESCE(assignee_label, ?), assignee_user_id = NULL WHERE assignee_user_id = ?',
+      [existing.display_name, id]
+    );
+    await run(tx, 'DELETE FROM users WHERE id = ?', [id]);
+  });
+  if (clientId) {
+    // User deletions can span many workspaces; emit a lightweight org-scoped change entry where possible.
+    if (workspaceForChange?.workspace_id) {
+      await recordChange(db, workspaceForChange.workspace_id, 'user', id, 'delete', {}, clientId);
+    }
+  }
+  return { deleted: 1, user: existing };
+}
+
+export async function exportUserDataBundle(db, userId) {
+  const id = assertUuid(userId, 'user id');
+  const user = await getRow(db, 'SELECT * FROM users WHERE id = ?', [id]);
+  if (!user) return null;
+  const settings = await getUserSettings(db, id);
+  const memberships = await getRows(db, 'SELECT * FROM workspace_memberships WHERE user_id = ?', [id]);
+  const workspaceIds = memberships.map((membership) => membership.workspace_id);
+  let workspaces = [];
+  if (workspaceIds.length) {
+    const placeholders = workspaceIds.map(() => '?').join(', ');
+    workspaces = await getRows(
+      db,
+      `SELECT *
+         FROM workspaces
+        WHERE id IN (${placeholders})`,
+      workspaceIds
+    );
+  }
+  const assignedTasks = await getRows(db, 'SELECT * FROM tasks WHERE assignee_user_id = ?', [id]);
+  const sessions = await getRows(
+    db,
+    `SELECT id, created_at, updated_at, expires_at, revoked_at, ip_address, user_agent
+       FROM auth_sessions
+      WHERE user_id = ?`,
+    [id]
+  );
+  const invites = user.email
+    ? await getRows(
+      db,
+      `SELECT id, workspace_id, email, role, status, invited_by_email, expires_at, accepted_at, created_at, updated_at
+         FROM user_invites
+        WHERE email = ? OR invited_by_email = ?`,
+      [user.email, user.email]
+    )
+    : [];
+  return {
+    exported_at: nowIso(),
+    user,
+    settings,
+    memberships,
+    workspaces,
+    assigned_tasks: assignedTasks,
+    sessions,
+    invites
+  };
+}
+
+async function getInviteById(db, inviteId) {
+  const id = assertUuid(inviteId, 'invite id');
+  return getRow(db, 'SELECT * FROM user_invites WHERE id = ?', [id]);
+}
+
+async function getPendingInviteByWorkspaceEmail(db, workspaceId, email) {
+  return getRow(
+    db,
+    `SELECT * FROM user_invites
+     WHERE workspace_id = ? AND email = ? AND status = 'pending'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [workspaceId, email]
+  );
+}
+
+function normalizeInviteStatus(value) {
+  const status = String(value ?? '').trim().toLowerCase();
+  if (!status || status === 'all') return 'all';
+  if (status === 'pending' || status === 'accepted' || status === 'expired' || status === 'revoked') {
+    return status;
+  }
+  throw new Error('Invalid invite status');
+}
+
+export async function listUserInvites(db, { org_id: orgId = null, workspace_id: workspaceId = null, status = 'pending' } = {}) {
+  const safeWorkspaceId = optionalUuid(workspaceId, 'workspace_id');
+  let safeOrgId = orgId ? assertUuid(orgId, 'org_id') : null;
+  if (safeWorkspaceId) {
+    const workspace = await getWorkspaceRow(db, safeWorkspaceId);
+    if (safeOrgId && workspace.org_id !== safeOrgId) {
+      throw new Error('workspace_id does not belong to org_id');
+    }
+    safeOrgId = safeOrgId ?? workspace.org_id;
+  }
+  if (!safeOrgId) {
+    throw new Error('org_id or workspace_id required');
+  }
+  const safeStatus = normalizeInviteStatus(status);
+  const where = ['ui.org_id = ?'];
+  const params = [safeOrgId];
+  if (safeWorkspaceId) {
+    where.push('ui.workspace_id = ?');
+    params.push(safeWorkspaceId);
+  }
+  if (safeStatus !== 'all') {
+    where.push('ui.status = ?');
+    params.push(safeStatus);
+  }
+  return getRows(
+    db,
+    `SELECT ui.*, w.name AS workspace_name
+       FROM user_invites ui
+       LEFT JOIN workspaces w ON w.id = ui.workspace_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY ui.created_at DESC`,
+    params
+  );
+}
+
+export async function revokeUserInvite(db, inviteId, actorEmail = null, clientId = null) {
+  const id = assertUuid(inviteId, 'invite id');
+  const invite = await getInviteById(db, id);
+  if (!invite) return null;
+  const currentStatus = String(invite.status ?? '').trim().toLowerCase();
+  if (currentStatus !== 'pending') {
+    throw new Error('Only pending invites can be deleted');
+  }
+  const updatedAt = nowIso();
+  await run(
+    db,
+    'UPDATE user_invites SET status = ?, updated_at = ? WHERE id = ?',
+    ['revoked', updatedAt, id]
+  );
+  if (invite.workspace_id) {
+    await recordChange(
+      db,
+      invite.workspace_id,
+      'user_invite',
+      id,
+      'update',
+      {
+        status: 'revoked',
+        revoked_by_email: normalizeEmail(actorEmail),
+        revoked_at: updatedAt
+      },
+      clientId
+    );
+  }
+  return getInviteById(db, id);
+}
+
+export async function createUserInvite(db, data, clientId = null) {
+  const workspace = await getWorkspaceRow(db, data?.workspace_id);
+  const orgId = workspace.org_id;
+  if (data?.org_id && assertUuid(data.org_id, 'org_id') !== orgId) {
+    throw new Error('workspace_id does not belong to org_id');
+  }
+  const email = normalizeEmail(data?.email);
+  if (!email) {
+    throw new Error('email required');
+  }
+  const invitedByEmail = normalizeEmail(data?.invited_by_email);
+  if (!invitedByEmail) {
+    throw new Error('invited_by_email required');
+  }
+  const role = normalizeRole(data?.role);
+  const existingUser = await getRow(
+    db,
+    'SELECT id, archived FROM users WHERE org_id = ? AND email = ?',
+    [orgId, email]
+  );
+  if (existingUser && !Number(existingUser.archived)) {
+    throw new Error('User with this email already exists');
+  }
+
+  const pendingInvite = await getPendingInviteByWorkspaceEmail(db, workspace.id, email);
+  if (pendingInvite) {
+    const expiresAtTs = Date.parse(pendingInvite.expires_at);
+    if (Number.isFinite(expiresAtTs) && expiresAtTs > Date.now()) {
+      return pendingInvite;
+    }
+    await run(
+      db,
+      'UPDATE user_invites SET status = ?, updated_at = ? WHERE id = ?',
+      ['expired', nowIso(), pendingInvite.id]
+    );
+  }
+
+  const id = ensureUuid(data?.id, 'invite id');
+  const timestamp = nowIso();
+  const invite = {
+    id,
+    org_id: orgId,
+    workspace_id: workspace.id,
+    email,
+    role,
+    invite_token: randomUUID(),
+    status: 'pending',
+    invited_by_email: invitedByEmail,
+    expires_at: addDaysIso(DEFAULT_INVITE_EXPIRY_DAYS),
+    accepted_at: null,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+  await run(
+    db,
+    `INSERT INTO user_invites (
+      id, org_id, workspace_id, email, role, invite_token, status, invited_by_email,
+      expires_at, accepted_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      invite.id,
+      invite.org_id,
+      invite.workspace_id,
+      invite.email,
+      invite.role,
+      invite.invite_token,
+      invite.status,
+      invite.invited_by_email,
+      invite.expires_at,
+      invite.accepted_at,
+      invite.created_at,
+      invite.updated_at
+    ]
+  );
+  await recordChange(db, workspace.id, 'user_invite', invite.id, 'create', {
+    email: invite.email,
+    role: invite.role,
+    status: invite.status,
+    invited_by_email: invite.invited_by_email,
+    expires_at: invite.expires_at
+  }, clientId);
+  return getInviteById(db, invite.id);
 }
 
 export async function listWorkspaceMemberships(db, workspaceId) {
@@ -951,7 +1461,15 @@ export async function createNotice(db, data, clientId = null) {
     data.recurrence_interval,
     data.recurrence_unit
   );
+  const noticeType = data.notice_type ?? 'general';
   const recurrenceRuleJson = normalizeNoticeRecurrenceRuleJson(data.recurrence_rule_json ?? data.recurrence_rule);
+  const recurrenceDefaults = applyBirthdayNoticeDefaults(
+    noticeType,
+    notifyAt,
+    recurrenceInterval,
+    recurrenceUnit,
+    recurrenceRuleJson
+  );
   const recurrenceOccurrenceCount = normalizeNoticeOccurrenceCount(data.recurrence_occurrence_count);
   const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const notice = {
@@ -959,11 +1477,11 @@ export async function createNotice(db, data, clientId = null) {
     workspace_id: workspaceId,
     title,
     notify_at: notifyAt,
-    notice_type: data.notice_type ?? 'general',
+    notice_type: noticeType,
     notice_sent_at: data.notice_sent_at ?? null,
-    recurrence_interval: recurrenceInterval,
-    recurrence_unit: recurrenceUnit,
-    recurrence_rule_json: recurrenceRuleJson,
+    recurrence_interval: recurrenceDefaults.recurrenceInterval,
+    recurrence_unit: recurrenceDefaults.recurrenceUnit,
+    recurrence_rule_json: recurrenceDefaults.recurrenceRuleJson,
     recurrence_occurrence_count: recurrenceOccurrenceCount,
     dismissed_at: data.dismissed_at ?? null,
     created_at: timestamp,
@@ -1003,17 +1521,27 @@ export async function updateNotice(db, id, patch, clientId = null) {
     'recurrence_interval' in patch ? patch.recurrence_interval : existing.recurrence_interval,
     'recurrence_unit' in patch ? patch.recurrence_unit : existing.recurrence_unit
   );
+  const nextNoticeType = patch.notice_type ?? existing.notice_type ?? 'general';
+  const nextNotifyAt = patch.notify_at ?? existing.notify_at;
+  const nextRecurrenceRuleJson = ('recurrence_rule_json' in patch || 'recurrence_rule' in patch)
+    ? normalizeNoticeRecurrenceRuleJson(patch.recurrence_rule_json ?? patch.recurrence_rule)
+    : existing.recurrence_rule_json;
+  const recurrenceDefaults = applyBirthdayNoticeDefaults(
+    nextNoticeType,
+    nextNotifyAt,
+    recurrenceInterval,
+    recurrenceUnit,
+    nextRecurrenceRuleJson
+  );
   const next = {
     ...existing,
     title: patch.title !== undefined ? String(patch.title).trim() : existing.title,
-    notify_at: patch.notify_at ?? existing.notify_at,
-    notice_type: patch.notice_type ?? existing.notice_type ?? 'general',
+    notify_at: nextNotifyAt,
+    notice_type: nextNoticeType,
     notice_sent_at: patch.notice_sent_at ?? existing.notice_sent_at,
-    recurrence_interval: recurrenceInterval,
-    recurrence_unit: recurrenceUnit,
-    recurrence_rule_json: ('recurrence_rule_json' in patch || 'recurrence_rule' in patch)
-      ? normalizeNoticeRecurrenceRuleJson(patch.recurrence_rule_json ?? patch.recurrence_rule)
-      : existing.recurrence_rule_json,
+    recurrence_interval: recurrenceDefaults.recurrenceInterval,
+    recurrence_unit: recurrenceDefaults.recurrenceUnit,
+    recurrence_rule_json: recurrenceDefaults.recurrenceRuleJson,
     recurrence_occurrence_count: ('recurrence_occurrence_count' in patch)
       ? normalizeNoticeOccurrenceCount(patch.recurrence_occurrence_count)
       : normalizeNoticeOccurrenceCount(existing.recurrence_occurrence_count),
@@ -1056,6 +1584,7 @@ export async function deleteNotice(db, id, clientId = null) {
 export async function listNoticeTypes(db, workspaceId) {
   if (!workspaceId) return [];
   const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  await seedWorkspaceNoticeTypes(db, safeWorkspaceId);
   return getRows(db, 'SELECT * FROM notice_types WHERE workspace_id = ? ORDER BY label ASC', [safeWorkspaceId]);
 }
 
@@ -1527,19 +2056,23 @@ export async function createTask(db, data, clientId = null) {
   const id = ensureUuid(data?.id, 'task id');
   const workspaceId = await assertWorkspaceExists(db, data.workspace_id);
   const timestamp = nowIso();
-  const fallbackStatus = await getFallbackStatus(db, workspaceId);
-  const statusKey = data.status ?? fallbackStatus?.key ?? TaskStatus.INBOX;
-  const statusRow = await getStatusByKey(db, workspaceId, statusKey);
-  if (!statusRow) {
-    throw new Error('Invalid status');
+  const statusInput = typeof data.status === 'string' ? data.status.trim() : '';
+  const statusKey = statusInput || '';
+  let statusRow = null;
+  if (statusKey) {
+    statusRow = await getStatusByKey(db, workspaceId, statusKey);
+    if (!statusRow) {
+      throw new Error('Invalid status');
+    }
   }
-  const status = statusRow.key;
+  const status = statusRow?.key ?? '';
   const priority = data.priority ?? 'medium';
   const urgency = data.urgency ? 1 : 0;
   const parentId = optionalUuid(data.parent_id, 'parent_id');
   const projectId = optionalUuid(data.project_id, 'project_id');
   const recurrenceParentId = optionalUuid(data.recurrence_parent_id, 'recurrence_parent_id');
   const templateId = optionalUuid(data.template_id, 'template_id');
+  const tags = normalizeTaskTagsInput(data.tags) ?? [];
 
   if (parentId) {
     await assertTaskBelongsToWorkspace(db, parentId, workspaceId, 'parent_id');
@@ -1598,11 +2131,11 @@ export async function createTask(db, data, clientId = null) {
     updated_at: timestamp
   };
 
-  if (statusRow.kind === TaskStatus.WAITING && !task.next_checkin_at) {
+  if (statusRow?.kind === TaskStatus.WAITING && !task.next_checkin_at) {
     const waitingTask = applyWaitingFollowup({ ...task, status: TaskStatus.WAITING }, new Date(), DEFAULT_WAITING_DAYS);
     task.next_checkin_at = waitingTask.next_checkin_at;
   }
-  if (statusRow.kind === TaskStatus.DONE && !task.completed_at) {
+  if (statusRow?.kind === TaskStatus.DONE && !task.completed_at) {
     task.completed_at = timestamp;
   }
 
@@ -1702,21 +2235,26 @@ export async function createTask(db, data, clientId = null) {
       }
     }
 
-    await recordChange(tx, task.workspace_id, 'task', id, 'create', task, clientId);
+    await replaceTaskTags(tx, id, task.workspace_id, tags);
+    await recordChange(tx, task.workspace_id, 'task', id, 'create', { ...task, tags }, clientId);
   });
 
-  return getRow(db, 'SELECT * FROM tasks WHERE id = ?', [id]);
+  return getTask(db, id);
 }
 
 export async function getTask(db, id) {
   const taskId = assertUuid(id, 'task id');
-  return getRow(db, 'SELECT * FROM tasks WHERE id = ?', [taskId]);
+  const task = await getRow(db, 'SELECT * FROM tasks WHERE id = ?', [taskId]);
+  return attachTagsToTask(db, task);
 }
 
 export async function updateTask(db, id, patch, clientId = null) {
   const taskId = assertUuid(id, 'task id');
   const existing = await getTask(db, taskId);
   if (!existing) return null;
+  const normalizedPatchTags = Object.prototype.hasOwnProperty.call(patch ?? {}, 'tags')
+    ? normalizeTaskTagsInput(patch.tags)
+    : undefined;
   const next = {
     ...existing,
     ...patch,
@@ -1759,25 +2297,32 @@ export async function updateTask(db, id, patch, clientId = null) {
   if ('auto_debit' in patch) next.auto_debit = patch.auto_debit ? 1 : 0;
   if ('template_prompt_pending' in patch) next.template_prompt_pending = patch.template_prompt_pending ? 1 : 0;
 
-  if (patch.status && patch.status !== existing.status) {
-    const statusRow = await getStatusByKey(db, existing.workspace_id, patch.status);
-    if (!statusRow) {
-      throw new Error('Invalid status');
-    }
-    if (statusRow.kind === TaskStatus.WAITING) {
-      const explicitFollowup = patch.next_checkin_at ?? patch.waiting_followup_at ?? null;
-      if (explicitFollowup) {
-        next.next_checkin_at = explicitFollowup;
-      } else {
-        const waitingTask = applyWaitingFollowup({ ...next, status: TaskStatus.WAITING }, new Date(), DEFAULT_WAITING_DAYS);
-        next.next_checkin_at = waitingTask.next_checkin_at;
+  if (Object.prototype.hasOwnProperty.call(patch ?? {}, 'status')) {
+    const statusInput = typeof patch.status === 'string' ? patch.status.trim() : '';
+    next.status = statusInput || '';
+    if (next.status !== existing.status) {
+      let statusRow = null;
+      if (next.status) {
+        statusRow = await getStatusByKey(db, existing.workspace_id, next.status);
+        if (!statusRow) {
+          throw new Error('Invalid status');
+        }
       }
-    }
-    if (statusRow.kind === TaskStatus.DONE) {
-      next.completed_at = next.completed_at ?? nowIso();
-    }
-    if (statusRow.kind !== TaskStatus.DONE && !('completed_at' in patch)) {
-      next.completed_at = null;
+      if (statusRow?.kind === TaskStatus.WAITING) {
+        const explicitFollowup = patch.next_checkin_at ?? patch.waiting_followup_at ?? null;
+        if (explicitFollowup) {
+          next.next_checkin_at = explicitFollowup;
+        } else {
+          const waitingTask = applyWaitingFollowup({ ...next, status: TaskStatus.WAITING }, new Date(), DEFAULT_WAITING_DAYS);
+          next.next_checkin_at = waitingTask.next_checkin_at;
+        }
+      }
+      if (statusRow?.kind === TaskStatus.DONE) {
+        next.completed_at = next.completed_at ?? nowIso();
+      }
+      if ((statusRow?.kind ?? null) !== TaskStatus.DONE && !('completed_at' in patch)) {
+        next.completed_at = null;
+      }
     }
   }
 
@@ -1790,12 +2335,20 @@ export async function updateTask(db, id, patch, clientId = null) {
     'waiting_followup_at', 'next_checkin_at', 'sort_order', 'task_type', 'project_id', 'group_label'
   ];
   const values = fields.map(field => next[field]);
-  await run(
-    db,
-    `UPDATE tasks SET ${fields.map(field => `${field} = ?`).join(', ')}, updated_at = ? WHERE id = ?`,
-    [...values, next.updated_at, taskId]
-  );
-  await recordChange(db, next.workspace_id, 'task', taskId, 'update', patch, clientId);
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      `UPDATE tasks SET ${fields.map(field => `${field} = ?`).join(', ')}, updated_at = ? WHERE id = ?`,
+      [...values, next.updated_at, taskId]
+    );
+    if (normalizedPatchTags !== undefined) {
+      await replaceTaskTags(tx, taskId, next.workspace_id, normalizedPatchTags);
+    }
+    const changePayload = normalizedPatchTags === undefined
+      ? patch
+      : { ...patch, tags: normalizedPatchTags };
+    await recordChange(tx, next.workspace_id, 'task', taskId, 'update', changePayload, clientId);
+  });
   return getTask(db, taskId);
 }
 
@@ -1823,7 +2376,8 @@ export async function deleteTask(db, id, clientId = null) {
 export async function listTasks(db, workspaceId) {
   if (!workspaceId) return [];
   const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
-  return getRows(db, 'SELECT * FROM tasks WHERE workspace_id = ?', [safeWorkspaceId]);
+  const rows = await getRows(db, 'SELECT * FROM tasks WHERE workspace_id = ?', [safeWorkspaceId]);
+  return attachTagsToTasks(db, rows);
 }
 
 export async function listTaskDependencies(db, workspaceId) {
@@ -1910,6 +2464,7 @@ export async function getTaskTree(db, workspaceId, rootId = null) {
   } else {
     tasks = await listTasks(db, workspaceId);
   }
+  tasks = await attachTagsToTasks(db, tasks);
 
   const tree = buildAdjacency(tasks);
   tree.forEach(sortTreeByPriority);
@@ -2083,8 +2638,9 @@ export async function searchTasks(db, workspaceId, { text, status, tag }) {
     params.push(like, like);
   }
   if (tag) {
-    where += ' AND id IN (SELECT task_id FROM task_tags tt JOIN tags t ON t.id = tt.tag_id WHERE t.name = ?)';
-    params.push(tag);
+    where += ' AND id IN (SELECT task_id FROM task_tags tt JOIN tags t ON t.id = tt.tag_id WHERE lower(t.name) = lower(?))';
+    params.push(String(tag).trim());
   }
-  return getRows(db, `SELECT * FROM tasks WHERE ${where}`, params);
+  const rows = await getRows(db, `SELECT * FROM tasks WHERE ${where}`, params);
+  return attachTagsToTasks(db, rows);
 }

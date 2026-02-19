@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily BrianHub backup timer
+
+[Timer]
+# Daily snapshot at 02:15 local time.
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+Unit=brianhub-backup.service
+
+[Install]
+WantedBy=timers.target
+

@@ -22,6 +22,63 @@ function getSessionCookie(res) {
   return match ? match[0] : null;
 }
 
+async function createAcceptedUser({
+  workspaceName,
+  email,
+  displayName,
+  password,
+  role = 'member'
+}) {
+  const workspaceRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    payload: {
+      name: workspaceName,
+      type: 'personal',
+      org_id: '00000000-0000-4000-8000-000000000001'
+    }
+  });
+  assert.equal(workspaceRes.statusCode, 200);
+  const workspaceId = workspaceRes.json().id;
+
+  const inviteRes = await server.inject({
+    method: 'POST',
+    url: '/admin/invites',
+    headers: {
+      'x-actor-email': ownerEmail
+    },
+    payload: {
+      workspace_id: workspaceId,
+      email,
+      role
+    }
+  });
+  assert.equal(inviteRes.statusCode, 200);
+  const inviteToken = inviteRes.json().invite?.invite_token;
+  assert.equal(typeof inviteToken, 'string');
+
+  const acceptRes = await server.inject({
+    method: 'POST',
+    url: '/auth/invite/accept',
+    payload: {
+      invite_token: inviteToken,
+      email,
+      display_name: displayName,
+      password
+    }
+  });
+  assert.equal(acceptRes.statusCode, 200);
+  const cookie = getSessionCookie(acceptRes);
+  assert.ok(cookie);
+
+  return {
+    workspaceId,
+    inviteToken,
+    auth: acceptRes.json(),
+    cookie
+  };
+}
+
 before(async () => {
   process.env.BRIANHUB_DB = tempDbPath;
   process.env.NODE_ENV = 'test';
@@ -178,6 +235,7 @@ test('sync push returns 409 conflict with server version for stale task mutation
   });
   assert.equal(taskRes.statusCode, 200);
   const createdTask = taskRes.json();
+  assert.equal(createdTask.status, '');
   assert.equal(typeof createdTask.updated_at, 'string');
 
   const conflictRes = await server.inject({
@@ -356,4 +414,319 @@ test('invite accept rejects email that does not match the invite', async () => {
   });
   assert.equal(rejectRes.statusCode, 400);
   assert.equal(rejectRes.json().error.message, 'email does not match invite');
+});
+
+test('admin can delete a pending invite (revokes and removes from pending list)', async () => {
+  const workspaceRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    payload: {
+      name: 'Invite revoke workspace',
+      type: 'personal',
+      org_id: '00000000-0000-4000-8000-000000000001'
+    }
+  });
+  assert.equal(workspaceRes.statusCode, 200);
+  const workspaceId = workspaceRes.json().id;
+
+  const inviteRes = await server.inject({
+    method: 'POST',
+    url: '/admin/invites',
+    headers: {
+      'x-actor-email': ownerEmail
+    },
+    payload: {
+      workspace_id: workspaceId,
+      email: 'delete.me@example.com',
+      role: 'member'
+    }
+  });
+  assert.equal(inviteRes.statusCode, 200);
+  const inviteId = inviteRes.json().invite?.id;
+  assert.equal(typeof inviteId, 'string');
+
+  const deleteRes = await server.inject({
+    method: 'DELETE',
+    url: `/admin/invites/${inviteId}`,
+    headers: {
+      'x-actor-email': ownerEmail
+    }
+  });
+  assert.equal(deleteRes.statusCode, 200);
+  assert.equal(deleteRes.json().invite?.status, 'revoked');
+
+  const pendingRes = await server.inject({
+    method: 'GET',
+    url: `/admin/invites?workspace_id=${encodeURIComponent(workspaceId)}&status=pending`,
+    headers: {
+      'x-actor-email': ownerEmail
+    }
+  });
+  assert.equal(pendingRes.statusCode, 200);
+  assert.equal(pendingRes.json().count, 0);
+
+  const allRes = await server.inject({
+    method: 'GET',
+    url: `/admin/invites?workspace_id=${encodeURIComponent(workspaceId)}&status=all`,
+    headers: {
+      'x-actor-email': ownerEmail
+    }
+  });
+  assert.equal(allRes.statusCode, 200);
+  assert.equal(allRes.json().count, 1);
+  assert.equal(allRes.json().invites[0].id, inviteId);
+  assert.equal(allRes.json().invites[0].status, 'revoked');
+});
+
+test('owner account is normalized to admin role in user records', async () => {
+  const createOwnerRes = await server.inject({
+    method: 'POST',
+    url: '/users',
+    payload: {
+      org_id: '00000000-0000-4000-8000-000000000001',
+      display_name: 'Owner Seed',
+      email: ownerEmail
+    }
+  });
+  assert.equal(createOwnerRes.statusCode, 200);
+  assert.equal(createOwnerRes.json().email, ownerEmail);
+  assert.equal(createOwnerRes.json().org_role, 'admin');
+
+  const listOwnerRes = await server.inject({
+    method: 'GET',
+    url: '/users?org_id=00000000-0000-4000-8000-000000000001'
+  });
+  assert.equal(listOwnerRes.statusCode, 200);
+  const ownerRow = listOwnerRes.json().find((user) => user.email === ownerEmail);
+  assert.ok(ownerRow);
+  assert.equal(ownerRow.org_role, 'admin');
+});
+
+test('task creation defaults assignee to authenticated creator', async () => {
+  const creator = await createAcceptedUser({
+    workspaceName: 'Default assignee workspace',
+    email: 'default.assignee@example.com',
+    displayName: 'Default Assignee',
+    password: 'Passw0rd!Default'
+  });
+  const creatorId = creator.auth.user.id;
+
+  const createTaskRes = await server.inject({
+    method: 'POST',
+    url: '/tasks',
+    headers: {
+      cookie: creator.cookie
+    },
+    payload: {
+      workspace_id: creator.workspaceId,
+      title: 'Task assigned to creator by default'
+    }
+  });
+  assert.equal(createTaskRes.statusCode, 200);
+  const createdTask = createTaskRes.json();
+  assert.equal(createdTask.assignee_user_id, creatorId);
+  assert.equal(createdTask.assignee_label, null);
+});
+
+test('profile/settings updates stay scoped to the authenticated account', async () => {
+  const userA = await createAcceptedUser({
+    workspaceName: 'Scoped settings workspace A',
+    email: 'scoped.a@example.com',
+    displayName: 'Scoped User A',
+    password: 'Passw0rd!A'
+  });
+  const userB = await createAcceptedUser({
+    workspaceName: 'Scoped settings workspace B',
+    email: 'scoped.b@example.com',
+    displayName: 'Scoped User B',
+    password: 'Passw0rd!B'
+  });
+
+  const setA = await server.inject({
+    method: 'PATCH',
+    url: '/auth/settings',
+    headers: {
+      cookie: userA.cookie
+    },
+    payload: {
+      settings: {
+        checkin_extend_minutes: 25,
+        task_ui: {
+          quick_add_visible: false
+        }
+      }
+    }
+  });
+  assert.equal(setA.statusCode, 200);
+  assert.equal(setA.json().settings.checkin_extend_minutes, 25);
+  assert.equal(setA.json().settings.task_ui.quick_add_visible, false);
+
+  const getA = await server.inject({
+    method: 'GET',
+    url: '/auth/settings',
+    headers: {
+      cookie: userA.cookie
+    }
+  });
+  assert.equal(getA.statusCode, 200);
+  assert.equal(getA.json().settings.checkin_extend_minutes, 25);
+
+  const getB = await server.inject({
+    method: 'GET',
+    url: '/auth/settings',
+    headers: {
+      cookie: userB.cookie
+    }
+  });
+  assert.equal(getB.statusCode, 200);
+  assert.deepEqual(getB.json().settings, {});
+
+  const profileA = await server.inject({
+    method: 'PATCH',
+    url: '/auth/profile',
+    headers: {
+      cookie: userA.cookie
+    },
+    payload: {
+      display_name: 'Scoped User A Prime'
+    }
+  });
+  assert.equal(profileA.statusCode, 200);
+  assert.equal(profileA.json().user.display_name, 'Scoped User A Prime');
+
+  const forbidden = await server.inject({
+    method: 'PATCH',
+    url: `/users/${userB.auth.user.id}`,
+    headers: {
+      cookie: userA.cookie
+    },
+    payload: {
+      display_name: 'Should Fail'
+    }
+  });
+  assert.equal(forbidden.statusCode, 403);
+});
+
+test('owner-only admin promotion is enforced for invites', async () => {
+  const adminUser = await createAcceptedUser({
+    workspaceName: 'Invite role admin workspace',
+    email: 'invite.admin@example.com',
+    displayName: 'Invite Admin',
+    password: 'Passw0rd!Admin',
+    role: 'admin'
+  });
+  assert.equal(adminUser.auth.user.org_role, 'admin');
+
+  const adminInfo = await server.inject({
+    method: 'GET',
+    url: '/admin/info',
+    headers: {
+      cookie: adminUser.cookie
+    }
+  });
+  assert.equal(adminInfo.statusCode, 200);
+  assert.equal(adminInfo.json().is_owner, false);
+  assert.equal(adminInfo.json().is_admin, true);
+
+  const workspaceRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    payload: {
+      name: 'Admin invite restriction workspace',
+      type: 'personal',
+      org_id: '00000000-0000-4000-8000-000000000001'
+    }
+  });
+  assert.equal(workspaceRes.statusCode, 200);
+  const workspaceId = workspaceRes.json().id;
+
+  const rejectAdminInvite = await server.inject({
+    method: 'POST',
+    url: '/admin/invites',
+    headers: {
+      cookie: adminUser.cookie
+    },
+    payload: {
+      workspace_id: workspaceId,
+      email: 'blocked.admin.invite@example.com',
+      role: 'admin'
+    }
+  });
+  assert.equal(rejectAdminInvite.statusCode, 403);
+});
+
+test('owner/admin permissions enforce role guardrails and ownership transfer', async () => {
+  const candidate = await createAcceptedUser({
+    workspaceName: 'Ownership transfer workspace',
+    email: 'owner.candidate@example.com',
+    displayName: 'Owner Candidate',
+    password: 'Passw0rd!Owner'
+  });
+  const member = await createAcceptedUser({
+    workspaceName: 'Ownership transfer member workspace',
+    email: 'admin.member@example.com',
+    displayName: 'Admin Member',
+    password: 'Passw0rd!Member'
+  });
+
+  const transferRes = await server.inject({
+    method: 'POST',
+    url: '/admin/ownership/transfer',
+    headers: {
+      'x-actor-email': ownerEmail
+    },
+    payload: {
+      target_user_id: candidate.auth.user.id
+    }
+  });
+  assert.equal(transferRes.statusCode, 200);
+  assert.equal(transferRes.json().owner_email, candidate.auth.user.email);
+
+  const ownerInfo = await server.inject({
+    method: 'GET',
+    url: '/admin/info',
+    headers: {
+      cookie: candidate.cookie
+    }
+  });
+  assert.equal(ownerInfo.statusCode, 200);
+  assert.equal(ownerInfo.json().is_owner, true);
+  assert.equal(ownerInfo.json().is_admin, true);
+
+  const promoteMember = await server.inject({
+    method: 'PATCH',
+    url: `/admin/users/${member.auth.user.id}`,
+    headers: {
+      cookie: candidate.cookie
+    },
+    payload: {
+      org_role: 'admin'
+    }
+  });
+  assert.equal(promoteMember.statusCode, 200);
+  assert.equal(promoteMember.json().user.org_role, 'admin');
+
+  const ownerRoleChangeByAdmin = await server.inject({
+    method: 'PATCH',
+    url: `/admin/users/${candidate.auth.user.id}`,
+    headers: {
+      cookie: member.cookie
+    },
+    payload: {
+      org_role: 'member'
+    }
+  });
+  assert.equal(ownerRoleChangeByAdmin.statusCode, 403);
+
+  const ownerPasswordResetByAdmin = await server.inject({
+    method: 'POST',
+    url: `/admin/users/${candidate.auth.user.id}/reset-password`,
+    headers: {
+      cookie: member.cookie
+    },
+    payload: {
+      password: 'Passw0rd!Reset'
+    }
+  });
+  assert.equal(ownerPasswordResetByAdmin.statusCode, 403);
 });

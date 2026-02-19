@@ -35,6 +35,7 @@ function defaultData() {
     workflowFragmentTasks: [],
     workflowInstances: [],
     workflowInstanceTasks: [],
+    scheduleEvents: [],
     notices: [],
     noticeTypes: [],
     storeRules: [],
@@ -65,6 +66,7 @@ function normalizeData(data) {
   if (!Array.isArray(next.workflowFragmentTasks)) next.workflowFragmentTasks = [];
   if (!Array.isArray(next.workflowInstances)) next.workflowInstances = [];
   if (!Array.isArray(next.workflowInstanceTasks)) next.workflowInstanceTasks = [];
+  if (!Array.isArray(next.scheduleEvents)) next.scheduleEvents = [];
   if (!Array.isArray(next.notices)) next.notices = [];
   if (!Array.isArray(next.noticeTypes)) next.noticeTypes = [];
   if (!Array.isArray(next.storeRules)) next.storeRules = [];

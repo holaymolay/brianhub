@@ -23,7 +23,14 @@ function defaultState() {
       checkinExtendMinutes: 60,
       selectedTaskIds: [],
       bulkUndoStack: [],
-      taskGroupMode: 'none'
+      taskGroupMode: 'none',
+      completedTaskVisibility: 'show',
+      futureTaskVisibilityDays: 0,
+      calendarHiddenHolidayKeys: [],
+      schedulingShowTasks: false,
+      schedulingHiddenKinds: [],
+      schedulingWeekMode: 'seven',
+      forceAuthGate: false
     }
   };
 }
@@ -58,6 +65,39 @@ function normalizeState(state) {
   if (!Array.isArray(next.ui.selectedTaskIds)) next.ui.selectedTaskIds = [];
   if (!Array.isArray(next.ui.bulkUndoStack)) next.ui.bulkUndoStack = [];
   if (!('taskGroupMode' in next.ui)) next.ui.taskGroupMode = 'none';
+  if (!['show', 'hide'].includes(next.ui.completedTaskVisibility)) next.ui.completedTaskVisibility = 'show';
+  if (!Number.isFinite(Number(next.ui.futureTaskVisibilityDays)) || Number(next.ui.futureTaskVisibilityDays) < 0) {
+    next.ui.futureTaskVisibilityDays = 0;
+  } else {
+    next.ui.futureTaskVisibilityDays = Math.floor(Number(next.ui.futureTaskVisibilityDays));
+  }
+  if (!Array.isArray(next.ui.calendarHiddenHolidayKeys)) {
+    next.ui.calendarHiddenHolidayKeys = [];
+  }
+  if (typeof next.ui.schedulingShowTasks !== 'boolean') {
+    next.ui.schedulingShowTasks = false;
+  }
+  if (!Array.isArray(next.ui.schedulingHiddenKinds)) {
+    next.ui.schedulingHiddenKinds = [];
+  }
+  if (!['seven', 'workweek'].includes(next.ui.schedulingWeekMode)) {
+    next.ui.schedulingWeekMode = 'seven';
+  }
+  if (typeof next.ui.forceAuthGate !== 'boolean') next.ui.forceAuthGate = false;
+  if (next.ui.admin && typeof next.ui.admin === 'object') {
+    // Admin console data is server-backed and should not survive reloads.
+    next.ui.admin.invitesLoading = false;
+    next.ui.admin.usersLoading = false;
+    next.ui.admin.invites = [];
+    next.ui.admin.users = [];
+    next.ui.admin.invitesError = '';
+    next.ui.admin.usersError = '';
+    next.ui.admin.invitesLoaded = false;
+    next.ui.admin.usersLoaded = false;
+    next.ui.admin.invitesRequestedAt = 0;
+    next.ui.admin.usersRequestedAt = 0;
+    next.ui.admin.selectedUserId = '';
+  }
   return next;
 }
 

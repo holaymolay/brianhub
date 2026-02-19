@@ -13,8 +13,24 @@
       <div class="header-left">
         <h1 id="app-title">BrianHub</h1>
       </div>
+      <div class="header-search">
+        <div class="global-search">
+          <input
+            id="global-search-input"
+            class="global-search-input"
+            type="search"
+            placeholder="Search"
+            autocomplete="off"
+            data-form-type="other"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-bwignore="true"
+          />
+          <div id="global-search-menu" class="global-search-menu hidden"></div>
+        </div>
+      </div>
       <div class="sync-controls">
-        <span id="sync-status" aria-live="polite"></span>
+        <span id="sync-offline-notice" class="hidden" aria-live="polite">OFFLINE</span>
         <div class="mobile-top-menu-wrapper">
           <button id="mobile-top-menu-button" class="icon-button menu-icon mobile-top-menu-button" type="button" title="Menu">☰</button>
           <div id="mobile-top-menu" class="mobile-top-menu hidden">
@@ -79,6 +95,7 @@
     <nav class="module-navbar" aria-label="Application modules">
       <div class="module-navbar-inner">
         <button id="module-nav-todo" class="module-nav-item is-active" type="button" aria-current="page">Tasks</button>
+        <button id="module-nav-scheduling" class="module-nav-item" type="button">Scheduling</button>
         <button class="module-nav-item" type="button" disabled title="Coming soon">CRM</button>
         <button class="module-nav-item" type="button" disabled title="Coming soon">Knowledge</button>
       </div>
@@ -87,74 +104,151 @@
     <main class="app-main">
       <div class="app-layout">
         <aside class="sidebar">
-          <div class="sidebar-header-row">
-            <button id="tasks-open" class="sidebar-section-button" type="button">My Tasks</button>
-          </div>
-          <div class="sidebar-divider"></div>
-          <div class="sidebar-header-row">
-            <button id="projects-open" class="sidebar-section-button" type="button">Projects</button>
-            <button id="new-project-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
-          </div>
-          <div id="project-list" class="workspace-list"></div>
-          <div class="sidebar-divider"></div>
-          <div class="sidebar-header-row">
-            <button id="workflows-open" class="sidebar-section-button" type="button">Workflows</button>
-            <div class="sidebar-header-actions">
-              <div class="workspace-menu-wrapper">
-                <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Workflow menu">⋯</button>
-                <div id="workflow-sidebar-menu" class="workspace-menu hidden">
-                  <button id="workflow-sidebar-manage" class="workspace-menu-item" type="button">Manage Workflows</button>
+          <div id="tasks-sidebar-content" class="sidebar-content">
+            <div class="sidebar-header-row">
+              <button id="tasks-open" class="sidebar-section-button" type="button">My Tasks</button>
+            </div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-header-row">
+              <button id="projects-open" class="sidebar-section-button" type="button">Projects</button>
+              <button id="new-project-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
+            </div>
+            <div id="project-list" class="workspace-list"></div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-header-row">
+              <button id="workflows-open" class="sidebar-section-button" type="button">Workflows</button>
+              <div class="sidebar-header-actions">
+                <div class="workspace-menu-wrapper">
+                  <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Workflow menu">⋯</button>
+                  <div id="workflow-sidebar-menu" class="workspace-menu hidden">
+                    <button id="workflow-sidebar-manage" class="workspace-menu-item" type="button">Manage Workflows</button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div id="workflow-list" class="workspace-list"></div>
-          <div class="sidebar-divider"></div>
-          <div class="sidebar-header-row">
-            <button id="shopping-open" class="sidebar-section-button" type="button">Shopping Lists</button>
-            <div class="sidebar-header-actions">
-              <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
-              <div class="workspace-menu-wrapper">
-                <button id="shopping-list-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Shopping list menu">⋯</button>
-                <div id="shopping-list-sidebar-menu" class="workspace-menu hidden">
-                  <label class="workspace-menu-item checkbox-item">
-                    <input type="checkbox" id="show-archived-shopping" />
-                    Show completed
-                  </label>
+            <div id="workflow-list" class="workspace-list"></div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-header-row">
+              <button id="shopping-open" class="sidebar-section-button" type="button">Shopping Lists</button>
+              <div class="sidebar-header-actions">
+                <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
+                <div class="workspace-menu-wrapper">
+                  <button id="shopping-list-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Shopping list menu">⋯</button>
+                  <div id="shopping-list-sidebar-menu" class="workspace-menu hidden">
+                    <label class="workspace-menu-item checkbox-item">
+                      <input type="checkbox" id="show-archived-shopping" />
+                      Show completed
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
+            <div id="shopping-list-list" class="workspace-list"></div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-header-row">
+              <button id="notices-open" class="sidebar-section-button" type="button">Notices</button>
+              <button id="new-notice-sidebar-btn" class="icon-button menu-icon" type="button" title="New notice">＋</button>
+            </div>
+            <div id="notice-list" class="workspace-list"></div>
           </div>
-          <div id="shopping-list-list" class="workspace-list"></div>
-          <div class="sidebar-divider"></div>
-          <div class="sidebar-header-row">
-            <button id="notices-open" class="sidebar-section-button" type="button">Notices</button>
-            <button id="new-notice-sidebar-btn" class="icon-button menu-icon" type="button" title="New notice">＋</button>
+          <div id="scheduling-sidebar-content" class="sidebar-content hidden">
+            <div class="sidebar-header-row">
+              <button id="scheduling-sidebar-open" class="sidebar-section-button" type="button">Calendar</button>
+              <button id="scheduling-sidebar-today" class="subtle-button" type="button">Today</button>
+            </div>
+            <div class="sidebar-note">Google Calendar style planning: events, time blocks, and days off.</div>
+            <div class="scheduling-mini-month">
+              <div class="scheduling-mini-month-header">
+                <button id="scheduling-mini-month-prev" class="icon-button menu-icon scheduling-mini-month-nav" type="button" title="Previous month">‹</button>
+                <div id="scheduling-mini-month-title" class="scheduling-mini-month-title">Month</div>
+                <button id="scheduling-mini-month-next" class="icon-button menu-icon scheduling-mini-month-nav" type="button" title="Next month">›</button>
+              </div>
+              <div class="scheduling-mini-month-weekdays" aria-hidden="true">
+                <span>Su</span>
+                <span>Mo</span>
+                <span>Tu</span>
+                <span>We</span>
+                <span>Th</span>
+                <span>Fr</span>
+                <span>Sa</span>
+              </div>
+              <div id="scheduling-mini-month-grid" class="scheduling-mini-month-grid"></div>
+            </div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-header-row">
+              <h2>Create</h2>
+            </div>
+            <div class="scheduling-quick-add">
+              <button id="scheduling-sidebar-add-event" class="subtle-button" type="button">＋ New event</button>
+              <button id="scheduling-sidebar-add-time-block" class="subtle-button" type="button">＋ Time block</button>
+              <button id="scheduling-sidebar-add-day-off" class="subtle-button" type="button">＋ Day off</button>
+            </div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-header-row">
+              <h2>Calendars</h2>
+            </div>
+            <div class="scheduling-layer-list">
+              <label class="scheduling-layer-item">
+                <span class="scheduling-layer-left">
+                  <input id="scheduling-layer-event" type="checkbox" />
+                  <span class="scheduling-layer-swatch scheduling-layer-swatch-event"></span>
+                  <span>Events</span>
+                </span>
+              </label>
+              <label class="scheduling-layer-item">
+                <span class="scheduling-layer-left">
+                  <input id="scheduling-layer-time-block" type="checkbox" />
+                  <span class="scheduling-layer-swatch scheduling-layer-swatch-time-block"></span>
+                  <span>Time blocks</span>
+                </span>
+              </label>
+              <label class="scheduling-layer-item">
+                <span class="scheduling-layer-left">
+                  <input id="scheduling-layer-day-off" type="checkbox" />
+                  <span class="scheduling-layer-swatch scheduling-layer-swatch-day-off"></span>
+                  <span>Days off</span>
+                </span>
+              </label>
+              <label class="scheduling-layer-item">
+                <span class="scheduling-layer-left">
+                  <input id="scheduling-layer-tasks" type="checkbox" />
+                  <span class="scheduling-layer-swatch scheduling-layer-swatch-task"></span>
+                  <span>Tasks</span>
+                </span>
+              </label>
+              <label class="scheduling-layer-item">
+                <span class="scheduling-layer-left">
+                  <input id="scheduling-layer-holidays" type="checkbox" />
+                  <span class="scheduling-layer-swatch scheduling-layer-swatch-holiday"></span>
+                  <span>Holidays</span>
+                </span>
+              </label>
+            </div>
           </div>
-          <div id="notice-list" class="workspace-list"></div>
         </aside>
         <section class="panel content-panel">
           <section id="tasks-panel">
             <div class="tasks-toolbar">
+            <div class="task-create-split">
+              <button id="task-create-primary" class="task-create-primary" type="button">＋ Add task</button>
+              <button id="task-create-menu-button" class="task-create-menu-button hidden" type="button" aria-label="More add options">▾</button>
+              <div id="task-create-menu" class="workspace-menu task-create-menu hidden">
+                <button class="workspace-menu-item" type="button" data-create="task">Add task</button>
+                <button class="workspace-menu-item" type="button" data-create="section">Add section</button>
+              </div>
+            </div>
             <div class="task-filter">
-              <button id="task-filter-button" class="subtle-button" type="button">All tasks ▾</button>
+              <button id="task-filter-button" class="subtle-button" type="button">My tasks ▾</button>
               <div id="task-filter-menu" class="workspace-menu hidden">
                 <label class="task-filter-search">
                   <input id="task-filter-search-input" type="search" placeholder="Search tasks..." autocomplete="off" />
                 </label>
-                <button class="workspace-menu-item" type="button" data-filter="all">All tasks</button>
+                <label class="task-filter-search">
+                  <input id="task-filter-tag-input" type="search" placeholder="Filter by tag..." autocomplete="off" />
+                </label>
+                <button class="workspace-menu-item" type="button" data-filter="all">My tasks</button>
                 <button class="workspace-menu-item" type="button" data-filter="inbox">Inbox</button>
                 <button class="workspace-menu-item" type="button" data-filter="unassigned">Unassigned</button>
-              </div>
-            </div>
-            <div class="task-tools">
-              <button id="task-tools-button" class="subtle-button" type="button">Tools ▾</button>
-              <div id="task-tools-menu" class="workspace-menu hidden">
-                <button id="task-tools-toggle-quick-add" class="workspace-menu-item" type="button">Show quick add</button>
-                <button id="task-tools-mobile-filter" class="workspace-menu-item task-tools-mobile-item hidden" type="button">Filter: All tasks</button>
-                <button id="task-tools-mobile-sort" class="workspace-menu-item task-tools-mobile-item hidden" type="button">Sort: Default</button>
-                <button id="task-tools-mobile-group" class="workspace-menu-item task-tools-mobile-item hidden" type="button">Group: None</button>
-                <button id="task-tools-mobile-view" class="workspace-menu-item task-tools-mobile-item hidden" type="button">View: List</button>
               </div>
             </div>
             <div class="task-ai">
@@ -199,6 +293,13 @@
               <button id="task-bulk-clear" class="subtle-button" type="button">Cancel</button>
             </div>
             <div id="task-tree"></div>
+          </section>
+          <section id="scheduling-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Scheduling</h2>
+              <button id="scheduling-add-btn" class="icon-button menu-icon" type="button" title="New event">＋</button>
+            </div>
+            <div id="scheduling-calendar"></div>
           </section>
           <section id="projects-page" class="panel hidden">
             <div class="panel-header">
@@ -380,36 +481,98 @@
               <h2>Admin Console</h2>
               <button id="admin-page-back" class="subtle-button" type="button">← Back</button>
             </div>
-            <div class="settings-page-grid">
-              <div class="settings-section">
-                <h3>Invite user</h3>
-                <label>
-                  Email
-                  <input id="admin-invite-email" class="setting-input admin-invite-input" type="email" placeholder="name@company.com" />
-                </label>
-                <label>
-                  Workspace
-                  <select id="admin-invite-workspace" class="setting-input admin-invite-input"></select>
-                </label>
-                <label>
-                  Role
-                  <select id="admin-invite-role" class="setting-input admin-invite-input">
-                    <option value="member">Member</option>
-                    <option value="manager">Manager</option>
-                    <option value="owner">Owner</option>
-                  </select>
-                </label>
-                <div class="modal-actions profile-actions">
-                  <button id="admin-invite-send" type="button">Send invite</button>
+            <div class="admin-page-layout">
+              <div class="settings-page-grid admin-page-grid">
+                <div class="settings-section admin-invite-span2">
+                  <h3>Invite user</h3>
+                  <label>
+                    Email
+                    <input id="admin-invite-email" class="setting-input admin-invite-input" type="email" placeholder="name@company.com" />
+                  </label>
+                  <label>
+                    Role
+                    <select id="admin-invite-role" class="setting-input admin-invite-input">
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </label>
+                  <div class="modal-actions profile-actions">
+                    <button id="admin-invite-send" type="button">Generate token</button>
+                  </div>
+                  <div id="admin-invite-token-wrap" class="setting-row hidden">
+                    <input id="admin-invite-token" class="setting-input admin-invite-input" type="text" readonly placeholder="Read-only invite token appears here" title="Read-only token" />
+                    <button id="admin-invite-token-copy" class="subtle-button" type="button">Copy link</button>
+                  </div>
+                  <div id="admin-invite-status" class="sidebar-note"></div>
                 </div>
-                <div id="admin-invite-status" class="sidebar-note"></div>
+                <div class="settings-section">
+                  <h3>Pending invites</h3>
+                  <div id="admin-invites-list" class="workspace-list"></div>
+                </div>
               </div>
-              <div class="settings-section">
-                <h3>Pending invites</h3>
-                <div class="setting-row audit-controls">
-                  <button id="admin-invites-refresh" class="subtle-button" type="button">Refresh</button>
+              <div class="settings-page-grid admin-page-grid">
+                <div class="settings-section admin-user-controls-span2">
+                  <h3>User controls</h3>
+                  <label>
+                    User
+                    <select id="admin-user-select" class="setting-input admin-invite-input">
+                      <option value="">Select user</option>
+                    </select>
+                  </label>
+                  <div class="profile-form-grid">
+                    <label>
+                      Display name
+                      <input id="admin-user-name" class="setting-input" type="text" placeholder="Display name" />
+                    </label>
+                    <label>
+                      Email
+                      <input id="admin-user-email" class="setting-input" type="email" placeholder="user@example.com" />
+                    </label>
+                  </div>
+                  <div class="profile-form-grid">
+                    <label>
+                      Role
+                      <select id="admin-user-role" class="setting-input">
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </label>
+                    <label>
+                      Account status
+                      <select id="admin-user-archived" class="setting-input">
+                        <option value="0">Active</option>
+                        <option value="1">Disabled</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    Settings (JSON)
+                    <textarea id="admin-user-settings" class="automation-input" rows="5" placeholder='{"task_ui":{"completed_visibility":"hide"}}'></textarea>
+                  </label>
+                  <div class="modal-actions profile-actions">
+                    <button id="admin-user-save" type="button">Save user changes</button>
+                  </div>
+                  <label>
+                    Reset password
+                    <input id="admin-user-password" class="setting-input" type="password" placeholder="Temporary password" />
+                  </label>
+                  <div class="setting-row audit-controls">
+                    <button id="admin-user-password-reset" class="subtle-button" type="button">Reset password</button>
+                    <button id="admin-user-export" class="subtle-button" type="button">Export user data</button>
+                    <button id="admin-user-delete" class="subtle-button" type="button">Delete user</button>
+                  </div>
+                  <div class="modal-actions profile-actions">
+                    <button id="admin-ownership-transfer" class="subtle-button" type="button">Transfer ownership to selected user</button>
+                  </div>
                 </div>
-                <div id="admin-invites-list" class="workspace-list"></div>
+                <div class="settings-section admin-users-panel">
+                  <div class="setting-row admin-users-header">
+                    <h3>Users</h3>
+                    <button id="admin-users-refresh" class="subtle-button" type="button">Refresh</button>
+                  </div>
+                  <div id="admin-users-status" class="sidebar-note"></div>
+                  <div id="admin-users-list" class="workspace-list"></div>
+                </div>
               </div>
             </div>
           </section>
@@ -560,6 +723,13 @@
             <span class="task-meta"></span>
             <span class="task-type-badge"></span>
           </div>
+          <div class="task-row-meta">
+            <span class="task-row-meta-item task-row-meta-due" title="Due date">No due</span>
+            <span class="task-row-meta-item task-row-meta-repeat" title="Repeat">No repeat</span>
+            <span class="task-row-meta-item task-row-meta-type" title="Type">No type</span>
+            <span class="task-row-meta-item task-row-meta-assignee" title="Assignee">Unassigned</span>
+            <span class="task-row-meta-item task-row-meta-status" title="Status">No status</span>
+          </div>
           <div class="task-actions">
             <div class="task-menu-wrapper">
               <button class="task-menu-button icon-button menu-icon" type="button" title="More">⋯</button>
@@ -602,6 +772,10 @@
           <label>
             Type
             <select id="modal-type"></select>
+          </label>
+          <label>
+            Tags
+            <input id="modal-tags" type="text" placeholder="Customer, Report, Follow-up" />
           </label>
           <label>
             Priority
@@ -660,6 +834,50 @@
           <div class="modal-actions">
             <button type="submit">Create</button>
             <button type="button" id="modal-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="schedule-event-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2 id="schedule-event-modal-title">New event</h2>
+        <form id="schedule-event-form">
+          <label>
+            Title
+            <input id="schedule-event-title" type="text" placeholder="Event title" autocomplete="off" required />
+          </label>
+          <label>
+            Type
+            <select id="schedule-event-kind">
+              <option value="event">Event</option>
+              <option value="time-block">Time block</option>
+              <option value="day-off">Day off</option>
+            </select>
+          </label>
+          <label class="setting-checkbox">
+            <input id="schedule-event-all-day" type="checkbox" />
+            All day
+          </label>
+          <div class="datetime-row">
+            <label>
+              Start
+              <input id="schedule-event-start" type="datetime-local" required />
+            </label>
+            <label>
+              End
+              <input id="schedule-event-end" type="datetime-local" />
+            </label>
+          </div>
+          <label>
+            Notes
+            <textarea id="schedule-event-notes" rows="3" placeholder="Optional notes"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button id="schedule-event-delete" class="danger-button hidden" type="button">Delete</button>
+            <button type="submit">Save</button>
+            <button id="schedule-event-cancel" type="button">Cancel</button>
           </div>
         </form>
       </div>
@@ -853,64 +1071,231 @@
       <div class="modal-backdrop"></div>
       <div class="modal-card">
         <h2>Settings</h2>
-        <div class="settings-section">
-          <h3>Notifications</h3>
-          <div class="setting-row">
-            <div class="setting-label">Enable notifications</div>
-            <label class="toggle">
-              <input id="enable-notifications" type="checkbox" />
-              <span class="toggle-track"></span>
-            </label>
-          </div>
-          <div id="notification-status" class="sidebar-note setting-help"></div>
+        <div class="settings-tab-list" role="tablist" aria-label="Settings module tabs">
+          <button id="settings-tab-general" class="settings-tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="settings-panel-general" data-settings-tab="general">General</button>
+          <button id="settings-tab-tasks" class="settings-tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-panel-tasks" data-settings-tab="tasks">Tasks</button>
+          <button id="settings-tab-scheduling" class="settings-tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-panel-scheduling" data-settings-tab="scheduling">Scheduling</button>
+          <button id="settings-tab-crm" class="settings-tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-panel-crm" data-settings-tab="crm">CRM</button>
+          <button id="settings-tab-knowledge" class="settings-tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-panel-knowledge" data-settings-tab="knowledge">Knowledge</button>
         </div>
-        <div class="settings-section">
-          <h3>Check-ins</h3>
-          <div class="setting-row">
-            <div class="setting-label">Default session extension (minutes)</div>
-            <input id="checkin-default-minutes" class="setting-input" type="number" min="5" step="5" />
-          </div>
-        </div>
-        <div class="settings-section">
-          <h3>Templates</h3>
-          <div id="template-list" class="workspace-list"></div>
-          <button id="new-template-btn" class="subtle-button" type="button">New Template</button>
-        </div>
-        <div class="settings-section">
-          <h3>Collaboration</h3>
-          <div class="setting-row team-add-row">
-            <input id="team-member-name" class="setting-input" type="text" placeholder="Member name" />
-            <input id="team-member-email" class="setting-input" type="email" placeholder="Email (optional)" />
-            <select id="team-member-role" class="setting-input">
-              <option value="member">Member</option>
-              <option value="manager">Manager</option>
-            </select>
-            <button id="team-member-add" class="subtle-button" type="button">Add member</button>
-          </div>
-          <div id="team-member-list" class="workspace-list"></div>
-        </div>
-        <div class="settings-section">
-          <h3>Task Types</h3>
-          <button id="task-types-open" class="subtle-button" type="button">Manage task types</button>
-        </div>
-        <div class="settings-section">
-          <h3>Stores</h3>
-          <button id="store-rules-open" class="subtle-button" type="button">Manage stores</button>
-        </div>
-        <div class="settings-section">
-          <h3>Data</h3>
-          <button id="settings-open-data-transfer" class="subtle-button" type="button">Open Import / Export</button>
-        </div>
-        <div class="settings-section">
-          <h3>Audit</h3>
-          <button id="settings-open-audit-log" class="subtle-button" type="button">Open Audit Log</button>
-        </div>
-        <div class="settings-section">
-          <h3>Automation</h3>
-          <button id="settings-open-automation" class="subtle-button" type="button">Open Automation Console</button>
+        <div class="settings-tab-panels">
+          <section id="settings-panel-general" class="settings-tab-panel is-active" role="tabpanel" data-settings-panel="general">
+            <details class="settings-section settings-accordion">
+              <summary class="settings-accordion-summary">
+                <span class="settings-accordion-copy">
+                  <span class="settings-accordion-title">Notifications</span>
+                  <span class="settings-accordion-subtitle">Customize notifications across browser and app flows.</span>
+                </span>
+                <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="settings-accordion-content">
+                <div class="setting-row">
+                  <div class="setting-label">Enable notifications</div>
+                  <label class="toggle">
+                    <input id="enable-notifications" type="checkbox" />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+                <div id="notification-status" class="sidebar-note setting-help"></div>
+              </div>
+            </details>
+            <details class="settings-section settings-accordion">
+              <summary class="settings-accordion-summary">
+                <span class="settings-accordion-copy">
+                  <span class="settings-accordion-title">Check-ins</span>
+                  <span class="settings-accordion-subtitle">Control defaults for overdue follow-up prompts.</span>
+                </span>
+                <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="settings-accordion-content">
+                <div class="setting-row">
+                  <div class="setting-label">Default session extension (minutes)</div>
+                  <input id="checkin-default-minutes" class="setting-input" type="number" min="5" step="5" />
+                </div>
+              </div>
+            </details>
+            <details class="settings-section settings-accordion">
+              <summary class="settings-accordion-summary">
+                <span class="settings-accordion-copy">
+                  <span class="settings-accordion-title">Collaboration</span>
+                  <span class="settings-accordion-subtitle">Manage local team members and roles.</span>
+                </span>
+                <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="settings-accordion-content">
+                <div class="setting-row team-add-row">
+                  <input id="team-member-name" class="setting-input" type="text" placeholder="Member name" />
+                  <input id="team-member-email" class="setting-input" type="email" placeholder="Email (optional)" />
+                  <select id="team-member-role" class="setting-input">
+                    <option value="member">Member</option>
+                    <option value="manager">Manager</option>
+                  </select>
+                  <button id="team-member-add" class="subtle-button" type="button">Add member</button>
+                </div>
+                <div id="team-member-list" class="workspace-list"></div>
+              </div>
+            </details>
+            <div class="settings-section">
+              <div class="setting-row">
+                <div class="setting-label">Sync status</div>
+                <span id="sync-status" class="settings-sync-status" aria-live="polite">Checking sync...</span>
+              </div>
+            </div>
+            <div class="settings-section settings-action-card">
+              <div class="settings-action-copy">
+                <span class="settings-action-title">Data</span>
+                <span class="settings-action-subtitle">Import and export workspace data.</span>
+              </div>
+              <button id="settings-open-data-transfer" class="subtle-button" type="button">Open</button>
+            </div>
+            <div class="settings-section settings-action-card">
+              <div class="settings-action-copy">
+                <span class="settings-action-title">Audit</span>
+                <span class="settings-action-subtitle">Review structured audit events and system activity.</span>
+              </div>
+              <button id="settings-open-audit-log" class="subtle-button" type="button">Open</button>
+            </div>
+            <div class="settings-section settings-action-card">
+              <div class="settings-action-copy">
+                <span class="settings-action-title">Automation</span>
+                <span class="settings-action-subtitle">Run batch JSON commands against app data.</span>
+              </div>
+              <button id="settings-open-automation" class="subtle-button" type="button">Open</button>
+            </div>
+          </section>
+          <section id="settings-panel-tasks" class="settings-tab-panel" role="tabpanel" data-settings-panel="tasks">
+            <details class="settings-section settings-accordion">
+              <summary class="settings-accordion-summary">
+                <span class="settings-accordion-copy">
+                  <span class="settings-accordion-title">Tasks module</span>
+                  <span class="settings-accordion-subtitle">Display and behavior defaults for task management views.</span>
+                </span>
+                <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="settings-accordion-content">
+                <div class="setting-row">
+                  <div class="setting-label">Show quick add</div>
+                  <label class="toggle">
+                    <input id="task-ui-quick-add" type="checkbox" />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">Completed tasks</div>
+                  <select id="task-ui-completed-visibility" class="setting-input">
+                    <option value="show">Show crossed out</option>
+                    <option value="hide">Hide completed</option>
+                  </select>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">Hide scheduled tasks beyond (days)</div>
+                  <input id="task-ui-future-days" class="setting-input" type="number" min="0" step="1" />
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">Default filter</div>
+                  <select id="task-ui-filter" class="setting-input"></select>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">Default sort</div>
+                  <select id="task-ui-sort" class="setting-input">
+                    <option value="default">Default</option>
+                    <option value="due-asc">Due date (soonest)</option>
+                    <option value="due-desc">Due date (latest)</option>
+                    <option value="ai-queue">AI queue</option>
+                  </select>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">Group by</div>
+                  <select id="task-ui-group" class="setting-input">
+                    <option value="none">None</option>
+                    <option value="section">Section</option>
+                    <option value="task-type">Task type</option>
+                    <option value="priority">Priority</option>
+                  </select>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">View</div>
+                  <select id="task-ui-view" class="setting-input">
+                    <option value="list">List</option>
+                    <option value="kanban">Kanban</option>
+                    <option value="calendar">Calendar</option>
+                  </select>
+                </div>
+                <div class="setting-row setting-row-stack">
+                  <div class="setting-label">Visible holidays</div>
+                  <div id="task-ui-holiday-list" class="settings-holiday-options" role="group" aria-label="Visible holidays"></div>
+                </div>
+              </div>
+            </details>
+            <div class="settings-section settings-action-card">
+              <div class="settings-action-copy">
+                <span class="settings-action-title">Templates</span>
+                <span class="settings-action-subtitle">Create and run reusable planning templates.</span>
+              </div>
+              <button id="settings-open-templates" class="subtle-button" type="button">Open</button>
+            </div>
+            <div class="settings-section settings-action-card">
+              <div class="settings-action-copy">
+                <span class="settings-action-title">Task types</span>
+                <span class="settings-action-subtitle">Define reusable task type labels for better organization.</span>
+              </div>
+              <button id="task-types-open" class="subtle-button" type="button">Open</button>
+            </div>
+            <div class="settings-section settings-action-card">
+              <div class="settings-action-copy">
+                <span class="settings-action-title">Stores</span>
+                <span class="settings-action-subtitle">Manage store matching rules for shopping list parsing.</span>
+              </div>
+              <button id="store-rules-open" class="subtle-button" type="button">Open</button>
+            </div>
+          </section>
+          <section id="settings-panel-scheduling" class="settings-tab-panel" role="tabpanel" data-settings-panel="scheduling">
+            <details class="settings-section settings-accordion" open>
+              <summary class="settings-accordion-summary">
+                <span class="settings-accordion-copy">
+                  <span class="settings-accordion-title">Scheduling module</span>
+                  <span class="settings-accordion-subtitle">Calendar-specific defaults for week layout and planning.</span>
+                </span>
+                <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="settings-accordion-content">
+                <div class="setting-row">
+                  <div class="setting-label">Week view days</div>
+                  <select id="scheduling-ui-week-mode" class="setting-input">
+                    <option value="seven">7 days (Sun-Sat)</option>
+                    <option value="workweek">5 days (Mon-Fri)</option>
+                  </select>
+                </div>
+              </div>
+            </details>
+          </section>
+          <section id="settings-panel-crm" class="settings-tab-panel" role="tabpanel" data-settings-panel="crm">
+            <div class="settings-section settings-placeholder-card">
+              <h3>CRM module settings</h3>
+              <div class="sidebar-note">CRM module options will appear here when the CRM module is enabled.</div>
+            </div>
+          </section>
+          <section id="settings-panel-knowledge" class="settings-tab-panel" role="tabpanel" data-settings-panel="knowledge">
+            <div class="settings-section settings-placeholder-card">
+              <h3>Knowledge module settings</h3>
+              <div class="sidebar-note">Knowledge module options will appear here when the Knowledge module is enabled.</div>
+            </div>
+          </section>
         </div>
         <div class="modal-actions">
           <button type="button" id="settings-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="template-manager-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Templates</h2>
+        <div id="template-list" class="workspace-list"></div>
+        <button id="new-template-btn" class="subtle-button" type="button">New Template</button>
+        <div class="modal-actions">
+          <button type="button" id="template-manager-close">Close</button>
         </div>
       </div>
     </div>
@@ -1145,7 +1530,15 @@
         <button id="editor-close" class="task-editor-close" type="button" title="Close">→</button>
       </div>
       <div id="task-editor-body" class="task-editor-body">
-        <form id="task-editor-form" class="task-editor-form">
+        <form
+          id="task-editor-form"
+          class="task-editor-form"
+          autocomplete="off"
+          data-form-type="other"
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-bwignore="true"
+        >
           <label class="span-2">
             Task
             <input
@@ -1166,8 +1559,17 @@
             <select id="editor-type"></select>
           </label>
           <label>
-            Project
-            <select id="editor-project"></select>
+            Tags
+            <input
+              id="editor-tags"
+              type="text"
+              placeholder="Customer, Report, Follow-up"
+              autocomplete="off"
+              data-form-type="other"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+            />
           </label>
           <label>
             Assignee
@@ -1198,18 +1600,23 @@
               <option value="canceled">Canceled</option>
             </select>
           </label>
-          <div class="recurrence-row">
-            <button id="editor-recurring-button" class="icon-button subtle-button" type="button" title="Set repeat">↻</button>
-            <span id="editor-recurring-summary" class="recurrence-summary">No repeat</span>
+          <div class="task-editor-schedule-row span-2">
+            <label class="task-editor-due-field">
+              Due
+              <input id="editor-due" type="datetime-local" />
+            </label>
+            <div class="task-editor-field task-editor-repeat-field">
+              <div class="task-editor-label">Repeat</div>
+              <div class="recurrence-row">
+                <button id="editor-recurring-button" class="icon-button subtle-button" type="button" title="Set repeat">↻</button>
+                <span id="editor-recurring-summary" class="recurrence-summary">No repeat</span>
+              </div>
+            </div>
+            <label class="task-editor-reminder-field">
+              Reminder (days before)
+              <input id="editor-reminder" type="number" min="0" placeholder="0" />
+            </label>
           </div>
-          <label>
-            Due
-            <input id="editor-due" type="datetime-local" />
-          </label>
-          <label>
-            Reminder (days before)
-            <input id="editor-reminder" type="number" min="0" placeholder="0" />
-          </label>
           <div id="editor-followup-section" class="task-editor-followup span-2 hidden">
             <label>
               Follow-up
@@ -1245,30 +1652,38 @@
               <textarea id="editor-desc" class="editor-desc-fallback" rows="6" placeholder="Write notes..."></textarea>
             </div>
           </div>
-          <label class="span-2">
-            Subtask of
-            <select id="editor-parent"></select>
-          </label>
-          <div class="task-editor-subtasks span-2">
-            <div class="task-editor-subtasks-header">
-              <span>Subtasks</span>
-              <span id="editor-subtask-count" class="task-editor-subtasks-count"></span>
+          <details class="task-editor-accordion span-2">
+            <summary class="task-editor-accordion-summary">
+              <span class="task-editor-accordion-title">Task structure</span>
+              <span class="task-editor-accordion-chevron" aria-hidden="true">▾</span>
+            </summary>
+            <div class="task-editor-accordion-content">
+              <label>
+                Subtask of
+                <select id="editor-parent"></select>
+              </label>
+              <div class="task-editor-subtasks">
+                <div class="task-editor-subtasks-header">
+                  <span>Subtasks</span>
+                  <span id="editor-subtask-count" class="task-editor-subtasks-count"></span>
+                </div>
+                <div id="editor-subtask-list" class="task-editor-subtasks-list"></div>
+              </div>
+              <div class="task-editor-deps">
+                <div class="task-editor-deps-header">
+                  <span>Dependencies</span>
+                  <span id="editor-dependency-count" class="task-editor-subtasks-count"></span>
+                </div>
+                <div class="task-editor-deps-controls">
+                  <select id="editor-dependency-select">
+                    <option value="">Select task...</option>
+                  </select>
+                  <button id="editor-add-dependency" type="button" class="subtle-button">Add</button>
+                </div>
+                <div id="editor-dependency-list" class="task-editor-deps-list"></div>
+              </div>
             </div>
-            <div id="editor-subtask-list" class="task-editor-subtasks-list"></div>
-          </div>
-          <div class="task-editor-deps span-2">
-            <div class="task-editor-deps-header">
-              <span>Dependencies</span>
-              <span id="editor-dependency-count" class="task-editor-subtasks-count"></span>
-            </div>
-            <div class="task-editor-deps-controls">
-              <select id="editor-dependency-select">
-                <option value="">Select task...</option>
-              </select>
-              <button id="editor-add-dependency" type="button" class="subtle-button">Add</button>
-            </div>
-            <div id="editor-dependency-list" class="task-editor-deps-list"></div>
-          </div>
+          </details>
           <div class="task-editor-actions span-2">
             <button type="submit">Save</button>
             <button id="editor-cancel" type="button">Cancel</button>
@@ -1422,6 +1837,39 @@
       </div>
     </div>
 
+    <div id="section-settings-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2 id="section-settings-title">Section settings</h2>
+        <form id="section-settings-form">
+          <label>
+            Completed tasks
+            <select id="section-settings-completed" class="setting-input">
+              <option value="default">Use app default</option>
+              <option value="show">Show crossed out</option>
+              <option value="hide">Hide completed</option>
+            </select>
+          </label>
+          <label>
+            Hide scheduled tasks beyond (days)
+            <input
+              id="section-settings-future-days"
+              class="setting-input"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="Use app default"
+            />
+          </label>
+          <div id="section-settings-defaults" class="sidebar-note"></div>
+          <div class="modal-actions">
+            <button type="submit">Save</button>
+            <button id="section-settings-cancel" class="subtle-button" type="button">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div id="auth-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
@@ -1444,7 +1892,7 @@
             <button id="auth-open-invite" class="auth-switch-link" type="button">Create account</button>
           </div>
         </form>
-        <form id="auth-invite-form" class="auth-form hidden">
+        <form id="auth-invite-form" class="auth-form hidden" hidden>
           <label>
             Invite token
             <input id="auth-invite-token" type="text" autocomplete="off" required />

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { createUser, createWorkspaceMembership } from './taskService.js';
+import { createUser, createWorkspaceMembership, updateUser } from './taskService.js';
 
 const scryptAsync = promisify(scrypt);
 const PASSWORD_MIN_LENGTH = 8;
@@ -19,6 +19,12 @@ function normalizeEmail(value) {
 
 function normalizeInviteToken(value) {
   return String(value ?? '').trim();
+}
+
+function normalizeOrgRole(value) {
+  const role = String(value ?? '').trim().toLowerCase();
+  if (!role) return 'member';
+  return role === 'admin' ? 'admin' : 'member';
 }
 
 function hashToken(value) {
@@ -169,7 +175,7 @@ async function getActiveSessionByToken(db, token) {
   if (!safeToken) return null;
   const tokenHash = hashToken(safeToken);
   const row = await db.queryOne(
-    `SELECT s.*, u.display_name, u.email, u.org_id, u.archived AS user_archived
+    `SELECT s.*, u.display_name, u.email, u.org_id, u.org_role, u.archived AS user_archived
        FROM auth_sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.session_token_hash = ?
@@ -194,7 +200,8 @@ export async function resolveSessionUser(db, sessionToken) {
       id: session.user_id,
       org_id: session.org_id,
       display_name: session.display_name,
-      email: session.email
+      email: session.email,
+      org_role: session.org_role ?? 'member'
     },
     session: {
       id: session.id,
@@ -247,7 +254,8 @@ export async function loginWithPassword(db, { email, password, ttlDays = 30, use
       id: user.id,
       org_id: user.org_id,
       display_name: user.display_name,
-      email: user.email
+      email: user.email,
+      org_role: user.org_role ?? 'member'
     },
     session: {
       id: session.id,
@@ -308,6 +316,7 @@ export async function acceptInviteRegistration(
 
   let result = null;
   await db.transaction(async (tx) => {
+    const inviteOrgRole = normalizeOrgRole(invite.role);
     let user = await getUserByOrgEmail(tx, invite.org_id, inviteEmail);
     if (user && Number(user.archived)) {
       await tx.exec(
@@ -323,8 +332,16 @@ export async function acceptInviteRegistration(
           org_id: invite.org_id,
           workspace_id: invite.workspace_id,
           display_name: safeDisplayName,
-          email: inviteEmail
+          email: inviteEmail,
+          org_role: inviteOrgRole
         },
+        clientId
+      );
+    } else if (inviteOrgRole === 'admin' && normalizeOrgRole(user.org_role) !== 'admin') {
+      user = await updateUser(
+        tx,
+        user.id,
+        { org_role: 'admin' },
         clientId
       );
     }
@@ -333,7 +350,7 @@ export async function acceptInviteRegistration(
       {
         workspace_id: invite.workspace_id,
         user_id: user.id,
-        role: invite.role || 'member'
+        role: inviteOrgRole
       },
       clientId
     );
@@ -351,7 +368,8 @@ export async function acceptInviteRegistration(
         id: user.id,
         org_id: user.org_id,
         display_name: user.display_name,
-        email: user.email
+        email: user.email,
+        org_role: user.org_role ?? 'member'
       },
       invite: {
         id: invite.id,

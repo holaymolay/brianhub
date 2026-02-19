@@ -12,6 +12,8 @@ import {
   createTaskType,
   listTasks,
   getTask,
+  updateTask,
+  searchTasks,
   reparentTask,
   applyTaskCheckIn
 } from '../services/api/src/taskService.js';
@@ -44,6 +46,7 @@ test('task service works with DbClient interface', async () => {
 
     const task = await createTask(db, { workspace_id: workspace.id, title: 'Task 1' });
     assert.equal(task.title, 'Task 1');
+    assert.equal(task.status, '');
 
     const fetched = await getTask(db, task.id);
     assert.equal(fetched.id, task.id);
@@ -224,6 +227,32 @@ test('service waiting tasks set next_checkin_at on create', async () => {
       waiting_followup_at: '2026-03-05T14:00:00.000Z'
     });
     assert.equal(explicitFollowup.next_checkin_at, '2026-03-05T14:00:00.000Z');
+  });
+});
+
+test('task tags persist and support filtering', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Tag workspace', type: 'personal' });
+    const created = await createTask(db, {
+      workspace_id: workspace.id,
+      title: 'Tagged task',
+      tags: ['Customer', 'Report', 'customer']
+    });
+    assert.deepEqual(created.tags, ['Customer', 'Report']);
+
+    const updated = await updateTask(db, created.id, { tags: ['Billing'] });
+    assert.deepEqual(updated.tags, ['Billing']);
+
+    const listed = await listTasks(db, workspace.id);
+    const listedTask = listed.find((task) => task.id === created.id);
+    assert.deepEqual(listedTask?.tags, ['Billing']);
+
+    const filtered = await searchTasks(db, workspace.id, {
+      text: null,
+      status: null,
+      tag: 'billing'
+    });
+    assert.equal(filtered.some((task) => task.id === created.id), true);
   });
 });
 

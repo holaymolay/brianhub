@@ -8,3 +8,4 @@ npm-debug.log*
 .ceres/
 services/api/db/*.sqlite
 data/*.sqlite
+data/reset-backups/

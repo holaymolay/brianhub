@@ -1,0 +1,4 @@
+# Run daily at 02:15.
+# Update /opt/brianhub to your install path.
+15 2 * * * cd /opt/brianhub && /usr/bin/env node scripts/backup-db.js && /usr/bin/env node scripts/restore-check.js >> logs/backup.log 2>&1
+

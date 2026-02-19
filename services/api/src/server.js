@@ -11,10 +11,17 @@ import {
   listOrgs,
   createOrg,
   listUsers,
+  listUsersForAdmin,
   createUser,
   updateUser,
+  getUserByEmail,
+  getUserSettings,
+  upsertUserSettings,
+  deleteUserAccount,
+  exportUserDataBundle,
   listUserInvites,
   createUserInvite,
+  revokeUserInvite,
   listWorkspaceMemberships,
   createWorkspaceMembership,
   updateWorkspaceMembership,
@@ -78,7 +85,8 @@ import {
   acceptInviteRegistration,
   loginWithPassword,
   resolveSessionUser,
-  revokeSessionByToken
+  revokeSessionByToken,
+  setUserPassword
 } from './authService.js';
 
 export const config = getApiConfig();
@@ -97,6 +105,111 @@ export const server = Fastify({
 export const db = await openDb({ filename: config.dbPath });
 await migrate(db, config.migrationsDir);
 const OWNER_SUPER_ADMIN_EMAIL = config.ownerSuperAdminEmail;
+const OWNER_SETTINGS_SINGLETON_ID = 1;
+
+let cachedOwnerEmail = null;
+let ownerEmailCacheLoaded = false;
+
+function normalizeEmail(value) {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return null;
+  return text;
+}
+
+function normalizeOrgRole(value) {
+  const role = String(value ?? '').trim().toLowerCase();
+  if (!role) return 'member';
+  return role === 'admin' ? 'admin' : 'member';
+}
+
+function isOwnerEmail(email, ownerEmail) {
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedOwnerEmail = normalizeEmail(ownerEmail);
+  return Boolean(normalizedEmail && normalizedOwnerEmail && normalizedEmail === normalizedOwnerEmail);
+}
+
+async function getCurrentOwnerEmail({ forceRefresh = false } = {}) {
+  if (!forceRefresh && ownerEmailCacheLoaded && cachedOwnerEmail) {
+    return cachedOwnerEmail;
+  }
+  try {
+    const row = await db.queryOne(
+      'SELECT owner_email FROM app_owner_settings WHERE singleton_id = ? LIMIT 1',
+      [OWNER_SETTINGS_SINGLETON_ID]
+    );
+    const fromDb = normalizeEmail(row?.owner_email ?? null);
+    cachedOwnerEmail = fromDb ?? OWNER_SUPER_ADMIN_EMAIL;
+    ownerEmailCacheLoaded = true;
+    return cachedOwnerEmail;
+  } catch {
+    // In case migrations are still catching up, fall back to configured owner.
+    cachedOwnerEmail = OWNER_SUPER_ADMIN_EMAIL;
+    ownerEmailCacheLoaded = true;
+    return cachedOwnerEmail;
+  }
+}
+
+async function setCurrentOwnerEmail(nextOwnerEmail) {
+  const normalizedOwnerEmail = normalizeEmail(nextOwnerEmail);
+  if (!normalizedOwnerEmail) {
+    throw new Error('Valid owner email is required');
+  }
+  const timestamp = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    const existing = await tx.queryOne(
+      'SELECT singleton_id FROM app_owner_settings WHERE singleton_id = ? LIMIT 1',
+      [OWNER_SETTINGS_SINGLETON_ID]
+    );
+    if (existing) {
+      await tx.exec(
+        'UPDATE app_owner_settings SET owner_email = ?, updated_at = ? WHERE singleton_id = ?',
+        [normalizedOwnerEmail, timestamp, OWNER_SETTINGS_SINGLETON_ID]
+      );
+    } else {
+      await tx.exec(
+        `INSERT INTO app_owner_settings (singleton_id, owner_email, created_at, updated_at)
+         VALUES (?, ?, ?, ?)`,
+        [OWNER_SETTINGS_SINGLETON_ID, normalizedOwnerEmail, timestamp, timestamp]
+      );
+    }
+  });
+  cachedOwnerEmail = normalizedOwnerEmail;
+  ownerEmailCacheLoaded = true;
+  return normalizedOwnerEmail;
+}
+
+async function ensureOwnerRoleForUser(user, clientId = null) {
+  if (!user?.id || !user?.email) return user ?? null;
+  const ownerEmail = await getCurrentOwnerEmail();
+  if (!isOwnerEmail(user.email, ownerEmail)) return user;
+  if (normalizeOrgRole(user.org_role) === 'admin') return user;
+  const updated = await updateUser(db, user.id, { org_role: 'admin' }, clientId);
+  return updated ?? user;
+}
+
+async function ensureOwnerBootstrap() {
+  const currentOwnerEmail = await getCurrentOwnerEmail({ forceRefresh: true });
+  const normalizedOwnerEmail = await setCurrentOwnerEmail(currentOwnerEmail);
+  const ownerUser = await getUserByEmail(db, normalizedOwnerEmail);
+  if (ownerUser) {
+    await ensureOwnerRoleForUser(ownerUser, null);
+  }
+}
+
+async function isWorkspaceMember(userId, workspaceId) {
+  const safeUserId = String(userId ?? '').trim();
+  const safeWorkspaceId = String(workspaceId ?? '').trim();
+  if (!safeUserId || !safeWorkspaceId) return false;
+  const membership = await db.queryOne(
+    `SELECT id
+       FROM workspace_memberships
+      WHERE workspace_id = ? AND user_id = ? AND archived = 0
+      LIMIT 1`,
+    [safeWorkspaceId, safeUserId]
+  );
+  return Boolean(membership);
+}
 
 function mapStatusCodeToErrorCode(statusCode) {
   if (statusCode === 400) return 'BAD_REQUEST';
@@ -107,6 +220,16 @@ function mapStatusCodeToErrorCode(statusCode) {
   if (statusCode === 422) return 'UNPROCESSABLE_ENTITY';
   if (statusCode === 429) return 'RATE_LIMITED';
   return statusCode >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_FAILED';
+}
+
+function parseBooleanish(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
 }
 
 function getCorsOrigin(originHeader) {
@@ -224,8 +347,10 @@ const TRIM_SAFE_FIELDS = new Set([
   'status',
   'kind',
   'role',
+  'org_role',
   'notice_type',
-  'response'
+  'response',
+  'owner_email'
 ]);
 
 function sanitizeRequestValue(value, key = '') {
@@ -313,6 +438,7 @@ async function resolveRequestActor(request) {
         email: String(session.user.email).trim().toLowerCase(),
         user_id: session.user.id,
         org_id: session.user.org_id,
+        org_role: normalizeOrgRole(session.user.org_role),
         session_id: session.session?.id ?? null
       };
       request.authSession = session;
@@ -326,8 +452,17 @@ async function resolveRequestActor(request) {
         email: fallbackEmail,
         user_id: null,
         org_id: null,
+        org_role: 'member',
         session_id: null
       };
+    }
+  }
+  if (actor?.email && !actor.user_id) {
+    const userByEmail = await getUserByEmail(db, actor.email);
+    if (userByEmail) {
+      actor.user_id = userByEmail.id;
+      actor.org_id = userByEmail.org_id;
+      actor.org_role = normalizeOrgRole(userByEmail.org_role);
     }
   }
   request.actor = actor;
@@ -335,13 +470,52 @@ async function resolveRequestActor(request) {
   return actor;
 }
 
-async function ensureOwnerAccess(request, reply) {
+async function resolveActorSecurity(request) {
+  if (request.actorSecurityResolved) {
+    return request.actorSecurity ?? null;
+  }
   const actor = await resolveRequestActor(request);
-  if (!actor?.email || actor.email !== OWNER_SUPER_ADMIN_EMAIL) {
+  const ownerEmail = await getCurrentOwnerEmail();
+  let user = null;
+  if (actor?.user_id) {
+    user = await db.queryOne(
+      'SELECT id, org_id, email, org_role, archived FROM users WHERE id = ? LIMIT 1',
+      [actor.user_id]
+    );
+  } else if (actor?.email) {
+    user = await getUserByEmail(db, actor.email);
+  }
+  const actorEmail = normalizeEmail(actor?.email ?? null);
+  const isOwner = isOwnerEmail(actorEmail, ownerEmail);
+  const isAdminRole = Boolean(user && !Number(user.archived) && normalizeOrgRole(user.org_role) === 'admin');
+  const security = {
+    actor,
+    user,
+    ownerEmail,
+    isOwner,
+    isAdmin: isOwner || isAdminRole
+  };
+  request.actorSecurity = security;
+  request.actorSecurityResolved = true;
+  return security;
+}
+
+async function ensureOwnerAccess(request, reply) {
+  const security = await resolveActorSecurity(request);
+  if (!security?.isOwner) {
     reply.code(403).send({ error: 'owner access required' });
     return null;
   }
-  return actor;
+  return security;
+}
+
+async function ensureAdminAccess(request, reply) {
+  const security = await resolveActorSecurity(request);
+  if (!security?.isAdmin) {
+    reply.code(403).send({ error: 'admin access required' });
+    return null;
+  }
+  return security;
 }
 
 async function ensureAuthenticatedAccess(request, reply) {
@@ -380,10 +554,32 @@ function sanitizeInvite(invite, { includeToken = false } = {}) {
   };
 }
 
+function sanitizeAdminUserRecord(user, { ownerEmail = OWNER_SUPER_ADMIN_EMAIL } = {}) {
+  if (!user) return null;
+  const email = normalizeEmail(user.email ?? null);
+  const isOwner = isOwnerEmail(email, ownerEmail);
+  const orgRole = normalizeOrgRole(user.org_role);
+  return {
+    id: user.id,
+    org_id: user.org_id,
+    display_name: user.display_name,
+    email: email ?? '',
+    org_role: orgRole,
+    archived: Number(user.archived) ? 1 : 0,
+    created_at: user.created_at ?? null,
+    updated_at: user.updated_at ?? null,
+    settings: user.settings && typeof user.settings === 'object' ? user.settings : {},
+    is_owner: isOwner,
+    is_admin: isOwner || orgRole === 'admin'
+  };
+}
+
 server.addHook('onRequest', (request, reply, done) => {
   request.startedAtMs = Date.now();
   request.actorResolved = false;
   request.actor = null;
+  request.actorSecurityResolved = false;
+  request.actorSecurity = null;
   request.authSession = null;
   const corsOrigin = getCorsOrigin(request.headers.origin);
   if (corsOrigin) {
@@ -399,6 +595,10 @@ server.addHook('onRequest', (request, reply, done) => {
     return;
   }
   done();
+});
+
+server.addHook('onReady', async () => {
+  await ensureOwnerBootstrap();
 });
 
 server.addHook('preValidation', (request, _reply, done) => {
@@ -565,11 +765,12 @@ server.post('/users', async (request, reply) => {
     return reply.code(400).send({ error: 'org_id and display_name required' });
   }
   try {
-    return await createUser(
+    const created = await createUser(
       db,
       { ...(request.body ?? {}), workspace_id: workspace_id ?? null },
       request.headers['x-client-id'] ?? null
     );
+    return await ensureOwnerRoleForUser(created, request.headers['x-client-id'] ?? null);
   } catch (err) {
     return reply.code(400).send({ error: err.message });
   }
@@ -578,6 +779,7 @@ server.post('/users', async (request, reply) => {
 server.get('/auth/me', async (request) => {
   const actor = await resolveRequestActor(request);
   const session = request.authSession ?? null;
+  const ownerEmail = await getCurrentOwnerEmail();
   if (!actor || !session?.user) {
     return {
       authenticated: false,
@@ -585,18 +787,22 @@ server.get('/auth/me', async (request) => {
       user: null,
       session: null,
       workspaces: [],
-      owner_email: OWNER_SUPER_ADMIN_EMAIL,
-      is_owner: false
+      owner_email: ownerEmail,
+      is_owner: false,
+      is_admin: false
     };
   }
+  const isOwner = isOwnerEmail(actor.email, ownerEmail);
+  const isAdmin = isOwner || normalizeOrgRole(session.user.org_role) === 'admin';
   return {
     authenticated: true,
     require_auth: Boolean(config.requireAuth),
     user: session.user,
     session: session.session,
     workspaces: session.workspaces ?? [],
-    owner_email: OWNER_SUPER_ADMIN_EMAIL,
-    is_owner: actor.email === OWNER_SUPER_ADMIN_EMAIL
+    owner_email: ownerEmail,
+    is_owner: isOwner,
+    is_admin: isAdmin
   };
 });
 
@@ -610,6 +816,9 @@ server.post('/auth/login', async (request, reply) => {
       userAgent: request.headers['user-agent'] ?? null,
       ipAddress: request.ip
     });
+    const ownerEmail = await getCurrentOwnerEmail();
+    const isOwner = isOwnerEmail(login.user.email, ownerEmail);
+    const isAdmin = isOwner || normalizeOrgRole(login.user.org_role) === 'admin';
     setSessionCookie(reply, login.token, login.session.expires_at);
     return {
       authenticated: true,
@@ -617,8 +826,9 @@ server.post('/auth/login', async (request, reply) => {
       user: login.user,
       session: login.session,
       workspaces: login.workspaces ?? [],
-      owner_email: OWNER_SUPER_ADMIN_EMAIL,
-      is_owner: String(login.user.email ?? '').toLowerCase() === OWNER_SUPER_ADMIN_EMAIL
+      owner_email: ownerEmail,
+      is_owner: isOwner,
+      is_admin: isAdmin
     };
   } catch (err) {
     return reply.code(401).send({ error: err.message });
@@ -647,6 +857,10 @@ server.post('/auth/invite/accept', async (request, reply) => {
       ipAddress: request.ip,
       clientId: request.headers['x-client-id'] ?? null
     });
+    accepted.user = await ensureOwnerRoleForUser(accepted.user, request.headers['x-client-id'] ?? null);
+    const ownerEmail = await getCurrentOwnerEmail();
+    const isOwner = isOwnerEmail(accepted.user.email, ownerEmail);
+    const isAdmin = isOwner || normalizeOrgRole(accepted.user.org_role) === 'admin';
     setSessionCookie(reply, accepted.token, accepted.session.expires_at);
     return {
       authenticated: true,
@@ -654,8 +868,9 @@ server.post('/auth/invite/accept', async (request, reply) => {
       user: accepted.user,
       session: accepted.session,
       workspaces: accepted.workspaces ?? [],
-      owner_email: OWNER_SUPER_ADMIN_EMAIL,
-      is_owner: String(accepted.user.email ?? '').toLowerCase() === OWNER_SUPER_ADMIN_EMAIL
+      owner_email: ownerEmail,
+      is_owner: isOwner,
+      is_admin: isAdmin
     };
   } catch (err) {
     return reply.code(400).send({ error: err.message });
@@ -663,18 +878,20 @@ server.post('/auth/invite/accept', async (request, reply) => {
 });
 
 server.get('/admin/info', async (request, reply) => {
-  const actor = await resolveRequestActor(request);
-  const actorEmail = actor?.email ?? null;
+  const security = await resolveActorSecurity(request);
+  const actorEmail = security?.actor?.email ?? null;
+  const ownerEmail = security?.ownerEmail ?? await getCurrentOwnerEmail();
   return {
-    owner_email: OWNER_SUPER_ADMIN_EMAIL,
+    owner_email: ownerEmail,
     actor_email: actorEmail,
-    is_owner: Boolean(actorEmail && actorEmail === OWNER_SUPER_ADMIN_EMAIL)
+    is_owner: Boolean(security?.isOwner),
+    is_admin: Boolean(security?.isAdmin)
   };
 });
 
 server.get('/admin/invites', async (request, reply) => {
-  const actor = await ensureOwnerAccess(request, reply);
-  if (!actor) return;
+  const security = await ensureAdminAccess(request, reply);
+  if (!security) return;
   const { org_id, workspace_id, status } = request.query ?? {};
   try {
     const invites = await listUserInvites(db, {
@@ -683,7 +900,8 @@ server.get('/admin/invites', async (request, reply) => {
       status: status ?? 'pending'
     });
     return {
-      invites: invites.map((invite) => sanitizeInvite(invite)),
+      // Owner-only endpoint: include token so invite links can be re-shared later.
+      invites: invites.map((invite) => sanitizeInvite(invite, { includeToken: true })),
       count: invites.length
     };
   } catch (err) {
@@ -692,18 +910,23 @@ server.get('/admin/invites', async (request, reply) => {
 });
 
 server.post('/admin/invites', async (request, reply) => {
-  const actor = await ensureOwnerAccess(request, reply);
-  if (!actor) return;
+  const security = await ensureAdminAccess(request, reply);
+  if (!security) return;
   const { workspace_id, email } = request.body ?? {};
   if (!workspace_id || !email) {
     return reply.code(400).send({ error: 'workspace_id and email required' });
+  }
+  const requestedRole = normalizeOrgRole(request.body?.role);
+  if (requestedRole === 'admin' && !security.isOwner) {
+    return reply.code(403).send({ error: 'owner access required to invite admins' });
   }
   try {
     const created = await createUserInvite(
       db,
       {
         ...(request.body ?? {}),
-        invited_by_email: actor.email
+        role: requestedRole,
+        invited_by_email: security.actor.email
       },
       request.headers['x-client-id'] ?? null
     );
@@ -711,10 +934,11 @@ server.post('/admin/invites', async (request, reply) => {
       toEmail: created.email,
       inviteToken: created.invite_token,
       workspaceName: created.workspace_name ?? null,
-      invitedByEmail: actor.email,
+      invitedByEmail: security.actor.email,
       expiresAt: created.expires_at
     });
-    const includeToken = config.exposeInviteToken;
+    // Owner-only admin flow needs the raw invite token for manual sharing.
+    const includeToken = true;
     return {
       invite: sanitizeInvite(created, { includeToken }),
       delivery: {
@@ -728,11 +952,339 @@ server.post('/admin/invites', async (request, reply) => {
   }
 });
 
-server.patch('/users/:id', async (request, reply) => {
+server.delete('/admin/invites/:id', async (request, reply) => {
+  const security = await ensureAdminAccess(request, reply);
+  if (!security) return;
+  const inviteId = request.params?.id;
+  if (!inviteId) {
+    return reply.code(400).send({ error: 'invite id required' });
+  }
   try {
-    const updated = await updateUser(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+    const revoked = await revokeUserInvite(
+      db,
+      inviteId,
+      security.actor.email,
+      request.headers['x-client-id'] ?? null
+    );
+    if (!revoked) {
+      return reply.code(404).send({ error: 'not found' });
+    }
+    return {
+      invite: sanitizeInvite(revoked, { includeToken: true })
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/users/:id', async (request, reply) => {
+  const security = await resolveActorSecurity(request);
+  const actorUserId = security?.user?.id ?? security?.actor?.user_id ?? null;
+  if (!security?.actor?.email) {
+    return reply.code(401).send({ error: 'authentication required' });
+  }
+  const targetUserId = request.params?.id;
+  const isSelf = Boolean(actorUserId && actorUserId === targetUserId);
+  if (!security.isAdmin && !isSelf) {
+    return reply.code(403).send({ error: 'insufficient permissions' });
+  }
+  const patch = { ...(request.body ?? {}) };
+  if (!security.isAdmin) {
+    delete patch.org_role;
+    delete patch.archived;
+    delete patch.workspace_id;
+  } else if (patch.org_role !== undefined && !security.isOwner) {
+    return reply.code(403).send({ error: 'owner access required to change roles' });
+  }
+  try {
+    const ownerEmail = security.ownerEmail ?? await getCurrentOwnerEmail();
+    const targetUser = await db.queryOne('SELECT * FROM users WHERE id = ? LIMIT 1', [targetUserId]);
+    if (!targetUser) return reply.code(404).send({ error: 'not found' });
+    const targetIsOwner = isOwnerEmail(targetUser.email, ownerEmail);
+    if (targetIsOwner) {
+      if (patch.archived !== undefined) {
+        return reply.code(400).send({ error: 'owner account cannot be disabled' });
+      }
+      if (patch.org_role !== undefined) {
+        return reply.code(400).send({ error: 'owner role is immutable' });
+      }
+    }
+    const updated = await updateUser(db, request.params.id, patch, request.headers['x-client-id'] ?? null);
     if (!updated) return reply.code(404).send({ error: 'not found' });
-    return updated;
+    if (targetIsOwner && patch.email !== undefined && normalizeEmail(updated.email)) {
+      await setCurrentOwnerEmail(updated.email);
+    }
+    return await ensureOwnerRoleForUser(updated, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/auth/profile', async (request, reply) => {
+  const actor = await ensureAuthenticatedAccess(request, reply);
+  if (!actor) return;
+  if (!request.authSession?.user?.id) {
+    return reply.code(401).send({ error: 'session authentication required' });
+  }
+  if (!actor.user_id) {
+    return reply.code(401).send({ error: 'session user required' });
+  }
+  const patch = {};
+  if (request.body && Object.prototype.hasOwnProperty.call(request.body, 'display_name')) {
+    patch.display_name = request.body.display_name;
+  }
+  if (request.body && Object.prototype.hasOwnProperty.call(request.body, 'email')) {
+    patch.email = request.body.email;
+  }
+  if (!Object.keys(patch).length) {
+    return reply.code(400).send({ error: 'display_name or email required' });
+  }
+  try {
+    let updated = await updateUser(db, actor.user_id, patch, request.headers['x-client-id'] ?? null);
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    const ownerEmail = await getCurrentOwnerEmail();
+    if (isOwnerEmail(actor.email, ownerEmail) && patch.email !== undefined && normalizeEmail(updated.email)) {
+      await setCurrentOwnerEmail(updated.email);
+    }
+    updated = await ensureOwnerRoleForUser(updated, request.headers['x-client-id'] ?? null);
+    return {
+      user: updated,
+      owner_email: await getCurrentOwnerEmail()
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/auth/settings', async (request, reply) => {
+  const actor = await ensureAuthenticatedAccess(request, reply);
+  if (!actor) return;
+  if (!request.authSession?.user?.id) {
+    return reply.code(401).send({ error: 'session authentication required' });
+  }
+  if (!actor.user_id) {
+    return reply.code(401).send({ error: 'session user required' });
+  }
+  try {
+    const settings = await getUserSettings(db, actor.user_id);
+    return { settings };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/auth/settings', async (request, reply) => {
+  const actor = await ensureAuthenticatedAccess(request, reply);
+  if (!actor) return;
+  if (!request.authSession?.user?.id) {
+    return reply.code(401).send({ error: 'session authentication required' });
+  }
+  if (!actor.user_id) {
+    return reply.code(401).send({ error: 'session user required' });
+  }
+  const settings = request.body?.settings;
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return reply.code(400).send({ error: 'settings object required' });
+  }
+  try {
+    const updated = await upsertUserSettings(db, actor.user_id, settings, { merge: false });
+    return { settings: updated };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/admin/users', async (request, reply) => {
+  const security = await ensureAdminAccess(request, reply);
+  if (!security) return;
+  const { org_id, workspace_id, include_archived } = request.query ?? {};
+  const requestedOrgId = org_id ?? security.user?.org_id ?? null;
+  if (!requestedOrgId && !workspace_id) {
+    return reply.code(400).send({ error: 'org_id or workspace_id required' });
+  }
+  const includeArchived = parseBooleanish(include_archived, true);
+  try {
+    const ownerEmail = security.ownerEmail ?? await getCurrentOwnerEmail();
+    const users = await listUsersForAdmin(db, {
+      org_id: requestedOrgId,
+      workspace_id: workspace_id ?? null,
+      include_archived: includeArchived
+    });
+    return {
+      owner_email: ownerEmail,
+      users: users.map((user) => sanitizeAdminUserRecord(user, { ownerEmail })),
+      count: users.length
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/admin/users/:id', async (request, reply) => {
+  const security = await ensureAdminAccess(request, reply);
+  if (!security) return;
+  const userId = request.params?.id;
+  if (!userId) return reply.code(400).send({ error: 'user id required' });
+  try {
+    const ownerEmail = security.ownerEmail ?? await getCurrentOwnerEmail();
+    const targetUser = await db.queryOne('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (!targetUser) return reply.code(404).send({ error: 'not found' });
+    const targetIsOwner = isOwnerEmail(targetUser.email, ownerEmail);
+    if (targetIsOwner && !security.isOwner) {
+      return reply.code(403).send({ error: 'owner account can only be modified by owner' });
+    }
+
+    const patch = request.body ?? {};
+    const userPatch = {};
+    if (Object.prototype.hasOwnProperty.call(patch, 'display_name')) userPatch.display_name = patch.display_name;
+    if (Object.prototype.hasOwnProperty.call(patch, 'email')) userPatch.email = patch.email;
+    if (Object.prototype.hasOwnProperty.call(patch, 'archived')) userPatch.archived = patch.archived;
+    if (Object.prototype.hasOwnProperty.call(patch, 'org_role')) {
+      if (!security.isOwner) {
+        return reply.code(403).send({ error: 'owner access required to change roles' });
+      }
+      if (targetIsOwner) {
+        return reply.code(400).send({ error: 'owner role is immutable' });
+      }
+      userPatch.org_role = patch.org_role;
+    }
+    if (targetIsOwner && Object.prototype.hasOwnProperty.call(userPatch, 'archived')) {
+      return reply.code(400).send({ error: 'owner account cannot be disabled' });
+    }
+
+    let updatedUser = targetUser;
+    if (Object.keys(userPatch).length) {
+      updatedUser = await updateUser(db, userId, userPatch, request.headers['x-client-id'] ?? null);
+    }
+    let updatedSettings = await getUserSettings(db, userId);
+    if (Object.prototype.hasOwnProperty.call(patch, 'settings')) {
+      updatedSettings = await upsertUserSettings(db, userId, patch.settings, { merge: false });
+    }
+
+    let nextOwnerEmail = ownerEmail;
+    if (targetIsOwner && Object.prototype.hasOwnProperty.call(userPatch, 'email') && normalizeEmail(updatedUser.email)) {
+      nextOwnerEmail = await setCurrentOwnerEmail(updatedUser.email);
+    }
+    updatedUser = await ensureOwnerRoleForUser(updatedUser, request.headers['x-client-id'] ?? null);
+
+    return {
+      user: sanitizeAdminUserRecord(
+        { ...updatedUser, settings: updatedSettings },
+        { ownerEmail: nextOwnerEmail }
+      ),
+      owner_email: nextOwnerEmail
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin/users/:id/reset-password', async (request, reply) => {
+  const security = await ensureAdminAccess(request, reply);
+  if (!security) return;
+  const userId = request.params?.id;
+  if (!userId) return reply.code(400).send({ error: 'user id required' });
+  const password = String(request.body?.password ?? '');
+  if (!password) return reply.code(400).send({ error: 'password required' });
+  try {
+    const ownerEmail = security.ownerEmail ?? await getCurrentOwnerEmail();
+    const targetUser = await db.queryOne('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (!targetUser) return reply.code(404).send({ error: 'not found' });
+    const targetIsOwner = isOwnerEmail(targetUser.email, ownerEmail);
+    if (targetIsOwner && !security.isOwner) {
+      return reply.code(403).send({ error: 'owner access required' });
+    }
+    await setUserPassword(db, { userId, password });
+    return { ok: true };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin/users/:id/export', async (request, reply) => {
+  const security = await ensureAdminAccess(request, reply);
+  if (!security) return;
+  const userId = request.params?.id;
+  if (!userId) return reply.code(400).send({ error: 'user id required' });
+  try {
+    const ownerEmail = security.ownerEmail ?? await getCurrentOwnerEmail();
+    const bundle = await exportUserDataBundle(db, userId);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+    return {
+      owner_email: ownerEmail,
+      user: sanitizeAdminUserRecord(bundle.user, { ownerEmail }),
+      data: bundle
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.delete('/admin/users/:id', async (request, reply) => {
+  const security = await ensureAdminAccess(request, reply);
+  if (!security) return;
+  const userId = request.params?.id;
+  if (!userId) return reply.code(400).send({ error: 'user id required' });
+  try {
+    const ownerEmail = security.ownerEmail ?? await getCurrentOwnerEmail();
+    const targetUser = await db.queryOne('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (!targetUser) return reply.code(404).send({ error: 'not found' });
+    if (isOwnerEmail(targetUser.email, ownerEmail)) {
+      return reply.code(400).send({ error: 'owner account cannot be deleted' });
+    }
+    const result = await deleteUserAccount(db, userId, request.headers['x-client-id'] ?? null);
+    return result;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin/ownership/transfer', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  const targetUserId = String(request.body?.target_user_id ?? '').trim();
+  const targetEmail = normalizeEmail(request.body?.target_email ?? null);
+  if (!targetUserId && !targetEmail) {
+    return reply.code(400).send({ error: 'target_user_id or target_email required' });
+  }
+  try {
+    const previousOwnerEmail = security.ownerEmail ?? await getCurrentOwnerEmail();
+    let targetUser = null;
+    if (targetUserId) {
+      targetUser = await db.queryOne('SELECT * FROM users WHERE id = ? LIMIT 1', [targetUserId]);
+    } else {
+      targetUser = await getUserByEmail(db, targetEmail);
+    }
+    if (!targetUser || Number(targetUser.archived)) {
+      return reply.code(404).send({ error: 'target user not found' });
+    }
+    const nextOwnerEmail = normalizeEmail(targetUser.email);
+    if (!nextOwnerEmail) {
+      return reply.code(400).send({ error: 'target user email is invalid' });
+    }
+    await setCurrentOwnerEmail(nextOwnerEmail);
+
+    if (normalizeOrgRole(targetUser.org_role) !== 'admin') {
+      await updateUser(db, targetUser.id, { org_role: 'admin' }, request.headers['x-client-id'] ?? null);
+      targetUser = await db.queryOne('SELECT * FROM users WHERE id = ? LIMIT 1', [targetUser.id]);
+    }
+    if (!isOwnerEmail(previousOwnerEmail, nextOwnerEmail)) {
+      const previousOwnerUser = await getUserByEmail(db, previousOwnerEmail);
+      if (previousOwnerUser && previousOwnerUser.id !== targetUser.id) {
+        await updateUser(
+          db,
+          previousOwnerUser.id,
+          { org_role: 'admin' },
+          request.headers['x-client-id'] ?? null
+        );
+      }
+    }
+
+    return {
+      owner_email: nextOwnerEmail,
+      previous_owner_email: previousOwnerEmail,
+      user: sanitizeAdminUserRecord(targetUser, { ownerEmail: nextOwnerEmail })
+    };
   } catch (err) {
     return reply.code(400).send({ error: err.message });
   }
@@ -1064,7 +1616,18 @@ server.post('/tasks', async (request, reply) => {
     return reply.code(400).send({ error: 'workspace_id and title required' });
   }
   try {
-    return await createTask(db, data, request.headers['x-client-id'] ?? null);
+    const security = await resolveActorSecurity(request);
+    const taskPayload = { ...data };
+    const hasAssigneeUserId = String(taskPayload.assignee_user_id ?? '').trim().length > 0;
+    const hasAssigneeLabel = String(taskPayload.assignee_label ?? '').trim().length > 0;
+    if (!hasAssigneeUserId && !hasAssigneeLabel && security?.user?.id) {
+      const creatorIsMember = await isWorkspaceMember(security.user.id, taskPayload.workspace_id);
+      if (creatorIsMember) {
+        taskPayload.assignee_user_id = security.user.id;
+        taskPayload.assignee_label = null;
+      }
+    }
+    return await createTask(db, taskPayload, request.headers['x-client-id'] ?? null);
   } catch (err) {
     return reply.code(400).send({ error: err.message });
   }

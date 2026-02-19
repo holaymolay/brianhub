@@ -5,6 +5,8 @@ import { logger } from './logger.js';
 const API_BASE = webConfig.apiBase;
 const UI_STORAGE_KEY = 'brianhub_ui_v1';
 let requestIdCounter = 0;
+let supportsAuthSettingsEndpoint = true;
+let supportsAdminUsersEndpoint = true;
 
 function emitApiEvent(detail) {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
@@ -17,7 +19,11 @@ function getActorEmailFromUiState() {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    const email = String(parsed?.ui?.profile?.email ?? '').trim().toLowerCase();
+    const email = String(
+      parsed?.ui?.auth?.user?.email
+      ?? parsed?.ui?.profile?.email
+      ?? ''
+    ).trim().toLowerCase();
     if (!email) return null;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
     return email;
@@ -46,7 +52,17 @@ function tryParseJson(text) {
 }
 
 async function request(path, options = {}) {
-  const method = options.method ?? 'GET';
+  const {
+    headers: customHeaders = {},
+    quietStatusCodes = [],
+    ...fetchOptions
+  } = options ?? {};
+  const method = fetchOptions.method ?? 'GET';
+  const quietStatusCodeSet = new Set(
+    Array.isArray(quietStatusCodes)
+      ? quietStatusCodes.map((code) => Number(code))
+      : []
+  );
   const startedAt = Date.now();
   const actorEmail = getActorEmailFromUiState();
   const requestId = createRequestId();
@@ -59,9 +75,9 @@ async function request(path, options = {}) {
         'X-Client-Id': getClientId(),
         'X-Request-Id': requestId,
         ...(actorEmail ? { 'X-Actor-Email': actorEmail } : {}),
-        ...(options.headers ?? {})
+        ...customHeaders
       },
-      ...options
+      ...fetchOptions
     });
   } catch (error) {
     logger.error('API request failed before response', {
@@ -91,14 +107,16 @@ async function request(path, options = {}) {
     const message = typeof responseError?.message === 'string'
       ? responseError.message
       : (text || `Request failed: ${res.status}`);
-    logger.error('API request failed', {
-      requestId: responseRequestId,
-      method,
-      path,
-      status: res.status,
-      durationMs,
-      message
-    });
+    if (!quietStatusCodeSet.has(res.status)) {
+      logger.error('API request failed', {
+        requestId: responseRequestId,
+        method,
+        path,
+        status: res.status,
+        durationMs,
+        message
+      });
+    }
     emitApiEvent({
       request_id: responseRequestId,
       method,
@@ -157,6 +175,40 @@ export function acceptInvite(data) {
   return request('/auth/invite/accept', { method: 'POST', body: JSON.stringify(data) });
 }
 
+export function updateAuthProfile(data) {
+  return request('/auth/profile', { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function getAuthSettings() {
+  if (!supportsAuthSettingsEndpoint) {
+    return Promise.resolve({ settings: {} });
+  }
+  return request('/auth/settings', { quietStatusCodes: [404] }).catch((error) => {
+    if (error?.status === 404) {
+      supportsAuthSettingsEndpoint = false;
+      return { settings: {} };
+    }
+    throw error;
+  });
+}
+
+export function updateAuthSettings(data) {
+  if (!supportsAuthSettingsEndpoint) {
+    return Promise.resolve({ settings: data?.settings ?? {} });
+  }
+  return request('/auth/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+    quietStatusCodes: [404]
+  }).catch((error) => {
+    if (error?.status === 404) {
+      supportsAuthSettingsEndpoint = false;
+      return { settings: data?.settings ?? {} };
+    }
+    throw error;
+  });
+}
+
 export function listWorkspaces() {
   return request('/workspaces');
 }
@@ -202,6 +254,82 @@ export function listAdminInvites({ orgId = null, workspaceId = null, status = 'p
 
 export function createAdminInvite(data) {
   return request('/admin/invites', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function deleteAdminInvite(inviteId) {
+  return request(`/admin/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' });
+}
+
+export function listAdminUsers({ orgId = null, workspaceId = null, includeArchived = true } = {}) {
+  const params = new URLSearchParams();
+  if (orgId) params.set('org_id', orgId);
+  if (workspaceId) params.set('workspace_id', workspaceId);
+  params.set('include_archived', includeArchived ? '1' : '0');
+  const normalizeRole = (value) => (String(value ?? '').trim().toLowerCase() === 'admin' ? 'admin' : 'member');
+  const normalizeUser = (user) => {
+    const role = normalizeRole(user?.org_role);
+    return {
+      ...user,
+      org_role: role,
+      archived: Number(user?.archived) ? 1 : 0,
+      settings: user?.settings && typeof user.settings === 'object' && !Array.isArray(user.settings)
+        ? user.settings
+        : {},
+      is_owner: Boolean(user?.is_owner),
+      is_admin: Boolean(user?.is_admin ?? role === 'admin')
+    };
+  };
+  if (!supportsAdminUsersEndpoint) {
+    return listUsers({ orgId, workspaceId }).then((users) => {
+      const normalized = Array.isArray(users) ? users.map(normalizeUser) : [];
+      return { owner_email: null, users: normalized, count: normalized.length };
+    });
+  }
+  return request(`/admin/users?${params.toString()}`, { quietStatusCodes: [404] })
+    .then((response) => {
+      const users = Array.isArray(response?.users) ? response.users.map(normalizeUser) : [];
+      return {
+        ...response,
+        users,
+        count: Number.isFinite(Number(response?.count)) ? Number(response.count) : users.length
+      };
+    })
+    .catch((error) => {
+      if (error?.status === 404) {
+        supportsAdminUsersEndpoint = false;
+        return listUsers({ orgId, workspaceId }).then((users) => {
+          const normalized = Array.isArray(users) ? users.map(normalizeUser) : [];
+          return { owner_email: null, users: normalized, count: normalized.length };
+        });
+      }
+      throw error;
+    });
+}
+
+export function updateAdminUser(userId, patch) {
+  return request(`/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch)
+  });
+}
+
+export function resetAdminUserPassword(userId, password) {
+  return request(`/admin/users/${encodeURIComponent(userId)}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ password })
+  });
+}
+
+export function exportAdminUser(userId) {
+  return request(`/admin/users/${encodeURIComponent(userId)}/export`, { method: 'POST' });
+}
+
+export function deleteAdminUser(userId) {
+  return request(`/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+}
+
+export function transferOwnership(data) {
+  return request('/admin/ownership/transfer', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export function listWorkspaceMemberships(workspaceId) {

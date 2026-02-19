@@ -37,6 +37,8 @@ test('notice types are seeded for a new workspace', async () => {
   assert.ok(keys.includes('general'));
   assert.ok(keys.includes('bill'));
   assert.ok(keys.includes('auto-payment'));
+  assert.ok(keys.includes('birthday'));
+  assert.ok(keys.includes('holiday'));
 });
 
 test('creating a notice type with the same label returns existing', async () => {
@@ -107,4 +109,24 @@ test('notice CRUD works and list is ordered by notify_at', async () => {
   assert.equal(remaining.length, 2);
   assert.equal(remaining[0].id, early.id);
   assert.equal(remaining[1].id, recurring.id);
+});
+
+test('birthday notices default to yearly recurrence', async () => {
+  const workspace = await createWorkspace(db, { name: 'Birthday notices', type: 'personal' });
+  const birthday = await createNotice(db, {
+    workspace_id: workspace.id,
+    title: 'Alice birthday',
+    notify_at: '2026-08-05T09:00:00Z',
+    notice_type: 'birthday'
+  });
+  assert.equal(birthday.recurrence_interval, 1);
+  assert.equal(birthday.recurrence_unit, 'year');
+  assert.ok(birthday.recurrence_rule_json?.includes('"unit":"year"'));
+
+  const forcedBirthday = await updateNotice(db, birthday.id, {
+    recurrence_interval: null,
+    recurrence_unit: null
+  });
+  assert.equal(forcedBirthday.recurrence_interval, 1);
+  assert.equal(forcedBirthday.recurrence_unit, 'year');
 });
