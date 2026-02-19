@@ -10545,6 +10545,8 @@ function renderAiSuggestionsMenu(tasks) {
 
 function render() {
   syncAuthGatePage();
+  const mobileSchedulingView = isMobileViewport() && getActiveView() === 'scheduling';
+  document.body.classList.toggle('mobile-scheduling-view', mobileSchedulingView);
   const currentSelected = getSelectedTaskIds();
   const validSelected = currentSelected.filter(id => state.tasks?.[id]);
   if (validSelected.length !== currentSelected.length) {

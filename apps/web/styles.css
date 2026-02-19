@@ -4787,6 +4787,16 @@ body.auth-gated #auth-cancel-invite {
     display: block;
   }
 
+  body.mobile-scheduling-view {
+    display: flex;
+    flex-direction: column;
+    height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+    overflow: hidden;
+  }
+
   /* On mobile, disable transform scaling fallback so fixed overlays/nav stay pinned to viewport. */
   @supports not (zoom: 1) {
     body {
@@ -4858,11 +4868,23 @@ body.auth-gated #auth-cancel-invite {
     min-height: 0;
   }
 
+  body.mobile-scheduling-view .app-main {
+    padding: 0 0 calc(6.5rem + env(safe-area-inset-bottom, 0px));
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
   .app-layout {
     grid-template-columns: 1fr;
     gap: 0.75rem;
     min-width: 0;
     height: auto;
+  }
+
+  body.mobile-scheduling-view .app-layout {
+    gap: 0;
+    height: 100%;
+    min-height: 0;
   }
 
   .shopping-mobile-back-row {
@@ -5025,6 +5047,59 @@ body.auth-gated #auth-cancel-invite {
     min-width: 0;
     max-width: 100%;
     overflow-x: hidden;
+  }
+
+  body.mobile-scheduling-view .content-panel {
+    height: 100%;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  body.mobile-scheduling-view .content-panel > section {
+    overflow: hidden;
+  }
+
+  body.mobile-scheduling-view #scheduling-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  body.mobile-scheduling-view #scheduling-calendar {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  body.mobile-scheduling-view #scheduling-calendar > .calendar-header.scheduling-calendar-header.is-mobile {
+    margin: 0;
+    padding: 0.45rem 0.6rem;
+  }
+
+  body.mobile-scheduling-view #scheduling-calendar .scheduling-week-wrap.is-mobile {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 0 0.2rem;
+  }
+
+  body.mobile-scheduling-view #scheduling-calendar .scheduling-week-wrap.is-mobile .scheduling-week-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .content-panel,
