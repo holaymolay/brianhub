@@ -28,6 +28,7 @@ const state = {
   workflowPatternTasks: localData.workflowPatternTasks ?? localData.workflowFragmentTasks ?? [],
   workflowInstances: localData.workflowInstances ?? [],
   workflowInstanceTasks: localData.workflowInstanceTasks ?? [],
+  scheduleCalendars: localData.scheduleCalendars ?? [],
   scheduleEvents: localData.scheduleEvents ?? [],
   statuses: localData.statuses ?? [],
   taskTypes: localData.taskTypes ?? [],
@@ -87,6 +88,16 @@ const TASK_FILTER_INBOX = '__inbox__';
 const TASK_TYPE_WORKFLOW = 'workflow';
 const SETTINGS_TAB_KEYS = new Set(['general', 'tasks', 'scheduling', 'crm', 'knowledge']);
 const SCHEDULING_EVENT_KINDS = ['event', 'time-block', 'day-off'];
+const SCHEDULE_CALENDAR_COLOR_PALETTE = Object.freeze([
+  '#63b3ed',
+  '#9061f9',
+  '#fa5252',
+  '#51cf66',
+  '#f59f00',
+  '#f783ac',
+  '#4dabf7',
+  '#20c997'
+]);
 const US_HOLIDAY_RULES = Object.freeze([
   { key: 'new-years-day', title: "New Year's Day", getDate: (year) => new Date(year, 0, 1, 12, 0, 0, 0) },
   { key: 'chinese-new-year', title: 'Chinese New Year', getDate: (year) => getChineseNewYearDate(year) },
@@ -252,6 +263,8 @@ const schedulingSidebarToday = document.getElementById('scheduling-sidebar-today
 const schedulingSidebarAddEvent = document.getElementById('scheduling-sidebar-add-event');
 const schedulingSidebarAddTimeBlock = document.getElementById('scheduling-sidebar-add-time-block');
 const schedulingSidebarAddDayOff = document.getElementById('scheduling-sidebar-add-day-off');
+const schedulingCalendarList = document.getElementById('scheduling-calendar-list');
+const schedulingCalendarAdd = document.getElementById('scheduling-calendar-add');
 const schedulingLayerEvent = document.getElementById('scheduling-layer-event');
 const schedulingLayerTimeBlock = document.getElementById('scheduling-layer-time-block');
 const schedulingLayerDayOff = document.getElementById('scheduling-layer-day-off');
@@ -307,17 +320,25 @@ const shoppingItemParse = document.getElementById('shopping-item-parse');
 const shoppingItemCancel = document.getElementById('shopping-item-cancel');
 const syncStatus = document.getElementById('sync-status');
 const syncOfflineNotice = document.getElementById('sync-offline-notice');
+const appTitleTrigger = document.getElementById('app-title-trigger');
 const appTitle = document.getElementById('app-title');
 const globalSearchInput = document.getElementById('global-search-input');
 const globalSearchMenu = document.getElementById('global-search-menu');
 const mobileTopMenuButton = document.getElementById('mobile-top-menu-button');
 const mobileTopMenu = document.getElementById('mobile-top-menu');
+const mobileTitleMenu = document.getElementById('mobile-title-menu');
+const mobileMenuTasks = document.getElementById('mobile-menu-tasks');
+const mobileMenuScheduling = document.getElementById('mobile-menu-scheduling');
 const mobileMenuNotices = document.getElementById('mobile-menu-notices');
 const mobileMenuSettings = document.getElementById('mobile-menu-settings');
 const mobileMenuProfile = document.getElementById('mobile-menu-profile');
 const mobileMenuWorkspaces = document.getElementById('mobile-menu-workspaces');
 const mobileMenuAuth = document.getElementById('mobile-menu-auth');
 const mobileNav = document.getElementById('mobile-nav');
+const mobileNavPrimary = document.getElementById('mobile-nav-primary');
+const mobileNavProjects = document.getElementById('mobile-nav-projects');
+const mobileNavShopping = document.getElementById('mobile-nav-shopping');
+const mobileNavWorkflows = document.getElementById('mobile-nav-workflows');
 const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-button[data-view]'));
 const mobileNavAdd = document.getElementById('mobile-nav-add');
 const mobileCreateSheet = document.getElementById('mobile-create-sheet');
@@ -327,6 +348,21 @@ const mobileCreateTask = document.getElementById('mobile-create-task');
 const mobileCreateNotice = document.getElementById('mobile-create-notice');
 const mobileCreateWorkflow = document.getElementById('mobile-create-workflow');
 const mobileCreateShopping = document.getElementById('mobile-create-shopping');
+const mobileSearchModal = document.getElementById('mobile-search-modal');
+const mobileSearchBackdrop = document.getElementById('mobile-search-backdrop');
+const mobileSearchClose = document.getElementById('mobile-search-close');
+const mobileSearchInput = document.getElementById('mobile-search-input');
+const mobileSearchResults = document.getElementById('mobile-search-results');
+const mobileCalendarsModal = document.getElementById('mobile-calendars-modal');
+const mobileCalendarsBackdrop = document.getElementById('mobile-calendars-backdrop');
+const mobileCalendarsClose = document.getElementById('mobile-calendars-close');
+const mobileCalendarList = document.getElementById('mobile-calendar-list');
+const mobileCalendarAdd = document.getElementById('mobile-calendar-add');
+const mobileCalendarLayerEvent = document.getElementById('mobile-calendar-layer-event');
+const mobileCalendarLayerTimeBlock = document.getElementById('mobile-calendar-layer-time-block');
+const mobileCalendarLayerDayOff = document.getElementById('mobile-calendar-layer-day-off');
+const mobileCalendarLayerTasks = document.getElementById('mobile-calendar-layer-tasks');
+const mobileCalendarLayerHolidays = document.getElementById('mobile-calendar-layer-holidays');
 const newWorkspaceBtn = document.getElementById('new-workspace-btn');
 const moduleNavTodo = document.getElementById('module-nav-todo');
 const moduleNavScheduling = document.getElementById('module-nav-scheduling');
@@ -353,6 +389,7 @@ const scheduleEventModal = document.getElementById('schedule-event-modal');
 const scheduleEventModalTitle = document.getElementById('schedule-event-modal-title');
 const scheduleEventForm = document.getElementById('schedule-event-form');
 const scheduleEventTitle = document.getElementById('schedule-event-title');
+const scheduleEventCalendar = document.getElementById('schedule-event-calendar');
 const scheduleEventKind = document.getElementById('schedule-event-kind');
 const scheduleEventAllDay = document.getElementById('schedule-event-all-day');
 const scheduleEventStart = document.getElementById('schedule-event-start');
@@ -737,6 +774,9 @@ let navigationHistoryLastSignature = '';
 document.addEventListener('click', () => {
   if (openMenu) {
     openMenu.classList.add('hidden');
+    if (openMenu === mobileTitleMenu) {
+      appTitleTrigger?.setAttribute('aria-expanded', 'false');
+    }
     openMenu = null;
     document.querySelectorAll('.task-item.menu-open').forEach(item => item.classList.remove('menu-open'));
   }
@@ -1419,8 +1459,11 @@ schedulingSidebarOpen?.addEventListener('click', () => {
 schedulingSidebarToday?.addEventListener('click', () => {
   const today = new Date();
   setSchedulingCalendarMonth(today);
-  if (getSchedulingCalendarRange() === 'week') {
+  const rangeMode = getSchedulingCalendarRange();
+  if (rangeMode === 'week') {
     setSchedulingCalendarWeekStart(today);
+  } else if (rangeMode === 'day') {
+    setSchedulingCalendarDay(today);
   }
   render();
 });
@@ -1435,6 +1478,37 @@ schedulingSidebarAddTimeBlock?.addEventListener('click', () => {
 
 schedulingSidebarAddDayOff?.addEventListener('click', () => {
   openScheduleEventCreate('day-off');
+});
+
+schedulingCalendarAdd?.addEventListener('click', () => {
+  openScheduleCalendarCreatePrompt();
+});
+
+schedulingCalendarList?.addEventListener('change', (event) => {
+  const target = event.target instanceof HTMLInputElement ? event.target : null;
+  if (!target || !target.matches('.schedule-calendar-toggle')) return;
+  const calendarId = String(target.dataset.calendarId ?? '').trim();
+  if (!calendarId) return;
+  setSchedulingCalendarVisible(calendarId, target.checked);
+  queueUserSettingsSave();
+  render();
+});
+
+schedulingCalendarList?.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  const actionButton = target.closest('button[data-calendar-action]');
+  if (!actionButton) return;
+  const action = String(actionButton.getAttribute('data-calendar-action') ?? '');
+  const calendarId = String(actionButton.getAttribute('data-calendar-id') ?? '');
+  if (!calendarId) return;
+  if (action === 'edit') {
+    openScheduleCalendarEditPrompt(calendarId);
+    return;
+  }
+  if (action === 'delete') {
+    deleteScheduleCalendarFromUi(calendarId);
+  }
 });
 
 schedulingLayerEvent?.addEventListener('change', () => {
@@ -1469,6 +1543,15 @@ schedulingLayerHolidays?.addEventListener('change', () => {
 
 mobileNavButtons.forEach((button) => {
   button.addEventListener('click', () => {
+    const action = String(button.dataset.action ?? '').trim();
+    if (action === 'calendars') {
+      openMobileCalendarsModal();
+      return;
+    }
+    if (action === 'search') {
+      openMobileSearchPrompt();
+      return;
+    }
     const view = button.dataset.view;
     if (!view) return;
     if (view === 'workflows') {
@@ -1491,23 +1574,81 @@ mobileNavAdd?.addEventListener('click', () => {
   handleMobileQuickAdd();
 });
 
-mobileTopMenuButton?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  if (!mobileTopMenu) return;
+function toggleMobileTopMenu(event) {
+  if (!isMobileViewport() || !mobileTopMenu) return;
+  event?.stopPropagation?.();
   if (openMenu && openMenu !== mobileTopMenu) {
     openMenu.classList.add('hidden');
   }
-  if (mobileTopMenu.classList.contains('hidden')) {
+  const opening = mobileTopMenu.classList.contains('hidden');
+  if (opening) {
     mobileTopMenu.classList.remove('hidden');
     openMenu = mobileTopMenu;
   } else {
     mobileTopMenu.classList.add('hidden');
     openMenu = null;
   }
+}
+
+function toggleMobileTitleMenu(event) {
+  if (!isMobileViewport() || !mobileTitleMenu) return;
+  event?.stopPropagation?.();
+  if (openMenu && openMenu !== mobileTitleMenu) {
+    openMenu.classList.add('hidden');
+  }
+  const opening = mobileTitleMenu.classList.contains('hidden');
+  if (opening) {
+    mobileTitleMenu.classList.remove('hidden');
+    openMenu = mobileTitleMenu;
+  } else {
+    mobileTitleMenu.classList.add('hidden');
+    openMenu = null;
+  }
+  appTitleTrigger?.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}
+
+mobileTopMenuButton?.addEventListener('click', (event) => {
+  toggleMobileTopMenu(event);
+});
+
+appTitleTrigger?.addEventListener('click', (event) => {
+  toggleMobileTitleMenu(event);
+});
+
+appTitleTrigger?.addEventListener('keydown', (event) => {
+  if (!isMobileViewport()) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    toggleMobileTitleMenu(event);
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeMobileTitleMenu();
+  }
 });
 
 mobileTopMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
+});
+
+mobileTitleMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+
+mobileMenuTasks?.addEventListener('click', () => {
+  closeMobileTitleMenu();
+  setActiveTaskFilter('all');
+  clearActiveWorkflowChecklistInstanceId();
+  setActiveView('tasks');
+  render();
+});
+
+mobileMenuScheduling?.addEventListener('click', () => {
+  closeMobileTitleMenu();
+  clearActiveWorkflowChecklistInstanceId();
+  setActiveView('scheduling');
+  render();
 });
 
 mobileMenuNotices?.addEventListener('click', () => {
@@ -1559,6 +1700,126 @@ mobileCreateSheetBackdrop?.addEventListener('click', () => {
 
 mobileCreateSheetClose?.addEventListener('click', () => {
   closeMobileCreateSheet();
+});
+
+mobileSearchBackdrop?.addEventListener('click', () => {
+  closeMobileSearchModal();
+});
+
+mobileSearchClose?.addEventListener('click', () => {
+  closeMobileSearchModal();
+});
+
+mobileSearchInput?.addEventListener('input', () => {
+  setGlobalSearchQuery(mobileSearchInput.value);
+  renderMobileSearchResults();
+});
+
+mobileSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeMobileSearchModal();
+    return;
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    const results = getGlobalSearchResults(getGlobalSearchQuery());
+    const primary = getGlobalSearchPrimaryResult(results, getGlobalSearchScope());
+    if (!primary) {
+      showToast({ type: 'info', message: 'No results found.' });
+      return;
+    }
+    closeMobileSearchModal();
+    handleGlobalSearchResultSelect(primary.kind, primary.id);
+  }
+});
+
+mobileSearchResults?.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  const scopeChip = target.closest('[data-scope]');
+  if (scopeChip) {
+    const scope = String(scopeChip.getAttribute('data-scope') ?? '');
+    setGlobalSearchScope(scope);
+    renderMobileSearchResults();
+    return;
+  }
+  const resultButton = target.closest('.global-search-result');
+  if (!resultButton) return;
+  const kind = String(resultButton.getAttribute('data-kind') ?? '');
+  const id = String(resultButton.getAttribute('data-id') ?? '');
+  if (!kind || !id) return;
+  closeMobileSearchModal();
+  handleGlobalSearchResultSelect(kind, id);
+});
+
+mobileCalendarsBackdrop?.addEventListener('click', () => {
+  closeMobileCalendarsModal();
+});
+
+mobileCalendarsClose?.addEventListener('click', () => {
+  closeMobileCalendarsModal();
+});
+
+mobileCalendarAdd?.addEventListener('click', () => {
+  openScheduleCalendarCreatePrompt();
+});
+
+mobileCalendarList?.addEventListener('change', (event) => {
+  const target = event.target instanceof HTMLInputElement ? event.target : null;
+  if (!target || !target.matches('.schedule-calendar-toggle')) return;
+  const calendarId = String(target.dataset.calendarId ?? '').trim();
+  if (!calendarId) return;
+  setSchedulingCalendarVisible(calendarId, target.checked);
+  queueUserSettingsSave();
+  render();
+});
+
+mobileCalendarList?.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  const actionButton = target.closest('button[data-calendar-action]');
+  if (!actionButton) return;
+  const action = String(actionButton.getAttribute('data-calendar-action') ?? '');
+  const calendarId = String(actionButton.getAttribute('data-calendar-id') ?? '');
+  if (!calendarId) return;
+  if (action === 'edit') {
+    openScheduleCalendarEditPrompt(calendarId);
+    return;
+  }
+  if (action === 'delete') {
+    deleteScheduleCalendarFromUi(calendarId);
+  }
+});
+
+mobileCalendarLayerEvent?.addEventListener('change', () => {
+  setSchedulingKindVisible('event', Boolean(mobileCalendarLayerEvent.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+mobileCalendarLayerTimeBlock?.addEventListener('change', () => {
+  setSchedulingKindVisible('time-block', Boolean(mobileCalendarLayerTimeBlock.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+mobileCalendarLayerDayOff?.addEventListener('change', () => {
+  setSchedulingKindVisible('day-off', Boolean(mobileCalendarLayerDayOff.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+mobileCalendarLayerTasks?.addEventListener('change', () => {
+  setSchedulingShowTasks(Boolean(mobileCalendarLayerTasks.checked));
+  queueUserSettingsSave();
+  render();
+});
+
+mobileCalendarLayerHolidays?.addEventListener('change', () => {
+  setCalendarIncludeHolidays(Boolean(mobileCalendarLayerHolidays.checked));
+  queueUserSettingsSave();
+  render();
 });
 
 mobileCreateTask?.addEventListener('click', () => {
@@ -2295,6 +2556,9 @@ function getWorkspaceExportPayload(workspaceId, options = {}) {
   const workflowInstanceTasks = (state.workflowInstanceTasks ?? [])
     .filter(link => workflowInstanceIdSet.has(link.workflow_instance_id))
     .map(link => ({ ...link }));
+  const scheduleCalendars = (state.scheduleCalendars ?? [])
+    .filter(calendar => calendar.workspace_id === workspaceId)
+    .map(calendar => ({ ...calendar }));
   const scheduleEvents = (state.scheduleEvents ?? [])
     .filter(event => event.workspace_id === workspaceId)
     .map(event => ({ ...event }));
@@ -2332,6 +2596,7 @@ function getWorkspaceExportPayload(workspaceId, options = {}) {
     workflowPatternTasks,
     workflowInstances,
     workflowInstanceTasks,
+    scheduleCalendars,
     scheduleEvents,
     notices,
     noticeTypes,
@@ -2447,9 +2712,15 @@ function buildExportCsv(payload) {
   pushRows('workflow_pattern_item', payload.workflowPatternTasks, item => ({ title: item.title, status: item.item_kind ?? '' }));
   pushRows('workflow_instance', payload.workflowInstances, item => ({ title: item.title, status: item.status }));
   pushRows('workflow_instance_task', payload.workflowInstanceTasks, item => ({ title: item.task_id, status: item.dismissed_at ? 'dismissed' : 'active' }));
+  pushRows('schedule_calendar', payload.scheduleCalendars, item => ({
+    name: item.name,
+    status: item.color ?? '',
+    archived: item.archived ? 1 : 0
+  }));
   pushRows('schedule_event', payload.scheduleEvents, item => ({
     title: item.title,
     status: item.kind ?? '',
+    parent_id: item.calendar_id ?? '',
     start_at: item.start_at ?? '',
     due_at: item.end_at ?? '',
     archived: item.archived ? 1 : 0
@@ -2554,6 +2825,7 @@ function buildExportMarkdown(payload) {
   lines.push('');
 
   lines.push(`## Scheduling (${(payload.scheduleEvents ?? []).length})`);
+  lines.push(`- Calendars: ${(payload.scheduleCalendars ?? []).length}`);
   lines.push(`- Events: ${(payload.scheduleEvents ?? []).length}`);
   lines.push('');
 
@@ -2716,6 +2988,9 @@ function parseWorkspaceImportPayload(raw) {
   const workflowPatternIdSet = new Set(workflowPatterns.map(item => item.id).filter(Boolean));
   const workflowInstances = cloneArrayOfObjects(raw.workflowInstances);
   const workflowInstanceIdSet = new Set(workflowInstances.map(item => item.id).filter(Boolean));
+  const scheduleCalendars = cloneArrayOfObjects(raw.scheduleCalendars)
+    .filter(item => item.workspace_id === workspace.id);
+  const scheduleCalendarIdSet = new Set(scheduleCalendars.map(item => item.id).filter(Boolean));
 
   return {
     workspace,
@@ -2742,8 +3017,13 @@ function parseWorkspaceImportPayload(raw) {
     workflowInstances: workflowInstances.filter(item => workflowIdSet.has(item.workflow_id)),
     workflowInstanceTasks: cloneArrayOfObjects(raw.workflowInstanceTasks)
       .filter(item => workflowInstanceIdSet.has(item.workflow_instance_id) && taskIdSet.has(item.task_id)),
+    scheduleCalendars,
     scheduleEvents: cloneArrayOfObjects(raw.scheduleEvents)
-      .filter(item => item.workspace_id === workspace.id),
+      .filter(item => item.workspace_id === workspace.id)
+      .map(item => ({
+        ...item,
+        calendar_id: scheduleCalendarIdSet.has(item.calendar_id) ? item.calendar_id : null
+      })),
     notices: cloneArrayOfObjects(raw.notices),
     noticeTypes: cloneArrayOfObjects(raw.noticeTypes),
     storeRules: cloneArrayOfObjects(raw.storeRules),
@@ -2863,6 +3143,10 @@ function applyImportedWorkspacePayload(payload, options = {}) {
   state.workflowPatternTasks = [...(state.workflowPatternTasks ?? []), ...payload.workflowPatternTasks.map(normalizeWorkflowPatternTask)];
   state.workflowInstances = [...(state.workflowInstances ?? []), ...payload.workflowInstances.map(normalizeWorkflowInstance)];
   state.workflowInstanceTasks = [...(state.workflowInstanceTasks ?? []), ...payload.workflowInstanceTasks.map(normalizeWorkflowInstanceTaskLink)];
+  state.scheduleCalendars = [
+    ...keepByWorkspace(state.scheduleCalendars),
+    ...payload.scheduleCalendars.map(normalizeScheduleCalendar)
+  ];
   state.scheduleEvents = [
     ...keepByWorkspace(state.scheduleEvents),
     ...payload.scheduleEvents.map(normalizeScheduleEvent)
@@ -3310,6 +3594,7 @@ function openMobileCreateSheet() {
     return;
   }
   closeMobileTopMenu();
+  closeMobileTitleMenu();
   mobileCreateSheet.classList.remove('hidden');
   document.body.classList.add('mobile-create-open');
 }
@@ -3327,6 +3612,333 @@ function closeMobileTopMenu() {
   if (openMenu === mobileTopMenu) {
     openMenu = null;
   }
+}
+
+function closeMobileTitleMenu() {
+  if (!mobileTitleMenu) return;
+  mobileTitleMenu.classList.add('hidden');
+  appTitleTrigger?.setAttribute('aria-expanded', 'false');
+  if (openMenu === mobileTitleMenu) {
+    openMenu = null;
+  }
+}
+
+function closeMobileSearchModal() {
+  if (!mobileSearchModal) return;
+  mobileSearchModal.classList.add('hidden');
+  mobileSearchModal.setAttribute('aria-hidden', 'true');
+}
+
+function renderMobileSearchResults() {
+  if (!mobileSearchResults) return;
+  const query = getGlobalSearchQuery();
+  mobileSearchResults.innerHTML = '';
+
+  const scope = getGlobalSearchScope();
+  const scopeLabels = {
+    tasks: 'Tasks',
+    projects: 'Projects',
+    people: 'People',
+    workflows: 'Workflows'
+  };
+
+  const scopesRow = document.createElement('div');
+  scopesRow.className = 'global-search-scopes';
+  Object.entries(scopeLabels).forEach(([key, label]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `global-search-scope-chip${scope === key ? ' is-active' : ''}`;
+    button.dataset.scope = key;
+    button.textContent = label;
+    scopesRow.appendChild(button);
+  });
+  mobileSearchResults.appendChild(scopesRow);
+
+  if (!query) {
+    const empty = document.createElement('div');
+    empty.className = 'global-search-empty';
+    empty.textContent = 'Start typing to search.';
+    mobileSearchResults.appendChild(empty);
+    return;
+  }
+
+  const results = getGlobalSearchResults(query);
+  const orderedScopes = [scope, ...['tasks', 'projects', 'people', 'workflows'].filter(item => item !== scope)];
+  const resultsWrap = document.createElement('div');
+  resultsWrap.className = 'global-search-results';
+  let total = 0;
+  orderedScopes.forEach((key) => {
+    const rows = results[key] ?? [];
+    if (!rows.length) return;
+    total += rows.length;
+    const section = document.createElement('div');
+    section.className = 'global-search-section';
+    const title = document.createElement('div');
+    title.className = 'global-search-section-title';
+    title.textContent = scopeLabels[key];
+    section.appendChild(title);
+    rows.slice(0, 8).forEach((row) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'global-search-result';
+      button.dataset.kind = row.kind;
+      button.dataset.id = row.id;
+
+      const resultTitle = document.createElement('span');
+      resultTitle.className = 'global-search-result-title';
+      resultTitle.textContent = row.title;
+
+      const resultMeta = document.createElement('span');
+      resultMeta.className = 'global-search-result-meta';
+      resultMeta.textContent = row.meta;
+
+      button.appendChild(resultTitle);
+      button.appendChild(resultMeta);
+      section.appendChild(button);
+    });
+    resultsWrap.appendChild(section);
+  });
+
+  if (!total) {
+    const empty = document.createElement('div');
+    empty.className = 'global-search-empty';
+    empty.textContent = 'No results found.';
+    mobileSearchResults.appendChild(empty);
+    return;
+  }
+
+  mobileSearchResults.appendChild(resultsWrap);
+}
+
+function openMobileSearchModal() {
+  if (!mobileSearchModal) return;
+  closeMobileTopMenu();
+  closeMobileTitleMenu();
+  closeMobileCreateSheet();
+  closeMobileCalendarsModal();
+  mobileSearchModal.classList.remove('hidden');
+  mobileSearchModal.setAttribute('aria-hidden', 'false');
+  if (mobileSearchInput) {
+    mobileSearchInput.value = getGlobalSearchQuery();
+    setTimeout(() => {
+      mobileSearchInput?.focus();
+      mobileSearchInput?.select();
+    }, 0);
+  }
+  renderMobileSearchResults();
+}
+
+function openMobileSearchPrompt() {
+  openMobileSearchModal();
+}
+
+function getScheduleCalendarEventCount(calendarId) {
+  if (!state.workspace || !calendarId) return 0;
+  return (state.scheduleEvents ?? [])
+    .map(normalizeScheduleEvent)
+    .filter((event) =>
+      event.workspace_id === state.workspace.id
+      && !event.archived
+      && event.calendar_id === calendarId
+    ).length;
+}
+
+function buildScheduleCalendarListItem(calendar, options = {}) {
+  const compact = options.compact === true;
+  const row = document.createElement('div');
+  row.className = compact ? 'schedule-calendar-item is-compact' : 'schedule-calendar-item';
+
+  const left = document.createElement('label');
+  left.className = 'schedule-calendar-left';
+
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.className = 'schedule-calendar-toggle';
+  input.dataset.calendarId = calendar.id;
+  input.checked = isSchedulingCalendarVisible(calendar.id);
+  left.appendChild(input);
+
+  const swatch = document.createElement('span');
+  swatch.className = 'schedule-calendar-swatch';
+  swatch.style.backgroundColor = normalizeScheduleCalendarColor(calendar.color);
+  left.appendChild(swatch);
+
+  const labelWrap = document.createElement('span');
+  labelWrap.className = 'schedule-calendar-label-wrap';
+  const name = document.createElement('span');
+  name.className = 'schedule-calendar-name';
+  name.textContent = calendar.name;
+  labelWrap.appendChild(name);
+  const meta = document.createElement('span');
+  meta.className = 'schedule-calendar-meta';
+  const count = getScheduleCalendarEventCount(calendar.id);
+  meta.textContent = `${count} event${count === 1 ? '' : 's'}`;
+  labelWrap.appendChild(meta);
+  left.appendChild(labelWrap);
+
+  const actions = document.createElement('div');
+  actions.className = 'schedule-calendar-actions';
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'subtle-button';
+  editBtn.textContent = 'Edit';
+  editBtn.dataset.calendarAction = 'edit';
+  editBtn.dataset.calendarId = calendar.id;
+  actions.appendChild(editBtn);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'subtle-button';
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.dataset.calendarAction = 'delete';
+  deleteBtn.dataset.calendarId = calendar.id;
+  actions.appendChild(deleteBtn);
+
+  row.appendChild(left);
+  row.appendChild(actions);
+  return row;
+}
+
+function renderSchedulingCalendarList() {
+  if (!schedulingCalendarList) return;
+  const hasWorkspace = Boolean(state.workspace);
+  if (schedulingCalendarAdd) schedulingCalendarAdd.disabled = !hasWorkspace;
+  schedulingCalendarList.innerHTML = '';
+  if (!hasWorkspace) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Select a workspace to manage calendars.';
+    schedulingCalendarList.appendChild(note);
+    return;
+  }
+  const calendars = getScheduleCalendarsForWorkspace();
+  if (!calendars.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No calendars yet.';
+    schedulingCalendarList.appendChild(note);
+    return;
+  }
+  calendars.forEach((calendar) => {
+    schedulingCalendarList.appendChild(buildScheduleCalendarListItem(calendar));
+  });
+}
+
+function renderMobileScheduleCalendarList() {
+  if (!mobileCalendarList) return;
+  const hasWorkspace = Boolean(state.workspace);
+  if (mobileCalendarAdd) mobileCalendarAdd.disabled = !hasWorkspace;
+  mobileCalendarList.innerHTML = '';
+  if (!hasWorkspace) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Select a workspace to manage calendars.';
+    mobileCalendarList.appendChild(note);
+    return;
+  }
+  const calendars = getScheduleCalendarsForWorkspace();
+  if (!calendars.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No calendars yet.';
+    mobileCalendarList.appendChild(note);
+    return;
+  }
+  calendars.forEach((calendar) => {
+    mobileCalendarList.appendChild(buildScheduleCalendarListItem(calendar, { compact: true }));
+  });
+}
+
+function openScheduleCalendarCreatePrompt() {
+  if (!state.workspace) return;
+  const response = prompt('New calendar name');
+  if (response === null) return;
+  const created = createScheduleCalendarRecord({ name: response });
+  if (!created) {
+    alert('Calendar name is required.');
+    return;
+  }
+  if (created.duplicate) {
+    alert('A calendar with that name already exists.');
+    return;
+  }
+  queueUserSettingsSave();
+  render();
+}
+
+function openScheduleCalendarEditPrompt(calendarId) {
+  const existing = getScheduleCalendarById(calendarId);
+  if (!existing) return;
+  const response = prompt('Calendar name', existing.name);
+  if (response === null) return;
+  const updated = updateScheduleCalendarRecord(calendarId, { name: response });
+  if (!updated) {
+    alert('Calendar name is required.');
+    return;
+  }
+  if (updated.duplicate) {
+    alert('A calendar with that name already exists.');
+    return;
+  }
+  queueUserSettingsSave();
+  render();
+}
+
+function deleteScheduleCalendarFromUi(calendarId) {
+  const existing = getScheduleCalendarById(calendarId);
+  if (!existing) return;
+  const confirmed = confirm(`Delete calendar "${existing.name}"?`);
+  if (!confirmed) return;
+  const result = deleteScheduleCalendarRecord(calendarId);
+  if (result?.error === 'last-calendar') {
+    alert('At least one calendar is required.');
+    return;
+  }
+  queueUserSettingsSave();
+  render();
+}
+
+function syncMobileCalendarsModalInputs() {
+  renderMobileScheduleCalendarList();
+  const hasWorkspace = Boolean(state.workspace);
+  if (mobileCalendarLayerEvent) {
+    mobileCalendarLayerEvent.checked = isSchedulingKindVisible('event');
+    mobileCalendarLayerEvent.disabled = !hasWorkspace;
+  }
+  if (mobileCalendarLayerTimeBlock) {
+    mobileCalendarLayerTimeBlock.checked = isSchedulingKindVisible('time-block');
+    mobileCalendarLayerTimeBlock.disabled = !hasWorkspace;
+  }
+  if (mobileCalendarLayerDayOff) {
+    mobileCalendarLayerDayOff.checked = isSchedulingKindVisible('day-off');
+    mobileCalendarLayerDayOff.disabled = !hasWorkspace;
+  }
+  if (mobileCalendarLayerTasks) {
+    mobileCalendarLayerTasks.checked = getSchedulingShowTasks();
+    mobileCalendarLayerTasks.disabled = !hasWorkspace;
+  }
+  if (mobileCalendarLayerHolidays) {
+    mobileCalendarLayerHolidays.checked = getCalendarIncludeHolidays();
+    mobileCalendarLayerHolidays.disabled = !hasWorkspace;
+  }
+}
+
+function closeMobileCalendarsModal() {
+  if (!mobileCalendarsModal) return;
+  mobileCalendarsModal.classList.add('hidden');
+  mobileCalendarsModal.setAttribute('aria-hidden', 'true');
+}
+
+function openMobileCalendarsModal() {
+  if (!mobileCalendarsModal) return;
+  closeMobileTopMenu();
+  closeMobileTitleMenu();
+  closeMobileCreateSheet();
+  closeMobileSearchModal();
+  syncMobileCalendarsModalInputs();
+  mobileCalendarsModal.classList.remove('hidden');
+  mobileCalendarsModal.setAttribute('aria-hidden', 'false');
 }
 
 function getViewLabel(view) {
@@ -3422,11 +4034,156 @@ function getWorkflowInstanceNoun(workflowName) {
   return singular || 'Item';
 }
 
+function getMobileNavPrimaryConfig(activeView) {
+  if (activeView === 'scheduling') {
+    return {
+      view: 'scheduling',
+      label: 'Scheduling',
+      title: 'Scheduling',
+      icon: `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3.5" y="5" width="17" height="15" rx="2"></rect>
+          <path d="M8 3.5v3M16 3.5v3M3.5 9.5h17"></path>
+        </svg>
+      `
+    };
+  }
+  return {
+    view: 'tasks',
+    label: 'Tasks',
+    title: 'My Tasks',
+    icon: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 7h12M6 12h9M6 17h7"></path>
+        <circle cx="4" cy="7" r="1"></circle>
+        <circle cx="4" cy="12" r="1"></circle>
+        <circle cx="4" cy="17" r="1"></circle>
+      </svg>
+    `
+  };
+}
+
+function setMobileNavButtonConfig(button, config) {
+  if (!button) return;
+  const hidden = Boolean(config?.hidden);
+  button.classList.toggle('hidden', hidden);
+  if (hidden) {
+    button.classList.remove('is-active');
+    button.removeAttribute('aria-current');
+    return;
+  }
+  if (config?.view) {
+    button.dataset.view = config.view;
+  } else {
+    delete button.dataset.view;
+  }
+  if (config?.action) {
+    button.dataset.action = config.action;
+  } else {
+    delete button.dataset.action;
+  }
+  if (config?.title) {
+    button.title = config.title;
+  }
+  const labelEl = button.querySelector('.mobile-nav-label');
+  if (labelEl && typeof config?.label === 'string') {
+    labelEl.textContent = config.label;
+  }
+  const iconEl = button.querySelector('.mobile-nav-icon');
+  const iconKey = `${config?.view ?? 'action'}:${config?.action ?? ''}:${config?.label ?? ''}`;
+  if (iconEl && typeof config?.icon === 'string' && iconEl.dataset.kind !== iconKey) {
+    iconEl.innerHTML = config.icon.trim();
+    iconEl.dataset.kind = iconKey;
+  }
+}
+
+function syncMobileNavStandardButtons(activeView) {
+  setMobileNavButtonConfig(mobileNavPrimary, getMobileNavPrimaryConfig(activeView));
+  setMobileNavButtonConfig(mobileNavProjects, {
+    view: 'projects',
+    label: 'Projects',
+    title: 'Projects',
+    icon: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 8h16M4 16h16"></path>
+        <path d="M7 4v16"></path>
+      </svg>
+    `
+  });
+  setMobileNavButtonConfig(mobileNavShopping, {
+    view: 'shopping',
+    label: 'Shopping Lists',
+    title: 'Shopping Lists',
+    icon: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 6h2l2 10h9l2-7H7"></path>
+        <circle cx="10" cy="19" r="1.4"></circle>
+        <circle cx="17" cy="19" r="1.4"></circle>
+      </svg>
+    `
+  });
+  setMobileNavButtonConfig(mobileNavWorkflows, {
+    view: 'workflows',
+    label: 'Workflow',
+    title: 'Workflow Instances',
+    icon: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="4" width="7" height="7" rx="1.5"></rect>
+        <rect x="13" y="4" width="7" height="7" rx="1.5"></rect>
+        <rect x="4" y="13" width="7" height="7" rx="1.5"></rect>
+        <rect x="13" y="13" width="7" height="7" rx="1.5"></rect>
+      </svg>
+    `
+  });
+}
+
+function syncMobileNavSchedulingButtons() {
+  setMobileNavButtonConfig(mobileNavPrimary, {
+    view: 'scheduling',
+    action: 'calendars',
+    label: 'Calendars',
+    title: 'Calendars',
+    icon: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="5" width="16" height="4" rx="1.2"></rect>
+        <rect x="4" y="10" width="16" height="4" rx="1.2"></rect>
+        <rect x="4" y="15" width="16" height="4" rx="1.2"></rect>
+      </svg>
+    `
+  });
+  setMobileNavButtonConfig(mobileNavProjects, {
+    action: 'search',
+    label: 'Search',
+    title: 'Search',
+    icon: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="6.5"></circle>
+        <path d="M16 16l4 4"></path>
+      </svg>
+    `
+  });
+  setMobileNavButtonConfig(mobileNavShopping, { hidden: true });
+  setMobileNavButtonConfig(mobileNavWorkflows, { hidden: true });
+}
+
 function renderMobileNavigation() {
   if (!mobileNav) return;
+  if (!isMobileViewport()) {
+    closeMobileSearchModal();
+    closeMobileCalendarsModal();
+  }
   const activeView = getActiveView();
+  const mobileSchedulingNav = isMobileViewport() && activeView === 'scheduling';
+  if (mobileSchedulingNav) {
+    syncMobileNavSchedulingButtons();
+  } else {
+    syncMobileNavStandardButtons(activeView);
+  }
+  mobileNav.classList.toggle('is-scheduling-module', mobileSchedulingNav);
   mobileNavButtons.forEach((button) => {
-    const isActive = button.dataset.view === activeView;
+    const view = String(button.dataset.view ?? '').trim();
+    const isHidden = button.classList.contains('hidden');
+    const isActive = !isHidden && Boolean(view) && view === activeView;
     button.classList.toggle('is-active', isActive);
     if (isActive) {
       button.setAttribute('aria-current', 'page');
@@ -3443,11 +4200,17 @@ function shiftSchedulingMiniMonth(delta) {
   const monthDate = getSchedulingCalendarMonth();
   const nextMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + Number(delta || 0), 1, 12, 0, 0, 0);
   setSchedulingCalendarMonth(nextMonth);
-  if (getSchedulingCalendarRange() === 'week') {
-    const anchor = getSchedulingCalendarWeekStart();
+  const rangeMode = getSchedulingCalendarRange();
+  if (rangeMode === 'week' || rangeMode === 'day') {
+    const anchor = rangeMode === 'day' ? getSchedulingCalendarDay() : getSchedulingCalendarWeekStart();
     const maxDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
     const targetDay = Math.min(anchor.getDate(), maxDay);
-    setSchedulingCalendarWeekStart(new Date(nextMonth.getFullYear(), nextMonth.getMonth(), targetDay, 12, 0, 0, 0));
+    const targetDate = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), targetDay, 12, 0, 0, 0);
+    if (rangeMode === 'week') {
+      setSchedulingCalendarWeekStart(targetDate);
+    } else {
+      setSchedulingCalendarDay(targetDate);
+    }
   }
   render();
 }
@@ -3479,14 +4242,18 @@ function renderSchedulingMiniMonth(hasWorkspace) {
   const todayKey = getDateIsoKey(new Date());
   const rangeMode = getSchedulingCalendarRange();
   const weekMode = getSchedulingWeekMode();
-  const anchorDate = rangeMode === 'week' ? getSchedulingCalendarWeekStart() : monthDate;
+  const anchorDate = rangeMode === 'week'
+    ? getSchedulingCalendarWeekStart()
+    : rangeMode === 'day'
+      ? getSchedulingCalendarDay()
+      : monthDate;
   const anchorKey = getDateIsoKey(new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate(), 12, 0, 0, 0));
   const weekVisibleKeys = new Set();
   if (rangeMode === 'week') {
-    const weekStart = getSchedulingCalendarWeekStart();
+    const anchor = getSchedulingCalendarWeekStart();
     const visibleDates = weekMode === 'workweek'
-      ? Array.from({ length: 5 }, (_, index) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 1 + index, 12, 0, 0, 0))
-      : Array.from({ length: 7 }, (_, index) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index, 12, 0, 0, 0));
+      ? Array.from({ length: 5 }, (_, index) => new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + 1 + index, 12, 0, 0, 0))
+      : Array.from({ length: 7 }, (_, index) => new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + index, 12, 0, 0, 0));
     visibleDates.forEach((date) => {
       const key = getDateIsoKey(date);
       if (key) weekVisibleKeys.add(key);
@@ -3515,6 +4282,8 @@ function renderSchedulingMiniMonth(hasWorkspace) {
       setSchedulingCalendarMonth(date);
       if (getSchedulingCalendarRange() === 'week') {
         setSchedulingCalendarWeekStart(date);
+      } else if (getSchedulingCalendarRange() === 'day') {
+        setSchedulingCalendarDay(date);
       }
       render();
     });
@@ -3524,6 +4293,7 @@ function renderSchedulingMiniMonth(hasWorkspace) {
 
 function renderSchedulingSidebar() {
   const hasWorkspace = Boolean(state.workspace);
+  renderSchedulingCalendarList();
   if (schedulingLayerEvent) {
     schedulingLayerEvent.checked = isSchedulingKindVisible('event');
     schedulingLayerEvent.disabled = !hasWorkspace;
@@ -3751,7 +4521,10 @@ function setActiveView(view) {
   state.ui.activeView = nextView;
   if (isMobileViewport()) {
     closeMobileTopMenu();
+    closeMobileTitleMenu();
     closeMobileCreateSheet();
+    closeMobileSearchModal();
+    closeMobileCalendarsModal();
   }
 }
 
@@ -6787,6 +7560,7 @@ function persistLocalData() {
     workflowPatternTasks: state.workflowPatternTasks ?? [],
     workflowInstances: state.workflowInstances ?? [],
     workflowInstanceTasks: state.workflowInstanceTasks ?? [],
+    scheduleCalendars: state.scheduleCalendars ?? [],
     scheduleEvents: state.scheduleEvents ?? [],
     notices: state.notices ?? [],
     noticeTypes: state.noticeTypes ?? [],
@@ -6875,6 +7649,7 @@ function snapshotLocalData() {
     workflowPatternTasks: state.workflowPatternTasks ?? [],
     workflowInstances: state.workflowInstances ?? [],
     workflowInstanceTasks: state.workflowInstanceTasks ?? [],
+    scheduleCalendars: state.scheduleCalendars ?? [],
     scheduleEvents: state.scheduleEvents ?? [],
     notices: state.notices ?? [],
     noticeTypes: state.noticeTypes ?? [],
@@ -6905,6 +7680,7 @@ function applyLocalDataSnapshot(data) {
   state.workflowPatternTasks = data.workflowPatternTasks ?? data.workflowFragmentTasks ?? [];
   state.workflowInstances = data.workflowInstances ?? [];
   state.workflowInstanceTasks = data.workflowInstanceTasks ?? [];
+  state.scheduleCalendars = (data.scheduleCalendars ?? []).map(normalizeScheduleCalendar);
   state.scheduleEvents = (data.scheduleEvents ?? []).map(normalizeScheduleEvent);
   state.notices = data.notices ?? [];
   state.noticeTypes = data.noticeTypes ?? [];
@@ -7106,6 +7882,33 @@ function ensureLocalWorkspaceDefaults(workspace) {
       updated_at: now
     }));
     state.taskTypes = [...(state.taskTypes ?? []), ...defaults];
+  }
+  const workspaceCalendars = (state.scheduleCalendars ?? [])
+    .map(normalizeScheduleCalendar)
+    .filter((calendar) => calendar.workspace_id === workspace.id && !calendar.archived);
+  if (!workspaceCalendars.length) {
+    const now = new Date().toISOString();
+    const fallbackCalendar = normalizeScheduleCalendar({
+      id: createId(),
+      workspace_id: workspace.id,
+      name: 'Primary',
+      color: SCHEDULE_CALENDAR_COLOR_PALETTE[0],
+      sort_order: 10,
+      archived: 0,
+      created_at: now,
+      updated_at: now
+    });
+    state.scheduleCalendars = [...(state.scheduleCalendars ?? []), fallbackCalendar];
+  }
+  const resolvedActiveCalendarId = getActiveScheduleCalendarId();
+  if (resolvedActiveCalendarId !== state.ui?.schedulingActiveCalendarId) {
+    setActiveScheduleCalendarId(resolvedActiveCalendarId);
+  }
+  if (ensureScheduleEventsHaveValidCalendarIds(workspace)) {
+    state.ui = state.ui ?? {};
+    state.ui.schedulingHiddenCalendarIds = normalizeSchedulingHiddenCalendarIds(
+      state.ui.schedulingHiddenCalendarIds
+    );
   }
 }
 
@@ -7331,11 +8134,33 @@ function normalizeScheduleEventKind(kind) {
   return 'event';
 }
 
+function normalizeScheduleCalendarColor(value) {
+  const color = String(value ?? '').trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    return color;
+  }
+  return SCHEDULE_CALENDAR_COLOR_PALETTE[0];
+}
+
+function normalizeScheduleCalendar(calendar) {
+  const sortOrder = Number.isFinite(Number(calendar?.sort_order))
+    ? Math.floor(Number(calendar.sort_order))
+    : null;
+  return {
+    ...calendar,
+    name: normalizeTitleInput(calendar?.name ?? '') || 'Calendar',
+    color: normalizeScheduleCalendarColor(calendar?.color),
+    archived: Number(calendar?.archived) ? 1 : 0,
+    sort_order: sortOrder
+  };
+}
+
 function normalizeScheduleEvent(event) {
   return {
     ...event,
     kind: normalizeScheduleEventKind(event?.kind),
     title: normalizeTitleInput(event?.title ?? '') || 'Untitled event',
+    calendar_id: event?.calendar_id ?? null,
     start_at: event?.start_at ?? null,
     end_at: event?.end_at ?? null,
     all_day: Number(event?.all_day) ? 1 : 0,
@@ -7344,11 +8169,146 @@ function normalizeScheduleEvent(event) {
   };
 }
 
+function getScheduleCalendarsForWorkspace(options = {}) {
+  if (!state.workspace) return [];
+  const includeArchived = options.includeArchived === true;
+  return (state.scheduleCalendars ?? [])
+    .map(normalizeScheduleCalendar)
+    .filter((calendar) => {
+      if (calendar.workspace_id !== state.workspace.id) return false;
+      if (!includeArchived && calendar.archived) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const aOrder = Number.isFinite(a.sort_order) ? a.sort_order : Number.POSITIVE_INFINITY;
+      const bOrder = Number.isFinite(b.sort_order) ? b.sort_order : Number.POSITIVE_INFINITY;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return String(a.name ?? '').localeCompare(String(b.name ?? ''));
+    });
+}
+
+function getScheduleCalendarById(calendarId, options = {}) {
+  if (!calendarId) return null;
+  const calendars = getScheduleCalendarsForWorkspace(options);
+  return calendars.find((calendar) => calendar.id === calendarId) ?? null;
+}
+
+function getDefaultScheduleCalendarForWorkspace() {
+  return getScheduleCalendarsForWorkspace({ includeArchived: false })[0] ?? null;
+}
+
+function getActiveScheduleCalendarId() {
+  const activeId = String(state.ui?.schedulingActiveCalendarId ?? '').trim();
+  const calendars = getScheduleCalendarsForWorkspace({ includeArchived: false });
+  if (activeId && calendars.some((calendar) => calendar.id === activeId)) return activeId;
+  return calendars[0]?.id ?? null;
+}
+
+function setActiveScheduleCalendarId(calendarId) {
+  state.ui = state.ui ?? {};
+  state.ui.schedulingActiveCalendarId = calendarId ? String(calendarId) : null;
+}
+
+function resolveScheduleCalendarId(calendarId) {
+  const id = String(calendarId ?? '').trim();
+  if (id && getScheduleCalendarById(id)) return id;
+  return getActiveScheduleCalendarId() ?? getDefaultScheduleCalendarForWorkspace()?.id ?? null;
+}
+
+function pickNextScheduleCalendarColor() {
+  const calendars = getScheduleCalendarsForWorkspace({ includeArchived: true });
+  const usage = new Map(SCHEDULE_CALENDAR_COLOR_PALETTE.map((color) => [color, 0]));
+  calendars.forEach((calendar) => {
+    const color = normalizeScheduleCalendarColor(calendar.color);
+    usage.set(color, (usage.get(color) ?? 0) + 1);
+  });
+  let bestColor = SCHEDULE_CALENDAR_COLOR_PALETTE[0];
+  let bestCount = Number.POSITIVE_INFINITY;
+  SCHEDULE_CALENDAR_COLOR_PALETTE.forEach((color) => {
+    const count = usage.get(color) ?? 0;
+    if (count < bestCount) {
+      bestColor = color;
+      bestCount = count;
+    }
+  });
+  return bestColor;
+}
+
+function normalizeSchedulingHiddenCalendarIds(value) {
+  if (!Array.isArray(value)) return [];
+  const calendars = getScheduleCalendarsForWorkspace({ includeArchived: true });
+  const validIds = new Set(calendars.map((calendar) => calendar.id));
+  const seen = new Set();
+  const hidden = [];
+  value.forEach((entry) => {
+    const id = String(entry ?? '').trim();
+    if (!id || seen.has(id) || !validIds.has(id)) return;
+    seen.add(id);
+    hidden.push(id);
+  });
+  return hidden;
+}
+
+function getSchedulingHiddenCalendarIds() {
+  return normalizeSchedulingHiddenCalendarIds(state.ui?.schedulingHiddenCalendarIds);
+}
+
+function isSchedulingCalendarVisible(calendarId) {
+  const id = String(calendarId ?? '').trim();
+  if (!id) return true;
+  return !getSchedulingHiddenCalendarIds().includes(id);
+}
+
+function setSchedulingCalendarVisible(calendarId, visible) {
+  const id = String(calendarId ?? '').trim();
+  if (!id) return;
+  const hidden = new Set(getSchedulingHiddenCalendarIds());
+  if (visible) {
+    hidden.delete(id);
+  } else {
+    hidden.add(id);
+  }
+  state.ui = state.ui ?? {};
+  state.ui.schedulingHiddenCalendarIds = normalizeSchedulingHiddenCalendarIds(Array.from(hidden));
+}
+
+function ensureScheduleEventsHaveValidCalendarIds(workspace) {
+  if (!workspace?.id) return false;
+  const defaultCalendar = getDefaultScheduleCalendarForWorkspace();
+  const availableIds = new Set(getScheduleCalendarsForWorkspace().map((calendar) => calendar.id));
+  if (!defaultCalendar && !availableIds.size) return false;
+  let changed = false;
+  state.scheduleEvents = (state.scheduleEvents ?? []).map((event) => {
+    const normalized = normalizeScheduleEvent(event);
+    if (normalized.workspace_id !== workspace.id) return normalized;
+    if (normalized.archived) return normalized;
+    const calendarId = String(normalized.calendar_id ?? '').trim();
+    if (calendarId && availableIds.has(calendarId)) return normalized;
+    changed = true;
+    return {
+      ...normalized,
+      calendar_id: defaultCalendar?.id ?? null,
+      updated_at: nowIso()
+    };
+  });
+  return changed;
+}
+
 function getScheduleEventsForWorkspace() {
   if (!state.workspace) return [];
+  const visibleCalendarIds = new Set(
+    getScheduleCalendarsForWorkspace()
+      .filter((calendar) => isSchedulingCalendarVisible(calendar.id))
+      .map((calendar) => calendar.id)
+  );
   return (state.scheduleEvents ?? [])
     .map(normalizeScheduleEvent)
-    .filter((event) => event.workspace_id === state.workspace.id && !event.archived)
+    .filter((event) => {
+      if (event.workspace_id !== state.workspace.id) return false;
+      if (event.archived) return false;
+      if (!event.calendar_id) return true;
+      return visibleCalendarIds.has(event.calendar_id);
+    })
     .sort((a, b) => String(a.start_at ?? '').localeCompare(String(b.start_at ?? '')));
 }
 
@@ -8233,6 +9193,113 @@ async function createNoticeRecord(payload) {
   return created;
 }
 
+function createScheduleCalendarRecord(payload = {}) {
+  if (!state.workspace) return null;
+  const name = normalizeTitleInput(payload.name ?? '');
+  if (!name) return null;
+  const existing = getScheduleCalendarsForWorkspace({ includeArchived: true })
+    .find((calendar) => String(calendar.name).toLowerCase() === name.toLowerCase());
+  if (existing) {
+    return { ...existing, duplicate: true };
+  }
+  const now = nowIso();
+  const maxSortOrder = Math.max(
+    0,
+    ...getScheduleCalendarsForWorkspace({ includeArchived: true })
+      .map((calendar) => (Number.isFinite(calendar.sort_order) ? calendar.sort_order : 0))
+  );
+  const record = normalizeScheduleCalendar({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    name,
+    color: payload.color ?? pickNextScheduleCalendarColor(),
+    sort_order: maxSortOrder + 10,
+    archived: 0,
+    created_at: now,
+    updated_at: now
+  });
+  state.scheduleCalendars = [...(state.scheduleCalendars ?? []), record];
+  setActiveScheduleCalendarId(record.id);
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_calendar_created',
+    entity_type: 'schedule_calendar',
+    entity_id: record.id
+  });
+  return record;
+}
+
+function updateScheduleCalendarRecord(id, patch = {}) {
+  const calendars = state.scheduleCalendars ?? [];
+  const index = calendars.findIndex((calendar) => calendar.id === id);
+  if (index < 0) return null;
+  const current = normalizeScheduleCalendar(calendars[index]);
+  const nextName = patch.name === undefined ? current.name : normalizeTitleInput(patch.name);
+  if (!nextName) return null;
+  const duplicate = getScheduleCalendarsForWorkspace({ includeArchived: true })
+    .find((calendar) =>
+      calendar.id !== id
+      && String(calendar.name).toLowerCase() === String(nextName).toLowerCase()
+    );
+  if (duplicate) return { ...current, duplicate: true };
+  const next = normalizeScheduleCalendar({
+    ...current,
+    ...patch,
+    name: nextName,
+    id: current.id,
+    workspace_id: current.workspace_id,
+    created_at: current.created_at ?? nowIso(),
+    updated_at: nowIso()
+  });
+  calendars[index] = next;
+  state.scheduleCalendars = [...calendars];
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_calendar_updated',
+    entity_type: 'schedule_calendar',
+    entity_id: id,
+    data: { fields: Object.keys(patch ?? {}) }
+  });
+  return next;
+}
+
+function deleteScheduleCalendarRecord(id) {
+  const calendars = getScheduleCalendarsForWorkspace();
+  const existing = calendars.find((calendar) => calendar.id === id);
+  if (!existing) return { deleted: 0 };
+  if (calendars.length <= 1) {
+    return { deleted: 0, error: 'last-calendar' };
+  }
+  const fallback = calendars.find((calendar) => calendar.id !== id) ?? null;
+  let reassignedCount = 0;
+  state.scheduleEvents = (state.scheduleEvents ?? []).map((event) => {
+    const normalized = normalizeScheduleEvent(event);
+    if (normalized.workspace_id !== state.workspace?.id) return normalized;
+    if (normalized.calendar_id !== id) return normalized;
+    reassignedCount += 1;
+    return {
+      ...normalized,
+      calendar_id: fallback?.id ?? null,
+      updated_at: nowIso()
+    };
+  });
+  state.scheduleCalendars = (state.scheduleCalendars ?? [])
+    .filter((calendar) => calendar.id !== id);
+  state.ui = state.ui ?? {};
+  state.ui.schedulingHiddenCalendarIds = getSchedulingHiddenCalendarIds().filter((calendarId) => calendarId !== id);
+  if (state.ui.schedulingActiveCalendarId === id) {
+    setActiveScheduleCalendarId(fallback?.id ?? null);
+  }
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_calendar_deleted',
+    entity_type: 'schedule_calendar',
+    entity_id: id,
+    data: { reassigned_events: reassignedCount, fallback_calendar_id: fallback?.id ?? null }
+  });
+  return { deleted: 1, reassignedCount };
+}
+
 function createScheduleEventRecord(payload) {
   if (!state.workspace) return null;
   const now = nowIso();
@@ -8241,6 +9308,7 @@ function createScheduleEventRecord(payload) {
     workspace_id: state.workspace.id,
     title: payload?.title,
     kind: payload?.kind,
+    calendar_id: resolveScheduleCalendarId(payload?.calendar_id),
     start_at: payload?.start_at,
     end_at: payload?.end_at ?? null,
     all_day: payload?.all_day ? 1 : 0,
@@ -8250,6 +9318,9 @@ function createScheduleEventRecord(payload) {
     updated_at: now
   });
   state.scheduleEvents = [...(state.scheduleEvents ?? []), event];
+  if (event.calendar_id) {
+    setActiveScheduleCalendarId(event.calendar_id);
+  }
   appendCrudEvent({
     source: 'app',
     event: 'schedule_event_created',
@@ -8264,9 +9335,13 @@ function updateScheduleEventRecord(id, patch = {}) {
   const index = events.findIndex(event => event.id === id);
   if (index < 0) return null;
   const current = normalizeScheduleEvent(events[index]);
+  const nextPatch = { ...patch };
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'calendar_id')) {
+    nextPatch.calendar_id = resolveScheduleCalendarId(nextPatch.calendar_id);
+  }
   const next = normalizeScheduleEvent({
     ...current,
-    ...patch,
+    ...nextPatch,
     id: current.id,
     workspace_id: current.workspace_id,
     created_at: current.created_at ?? nowIso(),
@@ -8274,12 +9349,15 @@ function updateScheduleEventRecord(id, patch = {}) {
   });
   events[index] = next;
   state.scheduleEvents = [...events];
+  if (next.calendar_id) {
+    setActiveScheduleCalendarId(next.calendar_id);
+  }
   appendCrudEvent({
     source: 'app',
     event: 'schedule_event_updated',
     entity_type: 'schedule_event',
     entity_id: id,
-    data: { fields: Object.keys(patch ?? {}) }
+    data: { fields: Object.keys(nextPatch ?? {}) }
   });
   return next;
 }
@@ -10618,6 +11696,10 @@ function render() {
   renderShoppingPanel();
   renderSchedulingPage();
   renderSchedulingSidebar();
+  syncMobileCalendarsModalInputs();
+  if (!isMobileViewport() || getActiveView() !== 'scheduling') {
+    closeMobileCalendarsModal();
+  }
   renderView();
   renderModuleNavigation();
   renderMobileNavigation();
@@ -11856,6 +12938,12 @@ function getDefaultUserSettings() {
       default_group: 'none',
       default_view: 'list',
       hidden_holiday_keys: []
+    },
+    scheduling_ui: {
+      show_tasks: false,
+      week_mode: 'seven',
+      hidden_kinds: [],
+      hidden_calendar_ids: []
     }
   };
 }
@@ -11866,6 +12954,21 @@ function normalizeUserSettings(settings) {
   const taskUi = source.task_ui && typeof source.task_ui === 'object' && !Array.isArray(source.task_ui)
     ? source.task_ui
     : {};
+  const schedulingUi = source.scheduling_ui && typeof source.scheduling_ui === 'object' && !Array.isArray(source.scheduling_ui)
+    ? source.scheduling_ui
+    : {};
+  const normalizeHiddenCalendarIds = (value) => {
+    if (!Array.isArray(value)) return [...defaults.scheduling_ui.hidden_calendar_ids];
+    const seen = new Set();
+    const ids = [];
+    value.forEach((entry) => {
+      const id = String(entry ?? '').trim();
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      ids.push(id);
+    });
+    return ids;
+  };
   const normalized = {
     notifications_enabled: Boolean(source.notifications_enabled),
     checkin_extend_minutes: Number(source.checkin_extend_minutes),
@@ -11882,6 +12985,16 @@ function normalizeUserSettings(settings) {
       default_group: String(taskUi.default_group ?? defaults.task_ui.default_group),
       default_view: String(taskUi.default_view ?? defaults.task_ui.default_view),
       hidden_holiday_keys: normalizeHiddenHolidayKeys(taskUi.hidden_holiday_keys ?? defaults.task_ui.hidden_holiday_keys)
+    },
+    scheduling_ui: {
+      show_tasks: schedulingUi.show_tasks !== undefined
+        ? Boolean(schedulingUi.show_tasks)
+        : defaults.scheduling_ui.show_tasks,
+      week_mode: schedulingUi.week_mode === 'workweek' ? 'workweek' : 'seven',
+      hidden_kinds: normalizeSchedulingHiddenKinds(schedulingUi.hidden_kinds ?? defaults.scheduling_ui.hidden_kinds),
+      hidden_calendar_ids: normalizeHiddenCalendarIds(
+        schedulingUi.hidden_calendar_ids ?? defaults.scheduling_ui.hidden_calendar_ids
+      )
     }
   };
   if (!Number.isFinite(normalized.checkin_extend_minutes) || normalized.checkin_extend_minutes <= 0) {
@@ -11903,6 +13016,12 @@ function buildUserSettingsPayload() {
       default_group: getTaskGroupMode(),
       default_view: getTaskView(),
       hidden_holiday_keys: getCalendarHiddenHolidayKeys()
+    },
+    scheduling_ui: {
+      show_tasks: getSchedulingShowTasks(),
+      week_mode: getSchedulingWeekMode(),
+      hidden_kinds: getSchedulingHiddenKinds(),
+      hidden_calendar_ids: getSchedulingHiddenCalendarIds()
     }
   });
 }
@@ -11920,6 +13039,10 @@ function applyUserSettingsPayload(settings) {
   setTaskGroupMode(next.task_ui.default_group);
   setTaskView(next.task_ui.default_view);
   setCalendarHiddenHolidayKeys(next.task_ui.hidden_holiday_keys);
+  setSchedulingShowTasks(next.scheduling_ui.show_tasks);
+  setSchedulingWeekMode(next.scheduling_ui.week_mode);
+  state.ui.schedulingHiddenKinds = normalizeSchedulingHiddenKinds(next.scheduling_ui.hidden_kinds);
+  state.ui.schedulingHiddenCalendarIds = next.scheduling_ui.hidden_calendar_ids;
 }
 
 async function hydrateUserSettingsFromServer() {
@@ -15791,16 +16914,40 @@ function setSchedulingCalendarWeekStart(date) {
   setSchedulingCalendarMonth(weekStart);
 }
 
+function getSchedulingCalendarDay() {
+  const value = state.ui?.schedulingCalendarDay ?? null;
+  if (value) {
+    const parsed = parseDateOnlyValue(value);
+    if (parsed) return parsed;
+  }
+  const weekStart = getSchedulingCalendarWeekStart();
+  return new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate(), 12, 0, 0, 0);
+}
+
+function setSchedulingCalendarDay(date) {
+  const parsed = parseDateOnlyValue(formatDateOnlyValue(new Date(date)));
+  if (!parsed) return;
+  state.ui = state.ui ?? {};
+  state.ui.schedulingCalendarDay = formatDateOnlyValue(parsed);
+  setSchedulingCalendarMonth(parsed);
+  setSchedulingCalendarWeekStart(parsed);
+}
+
 function getSchedulingCalendarRange() {
-  return state.ui?.schedulingCalendarRange === 'week' ? 'week' : 'month';
+  const value = state.ui?.schedulingCalendarRange;
+  if (value === 'week' || value === 'day') return value;
+  return 'month';
 }
 
 function setSchedulingCalendarRange(value) {
-  const next = value === 'week' ? 'week' : 'month';
+  const next = value === 'week' || value === 'day' ? value : 'month';
   state.ui = state.ui ?? {};
   state.ui.schedulingCalendarRange = next;
-  if (next === 'week' && !state.ui.schedulingCalendarWeekStart) {
+  if ((next === 'week' || next === 'day') && !state.ui.schedulingCalendarWeekStart) {
     setSchedulingCalendarWeekStart(new Date());
+  }
+  if (next === 'day' && !state.ui.schedulingCalendarDay) {
+    setSchedulingCalendarDay(new Date());
   }
 }
 
@@ -16040,6 +17187,12 @@ function formatCalendarTimeRangeLabel(startDate, endDate) {
   return `${startLabel} - ${formatCalendarTimeLabel(endDate)}`;
 }
 
+function applyScheduleCalendarAccent(element, color) {
+  if (!(element instanceof HTMLElement)) return;
+  const normalizedColor = normalizeScheduleCalendarColor(color);
+  element.style.boxShadow = `inset 3px 0 0 ${normalizedColor}`;
+}
+
 function renderSchedulingPage() {
   if (!schedulingCalendar) return;
   schedulingCalendar.innerHTML = '';
@@ -16052,9 +17205,15 @@ function renderSchedulingPage() {
   }
 
   const mobileViewport = isMobileViewport();
+  const panelHeader = schedulingPage?.querySelector('.panel-header') ?? null;
+  if (panelHeader && schedulingAddBtn && !mobileViewport && schedulingAddBtn.parentElement !== panelHeader) {
+    schedulingAddBtn.classList.remove('scheduling-mobile-add-btn');
+    panelHeader.appendChild(schedulingAddBtn);
+  }
   const rangeMode = getSchedulingCalendarRange();
   const weekMode = getSchedulingWeekMode();
   const monthDate = getSchedulingCalendarMonth();
+  const dayDate = getSchedulingCalendarDay();
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
   const firstDay = new Date(year, month, 1);
@@ -16081,12 +17240,15 @@ function renderSchedulingPage() {
       return date;
     });
   })();
-  const weekDisplayStart = visibleWeekDates[0] ?? weekStart;
-  const weekDisplayEnd = visibleWeekDates[visibleWeekDates.length - 1] ?? weekEnd;
-  const rangeStart = rangeMode === 'week'
+  const timeGridDates = rangeMode === 'day'
+    ? [new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate(), 12, 0, 0, 0)]
+    : visibleWeekDates;
+  const weekDisplayStart = timeGridDates[0] ?? weekStart;
+  const weekDisplayEnd = timeGridDates[timeGridDates.length - 1] ?? weekEnd;
+  const rangeStart = rangeMode === 'week' || rangeMode === 'day'
     ? new Date(weekDisplayStart.getFullYear(), weekDisplayStart.getMonth(), weekDisplayStart.getDate(), 0, 0, 0, 0)
     : new Date(year, month, 1, 0, 0, 0, 0);
-  const rangeEnd = rangeMode === 'week'
+  const rangeEnd = rangeMode === 'week' || rangeMode === 'day'
     ? new Date(weekDisplayEnd.getFullYear(), weekDisplayEnd.getMonth(), weekDisplayEnd.getDate(), 23, 59, 59, 999)
     : new Date(year, month, totalDays, 23, 59, 59, 999);
 
@@ -16106,6 +17268,13 @@ function renderSchedulingPage() {
     title.textContent = mobileViewport && sameMonth
       ? weekDisplayStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
       : rangeLabel;
+  } else if (rangeMode === 'day') {
+    title.textContent = dayDate.toLocaleDateString(
+      undefined,
+      mobileViewport
+        ? { month: 'long', day: 'numeric', year: 'numeric' }
+        : { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }
+    );
   } else {
     title.textContent = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   }
@@ -16116,13 +17285,23 @@ function renderSchedulingPage() {
   rangeSelect.innerHTML = `
     <option value="month">Month</option>
     <option value="week">Week</option>
+    <option value="day">Day</option>
   `;
   rangeSelect.value = rangeMode;
   rangeSelect.addEventListener('change', () => {
-    setSchedulingCalendarRange(rangeSelect.value);
-    if (rangeSelect.value === 'week') {
-      const anchor = rangeMode === 'week' ? weekStart : new Date(year, month, 1);
+    const nextRange = rangeSelect.value;
+    const anchor = rangeMode === 'day'
+      ? dayDate
+      : rangeMode === 'week'
+        ? weekDisplayStart
+        : new Date(year, month, 1, 12, 0, 0, 0);
+    setSchedulingCalendarRange(nextRange);
+    if (nextRange === 'week') {
       setSchedulingCalendarWeekStart(anchor);
+    } else if (nextRange === 'day') {
+      setSchedulingCalendarDay(anchor);
+    } else {
+      setSchedulingCalendarMonth(anchor);
     }
     render();
   });
@@ -16130,9 +17309,16 @@ function renderSchedulingPage() {
   prevBtn.type = 'button';
   prevBtn.className = 'icon-button';
   prevBtn.textContent = '‹';
-  prevBtn.title = rangeMode === 'week' ? 'Previous week' : 'Previous month';
+  prevBtn.title = rangeMode === 'day'
+    ? 'Previous day'
+    : rangeMode === 'week'
+      ? 'Previous week'
+      : 'Previous month';
   prevBtn.addEventListener('click', () => {
-    if (rangeMode === 'week') {
+    if (rangeMode === 'day') {
+      const prevDay = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate() - 1, 12, 0, 0, 0);
+      setSchedulingCalendarDay(prevDay);
+    } else if (rangeMode === 'week') {
       const prevWeek = new Date(weekStart.getTime());
       prevWeek.setDate(prevWeek.getDate() - 7);
       setSchedulingCalendarWeekStart(prevWeek);
@@ -16146,9 +17332,16 @@ function renderSchedulingPage() {
   nextBtn.type = 'button';
   nextBtn.className = 'icon-button';
   nextBtn.textContent = '›';
-  nextBtn.title = rangeMode === 'week' ? 'Next week' : 'Next month';
+  nextBtn.title = rangeMode === 'day'
+    ? 'Next day'
+    : rangeMode === 'week'
+      ? 'Next week'
+      : 'Next month';
   nextBtn.addEventListener('click', () => {
-    if (rangeMode === 'week') {
+    if (rangeMode === 'day') {
+      const nextDay = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate() + 1, 12, 0, 0, 0);
+      setSchedulingCalendarDay(nextDay);
+    } else if (rangeMode === 'week') {
       const nextWeek = new Date(weekStart.getTime());
       nextWeek.setDate(nextWeek.getDate() + 7);
       setSchedulingCalendarWeekStart(nextWeek);
@@ -16166,7 +17359,9 @@ function renderSchedulingPage() {
   todayBtn.addEventListener('click', () => {
     const today = new Date();
     setSchedulingCalendarMonth(today);
-    if (rangeMode === 'week') {
+    if (rangeMode === 'day') {
+      setSchedulingCalendarDay(today);
+    } else if (rangeMode === 'week') {
       setSchedulingCalendarWeekStart(today);
     }
     render();
@@ -16180,7 +17375,9 @@ function renderSchedulingPage() {
     const monthValue = parseMonthValue(monthJumpInput.value);
     if (!monthValue) return;
     setSchedulingCalendarMonth(monthValue);
-    if (rangeMode === 'week') {
+    if (rangeMode === 'day') {
+      setSchedulingCalendarDay(monthValue);
+    } else if (rangeMode === 'week') {
       setSchedulingCalendarWeekStart(monthValue);
     }
     render();
@@ -16189,12 +17386,14 @@ function renderSchedulingPage() {
   dateJumpInput.type = 'date';
   dateJumpInput.className = 'calendar-jump-input';
   dateJumpInput.title = 'Jump to specific date';
-  dateJumpInput.value = formatDateOnlyValue(rangeMode === 'week' ? weekDisplayStart : firstDay);
+  dateJumpInput.value = formatDateOnlyValue(rangeMode === 'day' ? dayDate : rangeMode === 'week' ? weekDisplayStart : firstDay);
   dateJumpInput.addEventListener('change', () => {
     const dateValue = parseDateOnlyValue(dateJumpInput.value);
     if (!dateValue) return;
     setSchedulingCalendarMonth(dateValue);
-    if (rangeMode === 'week') {
+    if (rangeMode === 'day') {
+      setSchedulingCalendarDay(dateValue);
+    } else if (rangeMode === 'week') {
       setSchedulingCalendarWeekStart(dateValue);
     }
     render();
@@ -16207,9 +17406,22 @@ function renderSchedulingPage() {
     navControls.appendChild(dateJumpInput);
   }
   controls.appendChild(rangeSelect);
-  header.appendChild(navControls);
-  header.appendChild(title);
-  header.appendChild(controls);
+  if (mobileViewport) {
+    const titleRow = document.createElement('div');
+    titleRow.className = 'scheduling-mobile-title-row';
+    titleRow.appendChild(title);
+    if (schedulingAddBtn) {
+      schedulingAddBtn.classList.add('scheduling-mobile-add-btn');
+      titleRow.appendChild(schedulingAddBtn);
+    }
+    header.appendChild(titleRow);
+    header.appendChild(navControls);
+    header.appendChild(controls);
+  } else {
+    header.appendChild(navControls);
+    header.appendChild(title);
+    header.appendChild(controls);
+  }
   schedulingCalendar.appendChild(header);
 
   const allDayByDate = new Map();
@@ -16224,9 +17436,16 @@ function renderSchedulingPage() {
     list.push(entry);
     timedByDate.set(key, list);
   };
+  const scheduleCalendarById = new Map(
+    getScheduleCalendarsForWorkspace({ includeArchived: false })
+      .map((calendar) => [calendar.id, calendar])
+  );
   getScheduleEventsForWorkspace()
     .filter(event => isSchedulingKindVisible(event.kind))
     .forEach((event) => {
+    const calendar = scheduleCalendarById.get(resolveScheduleCalendarId(event.calendar_id));
+    const calendarId = calendar?.id ?? null;
+    const calendarColor = calendar?.color ?? null;
     const startDate = event?.start_at ? new Date(event.start_at) : null;
     if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return;
     const endDate = event?.end_at ? new Date(event.end_at) : new Date(startDate);
@@ -16240,6 +17459,8 @@ function renderSchedulingPage() {
         pushAllDayEntry(key, {
           type: 'schedule',
           id: event.id,
+          calendar_id: calendarId,
+          calendar_color: calendarColor,
           kind: event.kind,
           title: event.title,
           all_day: true
@@ -16256,6 +17477,8 @@ function renderSchedulingPage() {
       pushTimedEntry(key, {
         type: 'schedule',
         id: event.id,
+        calendar_id: calendarId,
+        calendar_color: calendarColor,
         kind: event.kind,
         title: event.title,
         all_day: false,
@@ -16303,10 +17526,38 @@ function renderSchedulingPage() {
     });
   }
 
-  if (rangeMode === 'week') {
+  if (rangeMode === 'week' || rangeMode === 'day') {
     const todayKey = getDateIsoKey(new Date());
     const isMobileWeek = mobileViewport;
     const hourHeight = isMobileWeek ? 58 : 84;
+    const openCreateFromTimeSlot = (date, offsetY, columnHeight) => {
+      if (columnHeight <= 0) return;
+      const minuteStep = 30;
+      const minutesInDay = 24 * 60;
+      const ratio = Math.max(0, Math.min(1, offsetY / columnHeight));
+      const nearestMinutes = Math.round((ratio * minutesInDay) / minuteStep) * minuteStep;
+      const clampedMinutes = Math.max(0, Math.min((minutesInDay - minuteStep), nearestMinutes));
+      const startHour = Math.floor(clampedMinutes / 60);
+      const startMinute = clampedMinutes % 60;
+      const start = new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+        startHour,
+        startMinute,
+        0,
+        0
+      );
+      const end = new Date(start.getTime() + (60 * 60 * 1000));
+      openScheduleEventModal(null, {
+        title: '',
+        kind: 'event',
+        all_day: false,
+        start_at: start.toISOString(),
+        end_at: end.toISOString(),
+        notes: ''
+      });
+    };
     const weekWrap = document.createElement('div');
     weekWrap.className = 'scheduling-week-wrap';
     if (isMobileWeek) {
@@ -16314,11 +17565,11 @@ function renderSchedulingPage() {
     }
     const weekHeader = document.createElement('div');
     weekHeader.className = 'scheduling-week-header';
-    weekHeader.style.setProperty('--week-day-count', String(visibleWeekDates.length));
+    weekHeader.style.setProperty('--week-day-count', String(timeGridDates.length));
     const corner = document.createElement('div');
     corner.className = 'scheduling-week-corner';
     weekHeader.appendChild(corner);
-    visibleWeekDates.forEach((date) => {
+    timeGridDates.forEach((date) => {
       const dayCell = document.createElement('div');
       dayCell.className = 'scheduling-week-day-header';
       const key = getDateIsoKey(date);
@@ -16341,12 +17592,12 @@ function renderSchedulingPage() {
 
     const allDayRow = document.createElement('div');
     allDayRow.className = 'scheduling-week-all-day-row';
-    allDayRow.style.setProperty('--week-day-count', String(visibleWeekDates.length));
+    allDayRow.style.setProperty('--week-day-count', String(timeGridDates.length));
     const allDayLabel = document.createElement('div');
     allDayLabel.className = 'scheduling-week-all-day-label';
     allDayLabel.textContent = 'All day';
     allDayRow.appendChild(allDayLabel);
-    visibleWeekDates.forEach((date) => {
+    timeGridDates.forEach((date) => {
       const dayCell = document.createElement('div');
       dayCell.className = 'scheduling-week-all-day-cell';
       const key = getDateIsoKey(date);
@@ -16355,6 +17606,7 @@ function renderSchedulingPage() {
         const chip = document.createElement('div');
         if (entry.type === 'schedule') {
           chip.className = `calendar-item schedule-${toCssToken(entry.kind ?? 'event')}`;
+          applyScheduleCalendarAccent(chip, entry.calendar_color);
         } else {
           chip.className = `calendar-item ${entry.type}`;
         }
@@ -16384,7 +17636,7 @@ function renderSchedulingPage() {
     if (isMobileWeek) {
       body.classList.add('is-mobile');
     }
-    body.style.setProperty('--week-day-count', String(visibleWeekDates.length));
+    body.style.setProperty('--week-day-count', String(timeGridDates.length));
     body.style.setProperty('--hour-height', `${hourHeight}px`);
     const gutter = document.createElement('div');
     gutter.className = 'scheduling-week-time-gutter';
@@ -16398,10 +17650,11 @@ function renderSchedulingPage() {
     body.appendChild(gutter);
     const days = document.createElement('div');
     days.className = 'scheduling-week-days';
-    visibleWeekDates.forEach((date) => {
+    timeGridDates.forEach((date) => {
       const key = getDateIsoKey(date);
       const column = document.createElement('div');
       column.className = 'scheduling-week-day-column';
+      column.title = 'Click to create event';
       for (let hour = 1; hour < 24; hour += 1) {
         const line = document.createElement('div');
         line.className = 'scheduling-week-hour-line';
@@ -16447,17 +17700,32 @@ function renderSchedulingPage() {
         metaEl.textContent = formatCalendarTimeRangeLabel(entry.start, entry.end);
         block.appendChild(titleEl);
         block.appendChild(metaEl);
+        applyScheduleCalendarAccent(block, entry.calendar_color);
         block.addEventListener('click', () => {
           const current = (state.scheduleEvents ?? []).find(item => item.id === entry.id);
           if (current) openScheduleEventModal(current);
         });
         column.appendChild(block);
       });
+      column.addEventListener('click', (clickEvent) => {
+        if (!(clickEvent.target instanceof Element)) return;
+        if (clickEvent.target.closest('.scheduling-week-event')) return;
+        const bounds = column.getBoundingClientRect();
+        if (!bounds.height) return;
+        const offsetY = clickEvent.clientY - bounds.top;
+        openCreateFromTimeSlot(date, offsetY, bounds.height);
+      });
       days.appendChild(column);
     });
     body.appendChild(days);
     weekWrap.appendChild(body);
     schedulingCalendar.appendChild(weekWrap);
+    const syncWeekScrollbarComp = () => {
+      const scrollbarWidth = Math.max(0, body.offsetWidth - body.clientWidth);
+      weekWrap.style.setProperty('--scheduling-week-scrollbar-width', `${scrollbarWidth}px`);
+    };
+    syncWeekScrollbarComp();
+    requestAnimationFrame(syncWeekScrollbarComp);
     if (isMobileWeek) {
       body.scrollTop = Math.max(0, (new Date().getHours() - 2) * hourHeight);
     }
@@ -16501,6 +17769,7 @@ function renderSchedulingPage() {
       const item = document.createElement('div');
       if (entry.type === 'schedule') {
         item.className = `calendar-item schedule-${toCssToken(entry.kind ?? 'event')}`;
+        applyScheduleCalendarAccent(item, entry.calendar_color);
         if (!entry.all_day && entry.start instanceof Date && entry.end instanceof Date) {
           item.textContent = `${formatCalendarTimeLabel(entry.start)} · ${entry.title}`;
         } else {
@@ -19216,6 +20485,34 @@ function normalizeScheduleEventFormKind(kind) {
   return normalizeScheduleEventKind(kind);
 }
 
+function populateScheduleEventCalendarSelect(selectedId = null) {
+  if (!scheduleEventCalendar) return null;
+  const calendars = getScheduleCalendarsForWorkspace();
+  scheduleEventCalendar.innerHTML = '';
+  if (!calendars.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No calendars';
+    scheduleEventCalendar.appendChild(option);
+    scheduleEventCalendar.disabled = true;
+    scheduleEventCalendar.value = '';
+    return null;
+  }
+  calendars.forEach((calendar) => {
+    const option = document.createElement('option');
+    option.value = calendar.id;
+    option.textContent = calendar.name;
+    scheduleEventCalendar.appendChild(option);
+  });
+  scheduleEventCalendar.disabled = false;
+  const requestedId = String(selectedId ?? '').trim();
+  const resolvedId = calendars.some((calendar) => calendar.id === requestedId)
+    ? requestedId
+    : getActiveScheduleCalendarId() ?? calendars[0].id;
+  scheduleEventCalendar.value = resolvedId;
+  return resolvedId;
+}
+
 function syncScheduleEventDatetimeInputs() {
   if (!scheduleEventStart || !scheduleEventEnd || !scheduleEventAllDay) return;
   const allDay = Boolean(scheduleEventAllDay.checked);
@@ -19241,11 +20538,16 @@ function openScheduleEventModal(event = null, defaults = {}) {
   const startAt = defaults.start_at ?? event?.start_at ?? nowIso();
   const endAt = defaults.end_at ?? event?.end_at ?? null;
   const allDay = defaults.all_day ?? event?.all_day ?? false;
+  const calendarId = defaults.calendar_id ?? event?.calendar_id ?? getActiveScheduleCalendarId();
   if (scheduleEventModalTitle) {
     scheduleEventModalTitle.textContent = activeScheduleEventId ? 'Edit event' : 'New event';
   }
   if (scheduleEventTitle) {
     scheduleEventTitle.value = event?.title ?? defaults.title ?? '';
+  }
+  const resolvedCalendarId = populateScheduleEventCalendarSelect(calendarId);
+  if (resolvedCalendarId) {
+    setActiveScheduleCalendarId(resolvedCalendarId);
   }
   if (scheduleEventKind) {
     scheduleEventKind.value = normalizeScheduleEventFormKind(event?.kind ?? defaults.kind ?? 'event');
@@ -19283,6 +20585,7 @@ function openScheduleEventCreate(kind = 'event') {
   openScheduleEventModal(null, {
     title: '',
     kind: normalizedKind,
+    calendar_id: getActiveScheduleCalendarId(),
     all_day: isDayOff,
     start_at: startAt,
     end_at: startAt,
@@ -19352,6 +20655,12 @@ scheduleEventKind?.addEventListener('change', () => {
   if (kind === 'day-off') {
     scheduleEventAllDay.checked = true;
     syncScheduleEventDatetimeInputs();
+  }
+});
+scheduleEventCalendar?.addEventListener('change', () => {
+  const calendarId = String(scheduleEventCalendar.value ?? '').trim();
+  if (calendarId) {
+    setActiveScheduleCalendarId(calendarId);
   }
 });
 scheduleEventDelete?.addEventListener('click', () => {
@@ -20059,6 +21368,7 @@ scheduleEventForm?.addEventListener('submit', (event) => {
   event.preventDefault();
   if (!state.workspace) return;
   const title = normalizeTitleInput(scheduleEventTitle?.value ?? '');
+  const calendarId = String(scheduleEventCalendar?.value ?? '').trim() || getActiveScheduleCalendarId();
   const kind = normalizeScheduleEventFormKind(scheduleEventKind?.value ?? 'event');
   const allDay = Boolean(scheduleEventAllDay?.checked) || kind === 'day-off';
   const startAt = allDay
@@ -20071,6 +21381,10 @@ scheduleEventForm?.addEventListener('submit', (event) => {
     alert('Start date/time is required.');
     return;
   }
+  if (!calendarId) {
+    alert('Select a calendar.');
+    return;
+  }
   if (!endAt) {
     endAt = startAt;
   }
@@ -20080,6 +21394,7 @@ scheduleEventForm?.addEventListener('submit', (event) => {
   }
   const payload = {
     title: title || (kind === 'day-off' ? 'Day off' : 'Untitled event'),
+    calendar_id: calendarId,
     kind,
     all_day: allDay ? 1 : 0,
     start_at: startAt,

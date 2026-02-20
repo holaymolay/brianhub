@@ -29,6 +29,8 @@ function defaultState() {
       calendarHiddenHolidayKeys: [],
       schedulingShowTasks: false,
       schedulingHiddenKinds: [],
+      schedulingHiddenCalendarIds: [],
+      schedulingActiveCalendarId: null,
       schedulingWeekMode: 'seven',
       forceAuthGate: false
     }
@@ -79,6 +81,12 @@ function normalizeState(state) {
   }
   if (!Array.isArray(next.ui.schedulingHiddenKinds)) {
     next.ui.schedulingHiddenKinds = [];
+  }
+  if (!Array.isArray(next.ui.schedulingHiddenCalendarIds)) {
+    next.ui.schedulingHiddenCalendarIds = [];
+  }
+  if (!('schedulingActiveCalendarId' in next.ui)) {
+    next.ui.schedulingActiveCalendarId = null;
   }
   if (!['seven', 'workweek'].includes(next.ui.schedulingWeekMode)) {
     next.ui.schedulingWeekMode = 'seven';
