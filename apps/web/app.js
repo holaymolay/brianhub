@@ -29,6 +29,7 @@ const state = {
   workflowInstances: localData.workflowInstances ?? [],
   workflowInstanceTasks: localData.workflowInstanceTasks ?? [],
   scheduleCalendars: localData.scheduleCalendars ?? [],
+  scheduleEventTypes: localData.scheduleEventTypes ?? [],
   scheduleEvents: localData.scheduleEvents ?? [],
   statuses: localData.statuses ?? [],
   taskTypes: localData.taskTypes ?? [],
@@ -82,6 +83,10 @@ const DEFAULT_TASK_TYPE_DEFS = [
   { name: 'General', is_default: 1 },
   { name: 'Bill Due', is_default: 1 }
 ];
+const DEFAULT_SCHEDULE_EVENT_TYPE_DEFS = [
+  { name: 'General', description_template: '', default_color: '#63b3ed' }
+];
+const DEFAULT_SCHEDULE_EVENT_REMINDER_MINUTES = 10;
 const DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000001';
 const TASK_FILTER_UNASSIGNED = 'unassigned';
 const TASK_FILTER_INBOX = '__inbox__';
@@ -391,11 +396,20 @@ const scheduleEventForm = document.getElementById('schedule-event-form');
 const scheduleEventTitle = document.getElementById('schedule-event-title');
 const scheduleEventCalendar = document.getElementById('schedule-event-calendar');
 const scheduleEventKind = document.getElementById('schedule-event-kind');
+const scheduleEventType = document.getElementById('schedule-event-type');
+const scheduleEventColorOverride = document.getElementById('schedule-event-color-override');
+const scheduleEventColor = document.getElementById('schedule-event-color');
 const scheduleEventAllDay = document.getElementById('schedule-event-all-day');
+const scheduleEventRepeatInterval = document.getElementById('schedule-event-repeat-interval');
+const scheduleEventRepeatUnit = document.getElementById('schedule-event-repeat-unit');
 const scheduleEventStart = document.getElementById('schedule-event-start');
 const scheduleEventEnd = document.getElementById('schedule-event-end');
+const scheduleEventReminder = document.getElementById('schedule-event-reminder');
+const scheduleEventAttendees = document.getElementById('schedule-event-attendees');
 const scheduleEventNotes = document.getElementById('schedule-event-notes');
 const scheduleEventDelete = document.getElementById('schedule-event-delete');
+const scheduleEventEdit = document.getElementById('schedule-event-edit');
+const scheduleEventSave = document.getElementById('schedule-event-save');
 const scheduleEventCancel = document.getElementById('schedule-event-cancel');
 const templateModal = document.getElementById('template-modal');
 const templateModalForm = document.getElementById('template-modal-form');
@@ -517,6 +531,14 @@ const automationCopyGuide = document.getElementById('automation-copy-guide');
 const taskTypesOpen = document.getElementById('task-types-open');
 const taskTypesModal = document.getElementById('task-types-modal');
 const taskTypesClose = document.getElementById('task-types-close');
+const scheduleEventTypesOpen = document.getElementById('schedule-event-types-open');
+const scheduleEventTypesModal = document.getElementById('schedule-event-types-modal');
+const scheduleEventTypesClose = document.getElementById('schedule-event-types-close');
+const scheduleEventTypeListEl = document.getElementById('schedule-event-type-list');
+const scheduleEventTypeNameInput = document.getElementById('schedule-event-type-name');
+const scheduleEventTypeColorInput = document.getElementById('schedule-event-type-color');
+const scheduleEventTypeTemplateInput = document.getElementById('schedule-event-type-template');
+const scheduleEventTypeAddBtn = document.getElementById('schedule-event-type-add');
 const storeRulesOpen = document.getElementById('store-rules-open');
 const storeRulesModal = document.getElementById('store-rules-modal');
 const storeRulesClose = document.getElementById('store-rules-close');
@@ -590,6 +612,7 @@ const taskUiGroupSelect = document.getElementById('task-ui-group');
 const taskUiViewSelect = document.getElementById('task-ui-view');
 const taskUiHolidayList = document.getElementById('task-ui-holiday-list');
 const schedulingUiWeekModeSelect = document.getElementById('scheduling-ui-week-mode');
+const schedulingUiTimeZoneInput = document.getElementById('scheduling-ui-time-zone');
 const taskEditor = document.getElementById('task-editor');
 const taskEditorBody = document.getElementById('task-editor-body');
 const taskEditorScrollbar = document.getElementById('task-editor-scrollbar');
@@ -700,6 +723,7 @@ let lastSyncAttentionMutationId = null;
 let taskEditorSwapTimer = null;
 let activeNoticeId = null;
 let activeScheduleEventId = null;
+let scheduleEventModalMode = 'create';
 let noticeModalMode = 'create';
 let noticeTypePreviousKey = 'general';
 let shoppingStorePreviousSelection = '';
@@ -2220,6 +2244,23 @@ schedulingUiWeekModeSelect?.addEventListener('change', () => {
   render();
 });
 
+schedulingUiTimeZoneInput?.addEventListener('change', () => {
+  const rawValue = String(schedulingUiTimeZoneInput.value ?? '').trim();
+  if (!rawValue) {
+    schedulingUiTimeZoneInput.value = getSchedulingDisplayTimeZone();
+    return;
+  }
+  const normalized = normalizeTimeZone(rawValue, '');
+  if (!normalized) {
+    schedulingUiTimeZoneInput.value = getSchedulingDisplayTimeZone();
+    alert('Please enter a valid IANA time zone (example: America/Los_Angeles).');
+    return;
+  }
+  setSchedulingDisplayTimeZone(normalized);
+  queueUserSettingsSave();
+  render();
+});
+
 taskColumnsClose?.addEventListener('click', closeTaskColumnsModal);
 taskColumnsModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeTaskColumnsModal);
 
@@ -2241,6 +2282,28 @@ taskTypeAddBtn?.addEventListener('click', async () => {
   } catch (err) {
     alert(err.message || 'Unable to add task type.');
   }
+});
+
+scheduleEventTypeAddBtn?.addEventListener('click', () => {
+  const name = scheduleEventTypeNameInput?.value?.trim();
+  if (!name) return;
+  const defaultColor = normalizeScheduleEventColor(scheduleEventTypeColorInput?.value ?? '')
+    ?? getNextScheduleEventTypeColor();
+  const template = String(scheduleEventTypeTemplateInput?.value ?? '');
+  const created = createScheduleEventTypeRecord({
+    name,
+    default_color: defaultColor,
+    description_template: template
+  });
+  if (created?.duplicate) {
+    alert('An event type with that name already exists.');
+    return;
+  }
+  if (!created) return;
+  if (scheduleEventTypeNameInput) scheduleEventTypeNameInput.value = '';
+  if (scheduleEventTypeColorInput) scheduleEventTypeColorInput.value = getNextScheduleEventTypeColor();
+  if (scheduleEventTypeTemplateInput) scheduleEventTypeTemplateInput.value = '';
+  render();
 });
 
 storeRuleAddBtn?.addEventListener('click', async () => {
@@ -2559,6 +2622,9 @@ function getWorkspaceExportPayload(workspaceId, options = {}) {
   const scheduleCalendars = (state.scheduleCalendars ?? [])
     .filter(calendar => calendar.workspace_id === workspaceId)
     .map(calendar => ({ ...calendar }));
+  const scheduleEventTypes = (state.scheduleEventTypes ?? [])
+    .filter(type => type.workspace_id === workspaceId)
+    .map(type => ({ ...type }));
   const scheduleEvents = (state.scheduleEvents ?? [])
     .filter(event => event.workspace_id === workspaceId)
     .map(event => ({ ...event }));
@@ -2597,6 +2663,7 @@ function getWorkspaceExportPayload(workspaceId, options = {}) {
     workflowInstances,
     workflowInstanceTasks,
     scheduleCalendars,
+    scheduleEventTypes,
     scheduleEvents,
     notices,
     noticeTypes,
@@ -2717,6 +2784,11 @@ function buildExportCsv(payload) {
     status: item.color ?? '',
     archived: item.archived ? 1 : 0
   }));
+  pushRows('schedule_event_type', payload.scheduleEventTypes, item => ({
+    name: item.name,
+    status: item.description_template ?? '',
+    archived: item.archived ? 1 : 0
+  }));
   pushRows('schedule_event', payload.scheduleEvents, item => ({
     title: item.title,
     status: item.kind ?? '',
@@ -2826,6 +2898,7 @@ function buildExportMarkdown(payload) {
 
   lines.push(`## Scheduling (${(payload.scheduleEvents ?? []).length})`);
   lines.push(`- Calendars: ${(payload.scheduleCalendars ?? []).length}`);
+  lines.push(`- Event types: ${(payload.scheduleEventTypes ?? []).length}`);
   lines.push(`- Events: ${(payload.scheduleEvents ?? []).length}`);
   lines.push('');
 
@@ -2991,6 +3064,10 @@ function parseWorkspaceImportPayload(raw) {
   const scheduleCalendars = cloneArrayOfObjects(raw.scheduleCalendars)
     .filter(item => item.workspace_id === workspace.id);
   const scheduleCalendarIdSet = new Set(scheduleCalendars.map(item => item.id).filter(Boolean));
+  const scheduleEventTypes = cloneArrayOfObjects(raw.scheduleEventTypes)
+    .filter(item => item.workspace_id === workspace.id);
+  const scheduleEventTypeIdSet = new Set(scheduleEventTypes.map(item => item.id).filter(Boolean));
+  const hasScheduleEventTypes = scheduleEventTypes.length > 0;
 
   return {
     workspace,
@@ -3018,11 +3095,15 @@ function parseWorkspaceImportPayload(raw) {
     workflowInstanceTasks: cloneArrayOfObjects(raw.workflowInstanceTasks)
       .filter(item => workflowInstanceIdSet.has(item.workflow_instance_id) && taskIdSet.has(item.task_id)),
     scheduleCalendars,
+    scheduleEventTypes,
     scheduleEvents: cloneArrayOfObjects(raw.scheduleEvents)
       .filter(item => item.workspace_id === workspace.id)
       .map(item => ({
         ...item,
-        calendar_id: scheduleCalendarIdSet.has(item.calendar_id) ? item.calendar_id : null
+        calendar_id: scheduleCalendarIdSet.has(item.calendar_id) ? item.calendar_id : null,
+        event_type_id: hasScheduleEventTypes
+          ? (scheduleEventTypeIdSet.has(item.event_type_id) ? item.event_type_id : null)
+          : (item.event_type_id ?? null)
       })),
     notices: cloneArrayOfObjects(raw.notices),
     noticeTypes: cloneArrayOfObjects(raw.noticeTypes),
@@ -3146,6 +3227,10 @@ function applyImportedWorkspacePayload(payload, options = {}) {
   state.scheduleCalendars = [
     ...keepByWorkspace(state.scheduleCalendars),
     ...payload.scheduleCalendars.map(normalizeScheduleCalendar)
+  ];
+  state.scheduleEventTypes = [
+    ...keepByWorkspace(state.scheduleEventTypes),
+    ...payload.scheduleEventTypes.map(normalizeScheduleEventType)
   ];
   state.scheduleEvents = [
     ...keepByWorkspace(state.scheduleEvents),
@@ -3772,7 +3857,8 @@ function buildScheduleCalendarListItem(calendar, options = {}) {
   const meta = document.createElement('span');
   meta.className = 'schedule-calendar-meta';
   const count = getScheduleCalendarEventCount(calendar.id);
-  meta.textContent = `${count} event${count === 1 ? '' : 's'}`;
+  const calendarTimeZone = normalizeTimeZone(calendar.time_zone ?? getSystemTimeZone());
+  meta.textContent = `${count} event${count === 1 ? '' : 's'} · ${calendarTimeZone}`;
   labelWrap.appendChild(meta);
   left.appendChild(labelWrap);
 
@@ -3854,7 +3940,19 @@ function openScheduleCalendarCreatePrompt() {
   if (!state.workspace) return;
   const response = prompt('New calendar name');
   if (response === null) return;
-  const created = createScheduleCalendarRecord({ name: response });
+  const defaultTimeZone = getSchedulingDisplayTimeZone();
+  const timeZoneResponse = prompt('Calendar default time zone (IANA)', defaultTimeZone);
+  if (timeZoneResponse === null) return;
+  if (!String(timeZoneResponse).trim()) {
+    alert('Calendar time zone is required.');
+    return;
+  }
+  const normalizedTimeZone = normalizeTimeZone(timeZoneResponse, '');
+  if (!normalizedTimeZone) {
+    alert('Please enter a valid IANA time zone (example: America/Los_Angeles).');
+    return;
+  }
+  const created = createScheduleCalendarRecord({ name: response, time_zone: normalizedTimeZone });
   if (!created) {
     alert('Calendar name is required.');
     return;
@@ -3872,7 +3970,22 @@ function openScheduleCalendarEditPrompt(calendarId) {
   if (!existing) return;
   const response = prompt('Calendar name', existing.name);
   if (response === null) return;
-  const updated = updateScheduleCalendarRecord(calendarId, { name: response });
+  const currentTimeZone = normalizeTimeZone(existing.time_zone ?? getSchedulingDisplayTimeZone());
+  const timeZoneResponse = prompt('Calendar default time zone (IANA)', currentTimeZone);
+  if (timeZoneResponse === null) return;
+  if (!String(timeZoneResponse).trim()) {
+    alert('Calendar time zone is required.');
+    return;
+  }
+  const normalizedTimeZone = normalizeTimeZone(timeZoneResponse, '');
+  if (!normalizedTimeZone) {
+    alert('Please enter a valid IANA time zone (example: America/Los_Angeles).');
+    return;
+  }
+  const updated = updateScheduleCalendarRecord(calendarId, {
+    name: response,
+    time_zone: normalizedTimeZone
+  });
   if (!updated) {
     alert('Calendar name is required.');
     return;
@@ -4626,6 +4739,37 @@ function getSchedulingWeekMode() {
 function setSchedulingWeekMode(value) {
   state.ui = state.ui ?? {};
   state.ui.schedulingWeekMode = normalizeSchedulingWeekMode(value);
+}
+
+function getSystemTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+function normalizeTimeZone(value, fallback = getSystemTimeZone()) {
+  const candidate = String(value ?? '').trim();
+  if (!candidate) return String(fallback || 'UTC');
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    if (fallback === null || fallback === undefined || fallback === '') {
+      return '';
+    }
+    return String(fallback || 'UTC');
+  }
+}
+
+function getSchedulingDisplayTimeZone() {
+  return normalizeTimeZone(state.ui?.schedulingTimeZone ?? getSystemTimeZone());
+}
+
+function setSchedulingDisplayTimeZone(value) {
+  state.ui = state.ui ?? {};
+  state.ui.schedulingTimeZone = normalizeTimeZone(value);
 }
 
 function normalizeSchedulingHiddenKinds(value) {
@@ -7561,6 +7705,7 @@ function persistLocalData() {
     workflowInstances: state.workflowInstances ?? [],
     workflowInstanceTasks: state.workflowInstanceTasks ?? [],
     scheduleCalendars: state.scheduleCalendars ?? [],
+    scheduleEventTypes: state.scheduleEventTypes ?? [],
     scheduleEvents: state.scheduleEvents ?? [],
     notices: state.notices ?? [],
     noticeTypes: state.noticeTypes ?? [],
@@ -7650,6 +7795,7 @@ function snapshotLocalData() {
     workflowInstances: state.workflowInstances ?? [],
     workflowInstanceTasks: state.workflowInstanceTasks ?? [],
     scheduleCalendars: state.scheduleCalendars ?? [],
+    scheduleEventTypes: state.scheduleEventTypes ?? [],
     scheduleEvents: state.scheduleEvents ?? [],
     notices: state.notices ?? [],
     noticeTypes: state.noticeTypes ?? [],
@@ -7681,6 +7827,7 @@ function applyLocalDataSnapshot(data) {
   state.workflowInstances = data.workflowInstances ?? [];
   state.workflowInstanceTasks = data.workflowInstanceTasks ?? [];
   state.scheduleCalendars = (data.scheduleCalendars ?? []).map(normalizeScheduleCalendar);
+  state.scheduleEventTypes = (data.scheduleEventTypes ?? []).map(normalizeScheduleEventType);
   state.scheduleEvents = (data.scheduleEvents ?? []).map(normalizeScheduleEvent);
   state.notices = data.notices ?? [];
   state.noticeTypes = data.noticeTypes ?? [];
@@ -7893,12 +8040,30 @@ function ensureLocalWorkspaceDefaults(workspace) {
       workspace_id: workspace.id,
       name: 'Primary',
       color: SCHEDULE_CALENDAR_COLOR_PALETTE[0],
+      time_zone: getSchedulingDisplayTimeZone(),
       sort_order: 10,
       archived: 0,
       created_at: now,
       updated_at: now
     });
     state.scheduleCalendars = [...(state.scheduleCalendars ?? []), fallbackCalendar];
+  }
+  const workspaceEventTypes = (state.scheduleEventTypes ?? [])
+    .map(normalizeScheduleEventType)
+    .filter((type) => type.workspace_id === workspace.id && !type.archived);
+  if (!workspaceEventTypes.length) {
+    const now = new Date().toISOString();
+    const defaults = DEFAULT_SCHEDULE_EVENT_TYPE_DEFS.map((def) => normalizeScheduleEventType({
+      id: createId(),
+      workspace_id: workspace.id,
+      name: def.name,
+      description_template: def.description_template ?? '',
+      default_color: def.default_color ?? null,
+      archived: 0,
+      created_at: now,
+      updated_at: now
+    }));
+    state.scheduleEventTypes = [...(state.scheduleEventTypes ?? []), ...defaults];
   }
   const resolvedActiveCalendarId = getActiveScheduleCalendarId();
   if (resolvedActiveCalendarId !== state.ui?.schedulingActiveCalendarId) {
@@ -7910,6 +8075,7 @@ function ensureLocalWorkspaceDefaults(workspace) {
       state.ui.schedulingHiddenCalendarIds
     );
   }
+  ensureScheduleEventsHaveValidTypeIds(workspace);
 }
 
 async function loadWorkspaces() {
@@ -8134,12 +8300,137 @@ function normalizeScheduleEventKind(kind) {
   return 'event';
 }
 
-function normalizeScheduleCalendarColor(value) {
-  const color = String(value ?? '').trim().toLowerCase();
-  if (/^#[0-9a-f]{6}$/i.test(color)) {
-    return color;
+function normalizeScheduleEventRecurrenceInterval(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.floor(parsed);
+  if (rounded <= 0) return null;
+  return rounded;
+}
+
+function normalizeScheduleEventRecurrenceUnit(value) {
+  const unit = String(value ?? '').trim().toLowerCase();
+  if (!unit) return null;
+  return RECURRENCE_UNITS.has(unit) ? unit : null;
+}
+
+function normalizeScheduleEventReminderOffsetMinutes(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.floor(parsed);
+  if (rounded < 0) return null;
+  return rounded;
+}
+
+function normalizeScheduleEventAttendeeUserIds(value) {
+  let source = value;
+  if (typeof source === 'string') {
+    const trimmed = source.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      source = parsed;
+    } catch {
+      source = trimmed.split(',').map((entry) => entry.trim()).filter(Boolean);
+    }
   }
+  if (!Array.isArray(source)) return [];
+  const seen = new Set();
+  const normalized = [];
+  source.forEach((entry) => {
+    const id = String(entry ?? '').trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    normalized.push(id);
+  });
+  return normalized;
+}
+
+function normalizeScheduleEventColor(value) {
+  const color = String(value ?? '').trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color;
+  return null;
+}
+
+function pickSchedulePaletteColor(seed = '') {
+  const text = String(seed ?? '');
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+  }
+  const paletteSize = SCHEDULE_CALENDAR_COLOR_PALETTE.length;
+  const paletteIndex = Math.abs(hash) % paletteSize;
+  return SCHEDULE_CALENDAR_COLOR_PALETTE[paletteIndex];
+}
+
+function getNextScheduleEventTypeColor() {
+  const usedColors = new Set(
+    getScheduleEventTypesForWorkspace({ includeArchived: true })
+      .map((type) => normalizeScheduleEventColor(type.default_color))
+      .filter(Boolean)
+  );
+  const unused = SCHEDULE_CALENDAR_COLOR_PALETTE.find((color) => !usedColors.has(color));
+  if (unused) return unused;
+  const fallbackIndex = usedColors.size % SCHEDULE_CALENDAR_COLOR_PALETTE.length;
+  return SCHEDULE_CALENDAR_COLOR_PALETTE[fallbackIndex];
+}
+
+function normalizeScheduleEventType(type) {
+  const fallbackSeed = type?.id ?? type?.name ?? '';
+  return {
+    ...type,
+    name: normalizeTitleInput(type?.name ?? '') || 'Event type',
+    description_template: String(type?.description_template ?? ''),
+    default_color: normalizeScheduleEventColor(type?.default_color) ?? pickSchedulePaletteColor(fallbackSeed),
+    archived: Number(type?.archived) ? 1 : 0
+  };
+}
+
+function getScheduleEventTypesForWorkspace(options = {}) {
+  if (!state.workspace) return [];
+  const includeArchived = options.includeArchived === true;
+  return (state.scheduleEventTypes ?? [])
+    .map(normalizeScheduleEventType)
+    .filter((type) => {
+      if (type.workspace_id !== state.workspace.id) return false;
+      if (!includeArchived && type.archived) return false;
+      return true;
+    })
+    .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+}
+
+function getScheduleEventTypeById(typeId, options = {}) {
+  if (!typeId) return null;
+  const id = String(typeId).trim();
+  if (!id) return null;
+  return getScheduleEventTypesForWorkspace(options).find((type) => type.id === id) ?? null;
+}
+
+function resolveScheduleEventTypeId(typeId) {
+  const id = String(typeId ?? '').trim();
+  if (!id) return null;
+  return getScheduleEventTypeById(id) ? id : null;
+}
+
+function getScheduleEventTypeColor(typeId) {
+  const type = getScheduleEventTypeById(typeId);
+  return normalizeScheduleEventColor(type?.default_color) ?? null;
+}
+
+function getResolvedScheduleEventColor(event, fallbackColor = null) {
+  const override = normalizeScheduleEventColor(event?.color_override);
+  if (override) return override;
+  const typeColor = getScheduleEventTypeColor(event?.event_type_id);
+  if (typeColor) return typeColor;
+  const fallback = normalizeScheduleEventColor(fallbackColor);
+  if (fallback) return fallback;
   return SCHEDULE_CALENDAR_COLOR_PALETTE[0];
+}
+
+function normalizeScheduleCalendarColor(value) {
+  return normalizeScheduleEventColor(value) ?? SCHEDULE_CALENDAR_COLOR_PALETTE[0];
 }
 
 function normalizeScheduleCalendar(calendar) {
@@ -8150,21 +8441,32 @@ function normalizeScheduleCalendar(calendar) {
     ...calendar,
     name: normalizeTitleInput(calendar?.name ?? '') || 'Calendar',
     color: normalizeScheduleCalendarColor(calendar?.color),
+    time_zone: normalizeTimeZone(calendar?.time_zone ?? getSystemTimeZone()),
     archived: Number(calendar?.archived) ? 1 : 0,
     sort_order: sortOrder
   };
 }
 
 function normalizeScheduleEvent(event) {
+  const attendeeUserIds = normalizeScheduleEventAttendeeUserIds(event?.attendee_user_ids);
+  const organizerUserId = String(event?.organizer_user_id ?? '').trim() || null;
   return {
     ...event,
     kind: normalizeScheduleEventKind(event?.kind),
     title: normalizeTitleInput(event?.title ?? '') || 'Untitled event',
     calendar_id: event?.calendar_id ?? null,
+    event_type_id: event?.event_type_id ?? null,
+    color_override: normalizeScheduleEventColor(event?.color_override),
+    organizer_user_id: organizerUserId,
+    attendee_user_ids: attendeeUserIds,
     start_at: event?.start_at ?? null,
     end_at: event?.end_at ?? null,
     all_day: Number(event?.all_day) ? 1 : 0,
     notes: String(event?.notes ?? ''),
+    reminder_offset_minutes: normalizeScheduleEventReminderOffsetMinutes(event?.reminder_offset_minutes),
+    reminder_last_occurrence_at: String(event?.reminder_last_occurrence_at ?? '').trim() || null,
+    recurrence_interval: normalizeScheduleEventRecurrenceInterval(event?.recurrence_interval),
+    recurrence_unit: normalizeScheduleEventRecurrenceUnit(event?.recurrence_unit),
     archived: Number(event?.archived) ? 1 : 0
   };
 }
@@ -8191,6 +8493,11 @@ function getScheduleCalendarById(calendarId, options = {}) {
   if (!calendarId) return null;
   const calendars = getScheduleCalendarsForWorkspace(options);
   return calendars.find((calendar) => calendar.id === calendarId) ?? null;
+}
+
+function getScheduleCalendarTimeZone(calendarId, fallback = getSchedulingDisplayTimeZone()) {
+  const calendar = getScheduleCalendarById(calendarId, { includeArchived: true });
+  return normalizeTimeZone(calendar?.time_zone ?? fallback, fallback);
 }
 
 function getDefaultScheduleCalendarForWorkspace() {
@@ -8288,6 +8595,26 @@ function ensureScheduleEventsHaveValidCalendarIds(workspace) {
     return {
       ...normalized,
       calendar_id: defaultCalendar?.id ?? null,
+      updated_at: nowIso()
+    };
+  });
+  return changed;
+}
+
+function ensureScheduleEventsHaveValidTypeIds(workspace) {
+  if (!workspace?.id) return false;
+  const availableIds = new Set(getScheduleEventTypesForWorkspace({ includeArchived: false }).map((type) => type.id));
+  let changed = false;
+  state.scheduleEvents = (state.scheduleEvents ?? []).map((event) => {
+    const normalized = normalizeScheduleEvent(event);
+    if (normalized.workspace_id !== workspace.id) return normalized;
+    if (normalized.archived) return normalized;
+    const typeId = String(normalized.event_type_id ?? '').trim();
+    if (!typeId || availableIds.has(typeId)) return normalized;
+    changed = true;
+    return {
+      ...normalized,
+      event_type_id: null,
       updated_at: nowIso()
     };
   });
@@ -9213,6 +9540,7 @@ function createScheduleCalendarRecord(payload = {}) {
     workspace_id: state.workspace.id,
     name,
     color: payload.color ?? pickNextScheduleCalendarColor(),
+    time_zone: payload.time_zone ?? getSchedulingDisplayTimeZone(),
     sort_order: maxSortOrder + 10,
     archived: 0,
     created_at: now,
@@ -9246,6 +9574,9 @@ function updateScheduleCalendarRecord(id, patch = {}) {
     ...current,
     ...patch,
     name: nextName,
+    time_zone: patch.time_zone !== undefined
+      ? normalizeTimeZone(patch.time_zone, current.time_zone)
+      : current.time_zone,
     id: current.id,
     workspace_id: current.workspace_id,
     created_at: current.created_at ?? nowIso(),
@@ -9300,19 +9631,120 @@ function deleteScheduleCalendarRecord(id) {
   return { deleted: 1, reassignedCount };
 }
 
+function createScheduleEventTypeRecord(payload = {}) {
+  if (!state.workspace) return null;
+  const name = normalizeTitleInput(payload.name ?? '');
+  if (!name) return null;
+  const existing = getScheduleEventTypesForWorkspace({ includeArchived: true })
+    .find((type) => String(type.name).toLowerCase() === name.toLowerCase());
+  if (existing) return { ...existing, duplicate: true };
+  const now = nowIso();
+  const record = normalizeScheduleEventType({
+    id: createId(),
+    workspace_id: state.workspace.id,
+    name,
+    description_template: payload.description_template ?? '',
+    default_color: payload.default_color ?? pickSchedulePaletteColor(name),
+    archived: 0,
+    created_at: now,
+    updated_at: now
+  });
+  state.scheduleEventTypes = [...(state.scheduleEventTypes ?? []), record];
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_event_type_created',
+    entity_type: 'schedule_event_type',
+    entity_id: record.id
+  });
+  return record;
+}
+
+function updateScheduleEventTypeRecord(id, patch = {}) {
+  const types = state.scheduleEventTypes ?? [];
+  const index = types.findIndex((type) => type.id === id);
+  if (index < 0) return null;
+  const existing = normalizeScheduleEventType(types[index]);
+  const nextName = patch.name !== undefined ? normalizeTitleInput(patch.name) : existing.name;
+  if (!nextName) return null;
+  const duplicate = getScheduleEventTypesForWorkspace({ includeArchived: true })
+    .find((type) => type.id !== id && String(type.name).toLowerCase() === nextName.toLowerCase());
+  if (duplicate) return { ...existing, duplicate: true };
+  const next = normalizeScheduleEventType({
+    ...existing,
+    name: nextName,
+    description_template: patch.description_template !== undefined
+      ? String(patch.description_template ?? '')
+      : existing.description_template,
+    default_color: patch.default_color !== undefined
+      ? (normalizeScheduleEventColor(patch.default_color) ?? existing.default_color)
+      : existing.default_color,
+    updated_at: nowIso()
+  });
+  types[index] = next;
+  state.scheduleEventTypes = [...types];
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_event_type_updated',
+    entity_type: 'schedule_event_type',
+    entity_id: id,
+    data: { fields: Object.keys(patch ?? {}) }
+  });
+  return next;
+}
+
+function deleteScheduleEventTypeRecord(id) {
+  const existing = getScheduleEventTypeById(id, { includeArchived: true });
+  if (!existing) return { deleted: 0 };
+  const available = getScheduleEventTypesForWorkspace({ includeArchived: false });
+  if (available.length <= 1) {
+    return { deleted: 0, error: 'last-type' };
+  }
+  const fallback = available.find((type) => type.id !== id) ?? null;
+  state.scheduleEvents = (state.scheduleEvents ?? []).map((event) => {
+    const normalized = normalizeScheduleEvent(event);
+    if (normalized.workspace_id !== state.workspace?.id) return normalized;
+    if (normalized.event_type_id !== id) return normalized;
+    return {
+      ...normalized,
+      event_type_id: fallback?.id ?? null,
+      updated_at: nowIso()
+    };
+  });
+  state.scheduleEventTypes = (state.scheduleEventTypes ?? [])
+    .filter((type) => type.id !== id);
+  appendCrudEvent({
+    source: 'app',
+    event: 'schedule_event_type_deleted',
+    entity_type: 'schedule_event_type',
+    entity_id: id,
+    data: { fallback_type_id: fallback?.id ?? null }
+  });
+  return { deleted: 1 };
+}
+
 function createScheduleEventRecord(payload) {
   if (!state.workspace) return null;
   const now = nowIso();
+  const organizerUserId = getAuthState().user?.id ?? null;
   const event = normalizeScheduleEvent({
     id: createId(),
     workspace_id: state.workspace.id,
     title: payload?.title,
     kind: payload?.kind,
     calendar_id: resolveScheduleCalendarId(payload?.calendar_id),
+    event_type_id: resolveScheduleEventTypeId(payload?.event_type_id),
+    color_override: normalizeScheduleEventColor(payload?.color_override),
+    organizer_user_id: payload?.organizer_user_id ?? organizerUserId,
+    attendee_user_ids: normalizeScheduleEventAttendeeUserIds(payload?.attendee_user_ids),
     start_at: payload?.start_at,
     end_at: payload?.end_at ?? null,
     all_day: payload?.all_day ? 1 : 0,
     notes: payload?.notes ?? '',
+    reminder_offset_minutes: normalizeScheduleEventReminderOffsetMinutes(payload?.reminder_offset_minutes)
+      ?? DEFAULT_SCHEDULE_EVENT_REMINDER_MINUTES,
+    reminder_last_occurrence_at: payload?.reminder_last_occurrence_at ?? null,
+    recurrence_interval: normalizeScheduleEventRecurrenceInterval(payload?.recurrence_interval),
+    recurrence_unit: normalizeScheduleEventRecurrenceUnit(payload?.recurrence_unit),
     archived: 0,
     created_at: now,
     updated_at: now
@@ -9338,6 +9770,35 @@ function updateScheduleEventRecord(id, patch = {}) {
   const nextPatch = { ...patch };
   if (Object.prototype.hasOwnProperty.call(nextPatch, 'calendar_id')) {
     nextPatch.calendar_id = resolveScheduleCalendarId(nextPatch.calendar_id);
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'event_type_id')) {
+    nextPatch.event_type_id = resolveScheduleEventTypeId(nextPatch.event_type_id);
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'color_override')) {
+    nextPatch.color_override = normalizeScheduleEventColor(nextPatch.color_override);
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'attendee_user_ids')) {
+    nextPatch.attendee_user_ids = normalizeScheduleEventAttendeeUserIds(nextPatch.attendee_user_ids);
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'organizer_user_id')) {
+    nextPatch.organizer_user_id = String(nextPatch.organizer_user_id ?? '').trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'reminder_offset_minutes')) {
+    nextPatch.reminder_offset_minutes = normalizeScheduleEventReminderOffsetMinutes(nextPatch.reminder_offset_minutes);
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'reminder_last_occurrence_at')) {
+    nextPatch.reminder_last_occurrence_at = String(nextPatch.reminder_last_occurrence_at ?? '').trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'recurrence_interval')) {
+    nextPatch.recurrence_interval = normalizeScheduleEventRecurrenceInterval(nextPatch.recurrence_interval);
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'recurrence_unit')) {
+    nextPatch.recurrence_unit = normalizeScheduleEventRecurrenceUnit(nextPatch.recurrence_unit);
+  }
+  const reminderResetFields = ['start_at', 'end_at', 'all_day', 'recurrence_interval', 'recurrence_unit', 'reminder_offset_minutes'];
+  const shouldResetReminder = reminderResetFields.some((field) => Object.prototype.hasOwnProperty.call(nextPatch, field));
+  if (shouldResetReminder && !Object.prototype.hasOwnProperty.call(nextPatch, 'reminder_last_occurrence_at')) {
+    nextPatch.reminder_last_occurrence_at = null;
   }
   const next = normalizeScheduleEvent({
     ...current,
@@ -11641,6 +12102,7 @@ function render() {
   renderTemplateList();
   renderTeamMemberList();
   renderTaskTypeList();
+  renderScheduleEventTypeList();
   renderStoreRuleList();
   renderWorkspaceManageList();
   renderWorkspaceArchivedList();
@@ -12620,6 +13082,9 @@ function renderSchedulingUiSettings() {
   if (schedulingUiWeekModeSelect && document.activeElement !== schedulingUiWeekModeSelect) {
     schedulingUiWeekModeSelect.value = getSchedulingWeekMode();
   }
+  if (schedulingUiTimeZoneInput && document.activeElement !== schedulingUiTimeZoneInput) {
+    schedulingUiTimeZoneInput.value = getSchedulingDisplayTimeZone();
+  }
 }
 
 function renderTaskHolidaySettings() {
@@ -12942,6 +13407,7 @@ function getDefaultUserSettings() {
     scheduling_ui: {
       show_tasks: false,
       week_mode: 'seven',
+      time_zone: getSystemTimeZone(),
       hidden_kinds: [],
       hidden_calendar_ids: []
     }
@@ -12991,6 +13457,7 @@ function normalizeUserSettings(settings) {
         ? Boolean(schedulingUi.show_tasks)
         : defaults.scheduling_ui.show_tasks,
       week_mode: schedulingUi.week_mode === 'workweek' ? 'workweek' : 'seven',
+      time_zone: normalizeTimeZone(schedulingUi.time_zone ?? defaults.scheduling_ui.time_zone),
       hidden_kinds: normalizeSchedulingHiddenKinds(schedulingUi.hidden_kinds ?? defaults.scheduling_ui.hidden_kinds),
       hidden_calendar_ids: normalizeHiddenCalendarIds(
         schedulingUi.hidden_calendar_ids ?? defaults.scheduling_ui.hidden_calendar_ids
@@ -13020,6 +13487,7 @@ function buildUserSettingsPayload() {
     scheduling_ui: {
       show_tasks: getSchedulingShowTasks(),
       week_mode: getSchedulingWeekMode(),
+      time_zone: getSchedulingDisplayTimeZone(),
       hidden_kinds: getSchedulingHiddenKinds(),
       hidden_calendar_ids: getSchedulingHiddenCalendarIds()
     }
@@ -13041,6 +13509,7 @@ function applyUserSettingsPayload(settings) {
   setCalendarHiddenHolidayKeys(next.task_ui.hidden_holiday_keys);
   setSchedulingShowTasks(next.scheduling_ui.show_tasks);
   setSchedulingWeekMode(next.scheduling_ui.week_mode);
+  setSchedulingDisplayTimeZone(next.scheduling_ui.time_zone);
   state.ui.schedulingHiddenKinds = normalizeSchedulingHiddenKinds(next.scheduling_ui.hidden_kinds);
   state.ui.schedulingHiddenCalendarIds = next.scheduling_ui.hidden_calendar_ids;
 }
@@ -14532,6 +15001,109 @@ function renderTaskTypeList() {
     row.appendChild(input);
     row.appendChild(deleteBtn);
     taskTypeListEl.appendChild(row);
+  });
+}
+
+function renderScheduleEventTypeList() {
+  if (!scheduleEventTypeListEl) return;
+  if (!state.workspace) {
+    scheduleEventTypeListEl.innerHTML = '';
+    return;
+  }
+  scheduleEventTypeListEl.innerHTML = '';
+  const types = getScheduleEventTypesForWorkspace();
+  if (!types.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'No event types yet.';
+    scheduleEventTypeListEl.appendChild(empty);
+    return;
+  }
+
+  const canDelete = types.length > 1;
+  types.forEach((type) => {
+    const row = document.createElement('div');
+    row.className = 'schedule-event-type-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = type.name;
+    nameInput.placeholder = 'Type name';
+    nameInput.addEventListener('change', () => {
+      const nextName = normalizeTitleInput(nameInput.value);
+      if (!nextName || nextName === type.name) {
+        nameInput.value = type.name;
+        return;
+      }
+      const updated = updateScheduleEventTypeRecord(type.id, { name: nextName });
+      if (updated?.duplicate) {
+        nameInput.value = type.name;
+        alert('An event type with that name already exists.');
+        return;
+      }
+      if (!updated) {
+        nameInput.value = type.name;
+        return;
+      }
+      render();
+    });
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = normalizeScheduleEventColor(type.default_color) ?? SCHEDULE_CALENDAR_COLOR_PALETTE[0];
+    colorInput.title = 'Default color';
+    colorInput.addEventListener('change', () => {
+      const nextColor = normalizeScheduleEventColor(colorInput.value) ?? SCHEDULE_CALENDAR_COLOR_PALETTE[0];
+      if (nextColor === normalizeScheduleEventColor(type.default_color)) return;
+      const updated = updateScheduleEventTypeRecord(type.id, { default_color: nextColor });
+      if (!updated) return;
+      syncScheduleEventColorInputs();
+      render();
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'icon-button';
+    deleteBtn.textContent = '✕';
+    deleteBtn.title = canDelete ? 'Delete event type' : 'At least one event type is required';
+    deleteBtn.disabled = !canDelete;
+    deleteBtn.addEventListener('click', () => {
+      if (!canDelete) return;
+      const confirmed = confirm(`Delete event type \"${type.name}\"? Existing events keep their descriptions.`);
+      if (!confirmed) return;
+      const result = deleteScheduleEventTypeRecord(type.id);
+      if (result?.error === 'last-type') {
+        alert('At least one event type is required.');
+        return;
+      }
+      if (result?.deleted) {
+        render();
+      }
+    });
+
+    const templateInput = document.createElement('textarea');
+    templateInput.rows = 3;
+    templateInput.value = String(type.description_template ?? '');
+    templateInput.placeholder = 'Default description template (optional)';
+    templateInput.addEventListener('change', () => {
+      const nextTemplate = String(templateInput.value ?? '');
+      if (nextTemplate === String(type.description_template ?? '')) return;
+      const updated = updateScheduleEventTypeRecord(type.id, { description_template: nextTemplate });
+      if (!updated) {
+        templateInput.value = String(type.description_template ?? '');
+        return;
+      }
+      if (scheduleEventType?.value === type.id) {
+        syncScheduleEventDescriptionTemplate({ preserveValue: true });
+      }
+      render();
+    });
+
+    row.appendChild(nameInput);
+    row.appendChild(colorInput);
+    row.appendChild(deleteBtn);
+    row.appendChild(templateInput);
+    scheduleEventTypeListEl.appendChild(row);
   });
 }
 
@@ -17163,6 +17735,63 @@ function getScheduleEventDateRange(event, rangeStart, rangeEnd) {
   return dates;
 }
 
+function getScheduleEventOccurrencesInRange(event, rangeStart, rangeEnd) {
+  const startDate = event?.start_at ? new Date(event.start_at) : null;
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return [];
+  const endDate = event?.end_at ? new Date(event.end_at) : new Date(startDate.getTime());
+  if (Number.isNaN(endDate.getTime())) return [];
+  const normalizedRangeStart = rangeStart instanceof Date && !Number.isNaN(rangeStart.getTime())
+    ? rangeStart
+    : new Date(startDate.getTime());
+  const normalizedRangeEnd = rangeEnd instanceof Date && !Number.isNaN(rangeEnd.getTime())
+    ? rangeEnd
+    : new Date(endDate.getTime());
+  if (normalizedRangeEnd.getTime() < normalizedRangeStart.getTime()) return [];
+
+  const recurrenceInterval = normalizeScheduleEventRecurrenceInterval(event?.recurrence_interval);
+  const recurrenceUnit = normalizeScheduleEventRecurrenceUnit(event?.recurrence_unit);
+  const overlapsRange = (occurrenceStart, occurrenceEnd) =>
+    occurrenceEnd.getTime() >= normalizedRangeStart.getTime()
+    && occurrenceStart.getTime() <= normalizedRangeEnd.getTime();
+
+  if (!recurrenceInterval || !recurrenceUnit) {
+    return overlapsRange(startDate, endDate)
+      ? [{ start: new Date(startDate.getTime()), end: new Date(endDate.getTime()) }]
+      : [];
+  }
+
+  const occurrences = [];
+  let cursorStart = new Date(startDate.getTime());
+  let cursorEnd = new Date(endDate.getTime());
+  let guard = 0;
+
+  while (guard < 5000 && cursorEnd.getTime() < normalizedRangeStart.getTime()) {
+    const nextStart = addInterval(cursorStart, recurrenceInterval, recurrenceUnit);
+    const nextEnd = addInterval(cursorEnd, recurrenceInterval, recurrenceUnit);
+    if (nextStart.getTime() <= cursorStart.getTime() || nextEnd.getTime() <= cursorEnd.getTime()) break;
+    cursorStart = nextStart;
+    cursorEnd = nextEnd;
+    guard += 1;
+  }
+
+  while (guard < 10000 && cursorStart.getTime() <= normalizedRangeEnd.getTime()) {
+    if (overlapsRange(cursorStart, cursorEnd)) {
+      occurrences.push({
+        start: new Date(cursorStart.getTime()),
+        end: new Date(cursorEnd.getTime())
+      });
+    }
+    const nextStart = addInterval(cursorStart, recurrenceInterval, recurrenceUnit);
+    const nextEnd = addInterval(cursorEnd, recurrenceInterval, recurrenceUnit);
+    if (nextStart.getTime() <= cursorStart.getTime() || nextEnd.getTime() <= cursorEnd.getTime()) break;
+    cursorStart = nextStart;
+    cursorEnd = nextEnd;
+    guard += 1;
+  }
+
+  return occurrences;
+}
+
 function getDateIsoKey(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
   return date.toISOString().slice(0, 10);
@@ -17175,22 +17804,41 @@ function formatCalendarHourLabel(hour) {
   return `${base} ${suffix}`;
 }
 
-function formatCalendarTimeLabel(date) {
+function formatCalendarTimeLabel(date, timeZone = null) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const options = { hour: 'numeric', minute: '2-digit' };
+  if (timeZone) {
+    options.timeZone = normalizeTimeZone(timeZone);
+  }
+  return date.toLocaleTimeString([], options);
 }
 
-function formatCalendarTimeRangeLabel(startDate, endDate) {
+function formatCalendarTimeRangeLabel(startDate, endDate, timeZone = null) {
   if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return '';
-  const startLabel = formatCalendarTimeLabel(startDate);
+  const startLabel = formatCalendarTimeLabel(startDate, timeZone);
   if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) return startLabel;
-  return `${startLabel} - ${formatCalendarTimeLabel(endDate)}`;
+  return `${startLabel} - ${formatCalendarTimeLabel(endDate, timeZone)}`;
+}
+
+function hexColorToRgba(hex, alpha) {
+  const normalized = normalizeScheduleEventColor(hex);
+  const opacity = Number(alpha);
+  if (!normalized || !Number.isFinite(opacity)) return null;
+  const channelHex = normalized.slice(1);
+  const r = Number.parseInt(channelHex.slice(0, 2), 16);
+  const g = Number.parseInt(channelHex.slice(2, 4), 16);
+  const b = Number.parseInt(channelHex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, opacity))})`;
 }
 
 function applyScheduleCalendarAccent(element, color) {
   if (!(element instanceof HTMLElement)) return;
-  const normalizedColor = normalizeScheduleCalendarColor(color);
+  const normalizedColor = normalizeScheduleEventColor(color) ?? SCHEDULE_CALENDAR_COLOR_PALETTE[0];
+  const borderColor = hexColorToRgba(normalizedColor, 0.6);
+  const backgroundColor = hexColorToRgba(normalizedColor, 0.2);
   element.style.boxShadow = `inset 3px 0 0 ${normalizedColor}`;
+  if (borderColor) element.style.borderColor = borderColor;
+  if (backgroundColor) element.style.backgroundColor = backgroundColor;
 }
 
 function renderSchedulingPage() {
@@ -17205,6 +17853,7 @@ function renderSchedulingPage() {
   }
 
   const mobileViewport = isMobileViewport();
+  const displayTimeZone = getSchedulingDisplayTimeZone();
   const panelHeader = schedulingPage?.querySelector('.panel-header') ?? null;
   if (panelHeader && schedulingAddBtn && !mobileViewport && schedulingAddBtn.parentElement !== panelHeader) {
     schedulingAddBtn.classList.remove('scheduling-mobile-add-btn');
@@ -17231,12 +17880,14 @@ function renderSchedulingPage() {
       return Array.from({ length: 5 }, (_, index) => {
         const date = new Date(monday.getTime());
         date.setDate(monday.getDate() + index);
+        date.setHours(12, 0, 0, 0);
         return date;
       });
     }
     return Array.from({ length: 7 }, (_, index) => {
       const date = new Date(weekStart.getTime());
       date.setDate(weekStart.getDate() + index);
+      date.setHours(12, 0, 0, 0);
       return date;
     });
   })();
@@ -17245,12 +17896,29 @@ function renderSchedulingPage() {
     : visibleWeekDates;
   const weekDisplayStart = timeGridDates[0] ?? weekStart;
   const weekDisplayEnd = timeGridDates[timeGridDates.length - 1] ?? weekEnd;
-  const rangeStart = rangeMode === 'week' || rangeMode === 'day'
-    ? new Date(weekDisplayStart.getFullYear(), weekDisplayStart.getMonth(), weekDisplayStart.getDate(), 0, 0, 0, 0)
-    : new Date(year, month, 1, 0, 0, 0, 0);
-  const rangeEnd = rangeMode === 'week' || rangeMode === 'day'
-    ? new Date(weekDisplayEnd.getFullYear(), weekDisplayEnd.getMonth(), weekDisplayEnd.getDate(), 23, 59, 59, 999)
-    : new Date(year, month, totalDays, 23, 59, 59, 999);
+  const visibleDateKeys = rangeMode === 'week' || rangeMode === 'day'
+    ? timeGridDates.map((date) => formatDateOnlyValue(date))
+    : Array.from({ length: totalDays }, (_, index) => formatDateOnlyValue(new Date(year, month, index + 1, 12, 0, 0, 0)));
+  const visibleDateKeySet = new Set(visibleDateKeys);
+  const rangeStartKey = visibleDateKeys[0] ?? formatDateOnlyValue(new Date());
+  const rangeEndKey = visibleDateKeys[visibleDateKeys.length - 1] ?? rangeStartKey;
+  const rangeStart = getUtcDateForTimeZoneParts(
+    Number(rangeStartKey.slice(0, 4)),
+    Number(rangeStartKey.slice(5, 7)),
+    Number(rangeStartKey.slice(8, 10)),
+    0,
+    0,
+    displayTimeZone
+  );
+  const rangeEndStart = getUtcDateForTimeZoneParts(
+    Number(rangeEndKey.slice(0, 4)),
+    Number(rangeEndKey.slice(5, 7)),
+    Number(rangeEndKey.slice(8, 10)),
+    0,
+    0,
+    displayTimeZone
+  );
+  const rangeEnd = new Date(rangeEndStart.getTime() + (24 * 60 * 60 * 1000) - 1);
 
   const header = document.createElement('div');
   header.className = 'calendar-header';
@@ -17263,20 +17931,29 @@ function renderSchedulingPage() {
   const title = document.createElement('div');
   title.className = 'calendar-title';
   if (rangeMode === 'week') {
-    const rangeLabel = `${weekDisplayStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} - ${new Date(weekDisplayEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
-    const sameMonth = weekDisplayStart.getFullYear() === weekDisplayEnd.getFullYear() && weekDisplayStart.getMonth() === weekDisplayEnd.getMonth();
+    const rangeLabel = `${formatDateInTimeZone(weekDisplayStart, { month: 'short', day: 'numeric', year: 'numeric' }, displayTimeZone)} - ${formatDateInTimeZone(new Date(weekDisplayEnd), { month: 'short', day: 'numeric', year: 'numeric' }, displayTimeZone)}`;
+    const sameMonth = formatDateInTimeZone(
+      weekDisplayStart,
+      { month: 'numeric', year: 'numeric' },
+      displayTimeZone
+    ) === formatDateInTimeZone(
+      weekDisplayEnd,
+      { month: 'numeric', year: 'numeric' },
+      displayTimeZone
+    );
     title.textContent = mobileViewport && sameMonth
-      ? weekDisplayStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+      ? formatDateInTimeZone(weekDisplayStart, { month: 'long', year: 'numeric' }, displayTimeZone)
       : rangeLabel;
   } else if (rangeMode === 'day') {
-    title.textContent = dayDate.toLocaleDateString(
-      undefined,
+    title.textContent = formatDateInTimeZone(
+      dayDate,
       mobileViewport
         ? { month: 'long', day: 'numeric', year: 'numeric' }
-        : { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }
+        : { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' },
+      displayTimeZone
     );
   } else {
-    title.textContent = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    title.textContent = formatDateInTimeZone(firstDay, { month: 'long', year: 'numeric' }, displayTimeZone);
   }
   const controls = document.createElement('div');
   controls.className = 'calendar-controls';
@@ -17386,7 +18063,11 @@ function renderSchedulingPage() {
   dateJumpInput.type = 'date';
   dateJumpInput.className = 'calendar-jump-input';
   dateJumpInput.title = 'Jump to specific date';
-  dateJumpInput.value = formatDateOnlyValue(rangeMode === 'day' ? dayDate : rangeMode === 'week' ? weekDisplayStart : firstDay);
+  dateJumpInput.value = rangeMode === 'day'
+    ? (visibleDateKeys[0] ?? formatDateOnlyValue(dayDate))
+    : rangeMode === 'week'
+      ? (visibleDateKeys[0] ?? formatDateOnlyValue(weekDisplayStart))
+      : formatDateOnlyValue(firstDay);
   dateJumpInput.addEventListener('change', () => {
     const dateValue = parseDateOnlyValue(dateJumpInput.value);
     if (!dateValue) return;
@@ -17440,53 +18121,68 @@ function renderSchedulingPage() {
     getScheduleCalendarsForWorkspace({ includeArchived: false })
       .map((calendar) => [calendar.id, calendar])
   );
-  getScheduleEventsForWorkspace()
-    .filter(event => isSchedulingKindVisible(event.kind))
-    .forEach((event) => {
+  const visibleScheduleEvents = getScheduleEventsForWorkspace()
+    .filter(event => isSchedulingKindVisible(event.kind));
+  const scheduleEventById = new Map(visibleScheduleEvents.map((event) => [event.id, event]));
+  visibleScheduleEvents.forEach((event) => {
     const calendar = scheduleCalendarById.get(resolveScheduleCalendarId(event.calendar_id));
     const calendarId = calendar?.id ?? null;
-    const calendarColor = calendar?.color ?? null;
+    const resolvedColor = getResolvedScheduleEventColor(event, calendar?.color ?? null);
     const startDate = event?.start_at ? new Date(event.start_at) : null;
     if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return;
     const endDate = event?.end_at ? new Date(event.end_at) : new Date(startDate);
     if (Number.isNaN(endDate.getTime())) return;
     const isAllDay = Number(event.all_day) === 1 || normalizeScheduleEventKind(event.kind) === 'day-off';
-    const dates = getScheduleEventDateRange(event, rangeStart, rangeEnd);
-    dates.forEach((date) => {
-      const key = getDateIsoKey(date);
-      if (!key) return;
-      if (isAllDay) {
-        pushAllDayEntry(key, {
+    const occurrences = getScheduleEventOccurrencesInRange(event, rangeStart, rangeEnd);
+    occurrences.forEach(({ start: occurrenceStart, end: occurrenceEnd }) => {
+      const startKey = getDateKeyInTimeZone(occurrenceStart, displayTimeZone);
+      const endKey = getDateKeyInTimeZone(occurrenceEnd, displayTimeZone);
+      const keys = listDateKeysBetween(startKey, endKey);
+      keys.forEach((key) => {
+        if (!key || !visibleDateKeySet.has(key)) return;
+        if (isAllDay) {
+          pushAllDayEntry(key, {
+            type: 'schedule',
+            id: event.id,
+            calendar_id: calendarId,
+            event_color: resolvedColor,
+            kind: event.kind,
+            title: event.title,
+            all_day: true
+          });
+          return;
+        }
+        const yearValue = Number(key.slice(0, 4));
+        const monthValue = Number(key.slice(5, 7));
+        const dayValue = Number(key.slice(8, 10));
+        const dayStart = getUtcDateForTimeZoneParts(yearValue, monthValue, dayValue, 0, 0, displayTimeZone);
+        const dayEnd = new Date(dayStart.getTime() + (24 * 60 * 60 * 1000) - 1);
+        const segmentStart = new Date(Math.max(occurrenceStart.getTime(), dayStart.getTime()));
+        const segmentEnd = new Date(Math.min(occurrenceEnd.getTime(), dayEnd.getTime()));
+        if (segmentEnd.getTime() <= segmentStart.getTime()) {
+          segmentEnd.setTime(segmentStart.getTime() + (30 * 60 * 1000));
+        }
+        const startMin = getMinutesInDayInTimeZone(segmentStart, displayTimeZone);
+        let endMin = getMinutesInDayInTimeZone(segmentEnd, displayTimeZone);
+        if (endMin <= startMin) {
+          endMin = Math.min(24 * 60, startMin + 30);
+        }
+        pushTimedEntry(key, {
           type: 'schedule',
           id: event.id,
           calendar_id: calendarId,
-          calendar_color: calendarColor,
+          event_color: resolvedColor,
           kind: event.kind,
           title: event.title,
-          all_day: true
+          all_day: false,
+          start: segmentStart,
+          end: segmentEnd,
+          startMin,
+          endMin
         });
-        return;
-      }
-      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
-      const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
-      const segmentStart = new Date(Math.max(startDate.getTime(), dayStart.getTime()));
-      const segmentEnd = new Date(Math.min(endDate.getTime(), dayEnd.getTime()));
-      if (segmentEnd.getTime() <= segmentStart.getTime()) {
-        segmentEnd.setTime(segmentStart.getTime() + (30 * 60 * 1000));
-      }
-      pushTimedEntry(key, {
-        type: 'schedule',
-        id: event.id,
-        calendar_id: calendarId,
-        calendar_color: calendarColor,
-        kind: event.kind,
-        title: event.title,
-        all_day: false,
-        start: segmentStart,
-        end: segmentEnd
       });
     });
-    });
+  });
 
   if (getSchedulingShowTasks()) {
     const completedVisibility = getTaskCompletedVisibility();
@@ -17500,8 +18196,8 @@ function renderSchedulingPage() {
       if (Number.isNaN(due.getTime())) return;
       const dueTime = due.getTime();
       if (dueTime < rangeStart.getTime() || dueTime > rangeEnd.getTime()) return;
-      const key = getDateIsoKey(due);
-      if (!key) return;
+      const key = getDateKeyInTimeZone(due, displayTimeZone);
+      if (!key || !visibleDateKeySet.has(key)) return;
       pushAllDayEntry(key, {
         type: 'task',
         id: task.id,
@@ -17515,7 +18211,7 @@ function renderSchedulingPage() {
   if (getCalendarIncludeHolidays()) {
     const holidays = getHolidayEntriesInRange(rangeStart, rangeEnd);
     holidays.forEach((holiday) => {
-      const key = getDateIsoKey(holiday.date);
+      const key = getDateKeyInTimeZone(holiday.date, displayTimeZone);
       if (!key) return;
       pushAllDayEntry(key, {
         type: 'holiday',
@@ -17527,26 +18223,23 @@ function renderSchedulingPage() {
   }
 
   if (rangeMode === 'week' || rangeMode === 'day') {
-    const todayKey = getDateIsoKey(new Date());
+    const todayKey = getDateKeyInTimeZone(new Date(), displayTimeZone);
     const isMobileWeek = mobileViewport;
     const hourHeight = isMobileWeek ? 58 : 84;
-    const openCreateFromTimeSlot = (date, offsetY, columnHeight) => {
+    const openCreateFromTimeSlot = (dateKey, offsetY, columnHeight) => {
       if (columnHeight <= 0) return;
       const minuteStep = 30;
       const minutesInDay = 24 * 60;
       const ratio = Math.max(0, Math.min(1, offsetY / columnHeight));
       const nearestMinutes = Math.round((ratio * minutesInDay) / minuteStep) * minuteStep;
       const clampedMinutes = Math.max(0, Math.min((minutesInDay - minuteStep), nearestMinutes));
-      const startHour = Math.floor(clampedMinutes / 60);
-      const startMinute = clampedMinutes % 60;
-      const start = new Date(
-        date.getFullYear(),
-        date.getMonth(),
-        date.getDate(),
-        startHour,
-        startMinute,
-        0,
-        0
+      const start = getUtcDateForTimeZoneParts(
+        Number(dateKey.slice(0, 4)),
+        Number(dateKey.slice(5, 7)),
+        Number(dateKey.slice(8, 10)),
+        Math.floor(clampedMinutes / 60),
+        clampedMinutes % 60,
+        displayTimeZone
       );
       const end = new Date(start.getTime() + (60 * 60 * 1000));
       openScheduleEventModal(null, {
@@ -17569,22 +18262,22 @@ function renderSchedulingPage() {
     const corner = document.createElement('div');
     corner.className = 'scheduling-week-corner';
     weekHeader.appendChild(corner);
-    timeGridDates.forEach((date) => {
+    timeGridDates.forEach((date, index) => {
       const dayCell = document.createElement('div');
       dayCell.className = 'scheduling-week-day-header';
-      const key = getDateIsoKey(date);
+      const key = visibleDateKeys[index] ?? formatDateOnlyValue(date);
       if (key === todayKey) dayCell.classList.add('is-today');
       if (isMobileWeek) {
         const dayName = document.createElement('span');
         dayName.className = 'scheduling-week-day-name';
-        dayName.textContent = date.toLocaleDateString(undefined, { weekday: 'short' });
+        dayName.textContent = formatDateInTimeZone(date, { weekday: 'short' }, displayTimeZone);
         const dayDate = document.createElement('span');
         dayDate.className = 'scheduling-week-day-date';
-        dayDate.textContent = String(date.getDate());
+        dayDate.textContent = String(Number(key.slice(8, 10)));
         dayCell.appendChild(dayName);
         dayCell.appendChild(dayDate);
       } else {
-        dayCell.textContent = date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        dayCell.textContent = formatDateInTimeZone(date, { weekday: 'short', month: 'short', day: 'numeric' }, displayTimeZone);
       }
       weekHeader.appendChild(dayCell);
     });
@@ -17597,16 +18290,16 @@ function renderSchedulingPage() {
     allDayLabel.className = 'scheduling-week-all-day-label';
     allDayLabel.textContent = 'All day';
     allDayRow.appendChild(allDayLabel);
-    timeGridDates.forEach((date) => {
+    timeGridDates.forEach((date, index) => {
       const dayCell = document.createElement('div');
       dayCell.className = 'scheduling-week-all-day-cell';
-      const key = getDateIsoKey(date);
+      const key = visibleDateKeys[index] ?? formatDateOnlyValue(date);
       const entries = allDayByDate.get(key) ?? [];
       entries.slice(0, 4).forEach((entry) => {
         const chip = document.createElement('div');
         if (entry.type === 'schedule') {
           chip.className = `calendar-item schedule-${toCssToken(entry.kind ?? 'event')}`;
-          applyScheduleCalendarAccent(chip, entry.calendar_color);
+          applyScheduleCalendarAccent(chip, entry.event_color);
         } else {
           chip.className = `calendar-item ${entry.type}`;
         }
@@ -17650,8 +18343,8 @@ function renderSchedulingPage() {
     body.appendChild(gutter);
     const days = document.createElement('div');
     days.className = 'scheduling-week-days';
-    timeGridDates.forEach((date) => {
-      const key = getDateIsoKey(date);
+    timeGridDates.forEach((date, index) => {
+      const key = visibleDateKeys[index] ?? formatDateOnlyValue(date);
       const column = document.createElement('div');
       column.className = 'scheduling-week-day-column';
       column.title = 'Click to create event';
@@ -17662,16 +18355,6 @@ function renderSchedulingPage() {
         column.appendChild(line);
       }
       const timedEntries = (timedByDate.get(key) ?? [])
-        .map((entry) => {
-          const startMin = (entry.start.getHours() * 60) + entry.start.getMinutes();
-          const endMin = (entry.end.getHours() * 60) + entry.end.getMinutes();
-          const safeEnd = Math.max(endMin, startMin + 30);
-          return {
-            ...entry,
-            startMin,
-            endMin: safeEnd
-          };
-        })
         .sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
 
       const laneEnds = [];
@@ -17686,6 +18369,22 @@ function renderSchedulingPage() {
         const block = document.createElement('button');
         block.type = 'button';
         block.className = `scheduling-week-event schedule-${toCssToken(entry.kind ?? 'event')}`;
+        const sourceEvent = scheduleEventById.get(entry.id) ?? null;
+        const sourceStart = sourceEvent?.start_at ? new Date(sourceEvent.start_at) : null;
+        const sourceEnd = sourceEvent?.end_at ? new Date(sourceEvent.end_at) : null;
+        const sourceHasValidTime = sourceStart instanceof Date
+          && sourceEnd instanceof Date
+          && !Number.isNaN(sourceStart.getTime())
+          && !Number.isNaN(sourceEnd.getTime());
+        const sourceDurationMinutes = sourceHasValidTime
+          ? Math.max(15, Math.round((sourceEnd.getTime() - sourceStart.getTime()) / (60 * 1000)))
+          : 0;
+        const isSameDayTimedEvent = sourceHasValidTime
+          && Number(sourceEvent?.all_day ?? 0) !== 1
+          && normalizeScheduleEventKind(sourceEvent?.kind) !== 'day-off'
+          && getDateKeyInTimeZone(sourceStart, displayTimeZone) === key
+          && getDateKeyInTimeZone(sourceEnd, displayTimeZone) === key;
+        const enableVerticalDrag = isSameDayTimedEvent && sourceDurationMinutes < (24 * 60);
         const top = (entry.startMin / 60) * hourHeight;
         const height = Math.max(28, ((entry.endMin - entry.startMin) / 60) * hourHeight);
         block.style.top = `${top}px`;
@@ -17697,11 +18396,125 @@ function renderSchedulingPage() {
         titleEl.textContent = entry.title;
         const metaEl = document.createElement('div');
         metaEl.className = 'scheduling-week-event-meta';
-        metaEl.textContent = formatCalendarTimeRangeLabel(entry.start, entry.end);
+        metaEl.textContent = formatCalendarTimeRangeLabel(entry.start, entry.end, displayTimeZone);
         block.appendChild(titleEl);
         block.appendChild(metaEl);
-        applyScheduleCalendarAccent(block, entry.calendar_color);
-        block.addEventListener('click', () => {
+        applyScheduleCalendarAccent(block, entry.event_color);
+        if (enableVerticalDrag) {
+          block.classList.add('is-time-draggable');
+        }
+        let suppressClickOnce = false;
+        if (enableVerticalDrag) {
+          const minuteStep = 15;
+          const maxStartMinutes = Math.max(0, (24 * 60) - sourceDurationMinutes);
+          let dragPointerId = null;
+          let dragOriginClientY = 0;
+          let dragPreviewStartMinutes = entry.startMin;
+          let dragMoved = false;
+
+          const resetPreview = () => {
+            block.style.top = `${top}px`;
+            metaEl.textContent = formatCalendarTimeRangeLabel(entry.start, entry.end, displayTimeZone);
+          };
+
+          const setPreview = (startMinutes) => {
+            block.style.top = `${(startMinutes / 60) * hourHeight}px`;
+            const previewStart = getUtcDateForTimeZoneParts(
+              Number(key.slice(0, 4)),
+              Number(key.slice(5, 7)),
+              Number(key.slice(8, 10)),
+              Math.floor(startMinutes / 60),
+              startMinutes % 60,
+              displayTimeZone
+            );
+            const previewEnd = new Date(previewStart.getTime() + (sourceDurationMinutes * 60 * 1000));
+            metaEl.textContent = formatCalendarTimeRangeLabel(previewStart, previewEnd, displayTimeZone);
+          };
+
+          const finalizeDrag = (commit) => {
+            if (dragPointerId !== null && block.hasPointerCapture(dragPointerId)) {
+              block.releasePointerCapture(dragPointerId);
+            }
+            dragPointerId = null;
+            block.classList.remove('is-time-dragging');
+            if (!dragMoved || !commit || dragPreviewStartMinutes === entry.startMin) {
+              resetPreview();
+              return;
+            }
+            const nextStart = getUtcDateForTimeZoneParts(
+              Number(key.slice(0, 4)),
+              Number(key.slice(5, 7)),
+              Number(key.slice(8, 10)),
+              Math.floor(dragPreviewStartMinutes / 60),
+              dragPreviewStartMinutes % 60,
+              displayTimeZone
+            );
+            const nextEnd = new Date(nextStart.getTime() + (sourceDurationMinutes * 60 * 1000));
+            updateScheduleEventRecord(entry.id, {
+              start_at: nextStart.toISOString(),
+              end_at: nextEnd.toISOString()
+            });
+            render();
+          };
+
+          block.addEventListener('pointerdown', (pointerEvent) => {
+            if (pointerEvent.button !== 0) return;
+            if (pointerEvent.pointerType === 'touch') return;
+            dragPointerId = pointerEvent.pointerId;
+            dragOriginClientY = pointerEvent.clientY;
+            dragPreviewStartMinutes = entry.startMin;
+            dragMoved = false;
+            suppressClickOnce = false;
+            block.classList.add('is-time-dragging');
+            block.setPointerCapture(pointerEvent.pointerId);
+            pointerEvent.preventDefault();
+            pointerEvent.stopPropagation();
+          });
+
+          block.addEventListener('pointermove', (pointerEvent) => {
+            if (dragPointerId !== pointerEvent.pointerId) return;
+            const deltaY = pointerEvent.clientY - dragOriginClientY;
+            const rawDeltaMinutes = (deltaY / hourHeight) * 60;
+            const snappedDeltaMinutes = Math.round(rawDeltaMinutes / minuteStep) * minuteStep;
+            const nextStartMinutes = Math.max(
+              0,
+              Math.min(maxStartMinutes, entry.startMin + snappedDeltaMinutes)
+            );
+            if (nextStartMinutes === dragPreviewStartMinutes) return;
+            dragPreviewStartMinutes = nextStartMinutes;
+            dragMoved = true;
+            suppressClickOnce = true;
+            setPreview(nextStartMinutes);
+            pointerEvent.preventDefault();
+            pointerEvent.stopPropagation();
+          });
+
+          block.addEventListener('pointerup', (pointerEvent) => {
+            if (dragPointerId !== pointerEvent.pointerId) return;
+            pointerEvent.preventDefault();
+            pointerEvent.stopPropagation();
+            suppressClickOnce = true;
+            if (!dragMoved) {
+              const current = (state.scheduleEvents ?? []).find(item => item.id === entry.id);
+              if (current) openScheduleEventModal(current);
+            }
+            finalizeDrag(true);
+          });
+
+          block.addEventListener('pointercancel', (pointerEvent) => {
+            if (dragPointerId !== pointerEvent.pointerId) return;
+            pointerEvent.preventDefault();
+            pointerEvent.stopPropagation();
+            finalizeDrag(false);
+          });
+        }
+        block.addEventListener('click', (event) => {
+          if (suppressClickOnce) {
+            suppressClickOnce = false;
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
           const current = (state.scheduleEvents ?? []).find(item => item.id === entry.id);
           if (current) openScheduleEventModal(current);
         });
@@ -17713,7 +18526,7 @@ function renderSchedulingPage() {
         const bounds = column.getBoundingClientRect();
         if (!bounds.height) return;
         const offsetY = clickEvent.clientY - bounds.top;
-        openCreateFromTimeSlot(date, offsetY, bounds.height);
+        openCreateFromTimeSlot(key, offsetY, bounds.height);
       });
       days.appendChild(column);
     });
@@ -17727,7 +18540,9 @@ function renderSchedulingPage() {
     syncWeekScrollbarComp();
     requestAnimationFrame(syncWeekScrollbarComp);
     if (isMobileWeek) {
-      body.scrollTop = Math.max(0, (new Date().getHours() - 2) * hourHeight);
+      const nowParts = getDateTimePartsInTimeZone(new Date(), displayTimeZone, { includeSeconds: false });
+      const nowHour = Number.isFinite(nowParts?.hour) ? nowParts.hour : new Date().getHours();
+      body.scrollTop = Math.max(0, (nowHour - 2) * hourHeight);
     }
     return;
   }
@@ -17754,7 +18569,7 @@ function renderSchedulingPage() {
   }
 
   calendarDates.forEach((date) => {
-    const key = getDateIsoKey(date);
+    const key = visibleDateKeys[Math.max(0, date.getDate() - 1)] ?? formatDateOnlyValue(date);
     const cell = document.createElement('div');
     cell.className = 'calendar-day';
     const dayLabel = document.createElement('div');
@@ -17769,9 +18584,9 @@ function renderSchedulingPage() {
       const item = document.createElement('div');
       if (entry.type === 'schedule') {
         item.className = `calendar-item schedule-${toCssToken(entry.kind ?? 'event')}`;
-        applyScheduleCalendarAccent(item, entry.calendar_color);
+        applyScheduleCalendarAccent(item, entry.event_color);
         if (!entry.all_day && entry.start instanceof Date && entry.end instanceof Date) {
-          item.textContent = `${formatCalendarTimeLabel(entry.start)} · ${entry.title}`;
+          item.textContent = `${formatCalendarTimeLabel(entry.start, displayTimeZone)} · ${entry.title}`;
         } else {
           item.textContent = entry.title;
         }
@@ -19745,6 +20560,23 @@ function closeTaskTypesModal() {
   openSettings();
 }
 
+function openScheduleEventTypesModal() {
+  if (settingsModal && !settingsModal.classList.contains('hidden')) {
+    closeSettings();
+  }
+  scheduleEventTypesModal?.classList.remove('hidden');
+  renderScheduleEventTypeList();
+  if (scheduleEventTypeColorInput) {
+    scheduleEventTypeColorInput.value = getNextScheduleEventTypeColor();
+  }
+  scheduleEventTypeNameInput?.focus();
+}
+
+function closeScheduleEventTypesModal() {
+  scheduleEventTypesModal?.classList.add('hidden');
+  openSettings('scheduling');
+}
+
 function openStoreRulesModal() {
   if (settingsModal && !settingsModal.classList.contains('hidden')) {
     closeSettings();
@@ -20410,6 +21242,47 @@ function getNoticeOccurrencesInRange(notice, rangeStart, rangeEnd) {
   return occurrences;
 }
 
+function getScheduleEventReminderMinutes(event) {
+  const explicit = normalizeScheduleEventReminderOffsetMinutes(event?.reminder_offset_minutes);
+  return explicit === null ? DEFAULT_SCHEDULE_EVENT_REMINDER_MINUTES : explicit;
+}
+
+function shouldNotifyActorForScheduleEvent(event) {
+  const actorUserId = getAuthState().user?.id ?? null;
+  const attendees = normalizeScheduleEventAttendeeUserIds(event?.attendee_user_ids);
+  if (attendees.length) {
+    return Boolean(actorUserId && attendees.includes(actorUserId));
+  }
+  const organizerUserId = String(event?.organizer_user_id ?? '').trim();
+  if (organizerUserId) {
+    return Boolean(actorUserId && actorUserId === organizerUserId);
+  }
+  return true;
+}
+
+function getNextScheduleEventReminderOccurrence(event, now = new Date()) {
+  if (!event) return null;
+  const nowTime = now.getTime();
+  if (Number.isNaN(nowTime)) return null;
+  const reminderMinutes = getScheduleEventReminderMinutes(event);
+  const lookbackMs = 24 * 60 * 60 * 1000;
+  const leadMs = reminderMinutes * 60 * 1000;
+  const lookaheadMs = Math.max((24 * 60 * 60 * 1000), leadMs + (3 * 60 * 60 * 1000));
+  const rangeStart = new Date(nowTime - lookbackMs);
+  const rangeEnd = new Date(nowTime + lookaheadMs);
+  const occurrences = getScheduleEventOccurrencesInRange(event, rangeStart, rangeEnd);
+  const lastNotifiedOccurrence = String(event?.reminder_last_occurrence_at ?? '').trim();
+  for (const occurrence of occurrences) {
+    const occurrenceKey = occurrence.start.toISOString();
+    if (lastNotifiedOccurrence && occurrenceKey === lastNotifiedOccurrence) continue;
+    const notifyAt = occurrence.start.getTime() - leadMs;
+    if (nowTime < notifyAt) continue;
+    if (nowTime - notifyAt > lookbackMs) continue;
+    return occurrence;
+  }
+  return null;
+}
+
 async function checkNotices() {
   if (!state.ui?.notificationsEnabled) return;
   if (!('Notification' in window)) return;
@@ -20451,6 +21324,212 @@ async function checkNotices() {
     if (nextNotifyAt) patch.notify_at = nextNotifyAt.toISOString();
     await updateNoticeRecord(notice.id, patch);
   }
+  const displayTimeZone = getSchedulingDisplayTimeZone();
+  for (const event of getScheduleEventsForWorkspace()) {
+    if (!shouldNotifyActorForScheduleEvent(event)) continue;
+    const occurrence = getNextScheduleEventReminderOccurrence(event);
+    if (!occurrence) continue;
+    const isAllDay = Number(event?.all_day) === 1 || normalizeScheduleEventKind(event?.kind) === 'day-off';
+    const startsLabel = isAllDay
+      ? formatDateInTimeZone(occurrence.start, { month: 'short', day: 'numeric' }, displayTimeZone)
+      : formatCalendarTimeLabel(occurrence.start, displayTimeZone);
+    new Notification('BrianHub Event Reminder', {
+      body: `${event.title} starts ${isAllDay ? `on ${startsLabel}` : `at ${startsLabel}`}.`,
+      tag: `${event.id}:${occurrence.start.toISOString()}`
+    });
+    appendAuditEvent({
+      source: 'app',
+      category: 'notification',
+      event: 'schedule_event_reminder_sent',
+      entity_type: 'schedule_event',
+      entity_id: event.id,
+      data: {
+        occurrence_start: occurrence.start.toISOString(),
+        reminder_minutes: getScheduleEventReminderMinutes(event)
+      }
+    });
+    updateScheduleEventRecord(event.id, {
+      reminder_last_occurrence_at: occurrence.start.toISOString()
+    });
+  }
+}
+
+const timeZoneFormatterCache = new Map();
+
+function getTimeZoneFormatter(timeZone, key, options) {
+  const cacheKey = `${timeZone}::${key}`;
+  if (timeZoneFormatterCache.has(cacheKey)) {
+    return timeZoneFormatterCache.get(cacheKey);
+  }
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    hourCycle: 'h23',
+    timeZone,
+    ...options
+  });
+  timeZoneFormatterCache.set(cacheKey, formatter);
+  return formatter;
+}
+
+function getDateTimePartsInTimeZone(date, timeZone, options = {}) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  const includeSeconds = options.includeSeconds !== false;
+  const includeWeekday = options.includeWeekday === true;
+  const formatter = getTimeZoneFormatter(
+    normalizeTimeZone(timeZone),
+    `parts:${includeSeconds ? 's' : 'm'}:${includeWeekday ? 'w' : 'n'}`,
+    {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      ...(includeSeconds ? { second: '2-digit' } : {}),
+      ...(includeWeekday ? { weekday: 'short' } : {})
+    }
+  );
+  const parts = formatter.formatToParts(date);
+  const map = {};
+  parts.forEach((part) => {
+    if (part.type === 'literal') return;
+    map[part.type] = part.value;
+  });
+  const parsed = {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+    second: includeSeconds ? Number(map.second ?? 0) : 0,
+    weekday: includeWeekday ? String(map.weekday ?? '') : ''
+  };
+  if (!Number.isFinite(parsed.year) || !Number.isFinite(parsed.month) || !Number.isFinite(parsed.day)) return null;
+  if (!Number.isFinite(parsed.hour) || !Number.isFinite(parsed.minute) || !Number.isFinite(parsed.second)) return null;
+  return parsed;
+}
+
+function formatDateInTimeZone(date, options = {}, timeZone = getSchedulingDisplayTimeZone()) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { ...options, timeZone: normalizeTimeZone(timeZone) });
+}
+
+function formatDateTimeInTimeZone(date, options = {}, timeZone = getSchedulingDisplayTimeZone()) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, { ...options, timeZone: normalizeTimeZone(timeZone) });
+}
+
+function getDateKeyInTimeZone(date, timeZone = getSchedulingDisplayTimeZone()) {
+  const parts = getDateTimePartsInTimeZone(date, timeZone, { includeSeconds: false });
+  if (!parts) return '';
+  return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+function getMinutesInDayInTimeZone(date, timeZone = getSchedulingDisplayTimeZone()) {
+  const parts = getDateTimePartsInTimeZone(date, timeZone, { includeSeconds: false });
+  if (!parts) return 0;
+  return (parts.hour * 60) + parts.minute;
+}
+
+function getTimeZoneOffsetMinutesForInstant(date, timeZone) {
+  const parts = getDateTimePartsInTimeZone(date, timeZone, { includeSeconds: true });
+  if (!parts) return -date.getTimezoneOffset();
+  const utcFromParts = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second, 0);
+  return Math.round((utcFromParts - date.getTime()) / 60000);
+}
+
+function parseDatetimeLocalValue(value) {
+  const match = String(value ?? '').trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return { year, month, day, hour, minute };
+}
+
+function getUtcDateForTimeZoneParts(year, month, day, hour, minute, timeZone = getSchedulingDisplayTimeZone()) {
+  const tz = normalizeTimeZone(timeZone);
+  const baseUtcMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  let utcMs = baseUtcMs;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const offset = getTimeZoneOffsetMinutesForInstant(new Date(utcMs), tz);
+    const nextUtcMs = baseUtcMs - (offset * 60 * 1000);
+    if (Math.abs(nextUtcMs - utcMs) < 1000) {
+      utcMs = nextUtcMs;
+      break;
+    }
+    utcMs = nextUtcMs;
+  }
+  return new Date(utcMs);
+}
+
+function fromDatetimeLocalInTimeZone(value, timeZone = getSchedulingDisplayTimeZone()) {
+  const parsed = parseDatetimeLocalValue(value);
+  if (!parsed) return null;
+  const utcDate = getUtcDateForTimeZoneParts(
+    parsed.year,
+    parsed.month,
+    parsed.day,
+    parsed.hour,
+    parsed.minute,
+    timeZone
+  );
+  if (Number.isNaN(utcDate.getTime())) return null;
+  return utcDate.toISOString();
+}
+
+function toDatetimeLocalInTimeZone(iso, timeZone = getSchedulingDisplayTimeZone()) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  const parts = getDateTimePartsInTimeZone(date, timeZone, { includeSeconds: false });
+  if (!parts) return '';
+  const year = String(parts.year).padStart(4, '0');
+  const month = String(parts.month).padStart(2, '0');
+  const day = String(parts.day).padStart(2, '0');
+  const hour = String(parts.hour).padStart(2, '0');
+  const minute = String(parts.minute).padStart(2, '0');
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function toDateInputValueInTimeZone(iso, timeZone = getSchedulingDisplayTimeZone()) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return getDateKeyInTimeZone(date, timeZone);
+}
+
+function fromDateInputValueInTimeZone(value, timeZone = getSchedulingDisplayTimeZone()) {
+  const parsed = parseDateOnlyValue(value);
+  if (!parsed) return null;
+  const year = parsed.getFullYear();
+  const month = parsed.getMonth() + 1;
+  const day = parsed.getDate();
+  const utcDate = getUtcDateForTimeZoneParts(year, month, day, 0, 0, timeZone);
+  if (Number.isNaN(utcDate.getTime())) return null;
+  return utcDate.toISOString();
+}
+
+function addDaysToDateKey(dateKey, deltaDays) {
+  const parsed = parseDateOnlyValue(dateKey);
+  if (!parsed) return dateKey;
+  parsed.setDate(parsed.getDate() + Number(deltaDays || 0));
+  return formatDateOnlyValue(parsed);
+}
+
+function listDateKeysBetween(startKey, endKey) {
+  const start = parseDateOnlyValue(startKey);
+  const end = parseDateOnlyValue(endKey);
+  if (!start || !end) return [];
+  const keys = [];
+  const cursor = new Date(start.getTime());
+  const direction = cursor.getTime() <= end.getTime() ? 1 : -1;
+  while ((direction > 0 && cursor.getTime() <= end.getTime()) || (direction < 0 && cursor.getTime() >= end.getTime())) {
+    keys.push(formatDateOnlyValue(cursor));
+    cursor.setDate(cursor.getDate() + direction);
+  }
+  return keys;
 }
 
 function toDatetimeLocal(iso) {
@@ -20513,8 +21592,121 @@ function populateScheduleEventCalendarSelect(selectedId = null) {
   return resolvedId;
 }
 
+function populateScheduleEventTypeSelect(selectedId = null) {
+  if (!scheduleEventType) return null;
+  const types = getScheduleEventTypesForWorkspace();
+  scheduleEventType.innerHTML = '';
+  const noneOption = document.createElement('option');
+  noneOption.value = '';
+  noneOption.textContent = 'None';
+  scheduleEventType.appendChild(noneOption);
+  types.forEach((type) => {
+    const option = document.createElement('option');
+    option.value = type.id;
+    option.textContent = type.name;
+    scheduleEventType.appendChild(option);
+  });
+  const requested = String(selectedId ?? '').trim();
+  if (requested && types.some((type) => type.id === requested)) {
+    scheduleEventType.value = requested;
+    return requested;
+  }
+  scheduleEventType.value = '';
+  return null;
+}
+
+function populateScheduleEventAttendeeSelect(selectedIds = []) {
+  if (!scheduleEventAttendees) return;
+  const users = getUsersForCurrentWorkspace();
+  const normalizedSelected = normalizeScheduleEventAttendeeUserIds(selectedIds);
+  scheduleEventAttendees.innerHTML = '';
+  users.forEach((user) => {
+    const option = document.createElement('option');
+    option.value = user.id;
+    const email = String(user.email ?? '').trim();
+    option.textContent = email ? `${user.display_name} · ${email}` : user.display_name;
+    option.selected = normalizedSelected.includes(user.id);
+    scheduleEventAttendees.appendChild(option);
+  });
+  normalizedSelected
+    .filter((userId) => !users.some((user) => user.id === userId))
+    .forEach((userId) => {
+      const option = document.createElement('option');
+      option.value = userId;
+      option.textContent = `Unknown user (${userId.slice(0, 8)})`;
+      option.selected = true;
+      scheduleEventAttendees.appendChild(option);
+    });
+  if (!users.length && !normalizedSelected.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No users available';
+    option.disabled = true;
+    option.selected = true;
+    scheduleEventAttendees.appendChild(option);
+  }
+}
+
+function getSelectedScheduleEventAttendeeUserIds() {
+  if (!scheduleEventAttendees) return [];
+  const selectedIds = Array.from(scheduleEventAttendees.selectedOptions ?? [])
+    .map((option) => String(option.value ?? '').trim())
+    .filter(Boolean);
+  return normalizeScheduleEventAttendeeUserIds(selectedIds);
+}
+
+function syncScheduleEventDescriptionTemplate(options = {}) {
+  const preserveValue = options.preserveValue !== false;
+  if (!scheduleEventType || !scheduleEventNotes) return;
+  const selectedTypeId = String(scheduleEventType.value ?? '').trim();
+  const selectedType = getScheduleEventTypeById(selectedTypeId);
+  const template = String(selectedType?.description_template ?? '');
+  scheduleEventNotes.placeholder = template || 'Optional description';
+  if (!preserveValue) return;
+  if (!scheduleEventNotes.value.trim() && template) {
+    scheduleEventNotes.value = template;
+  }
+}
+
+function syncScheduleEventColorInputs() {
+  if (!scheduleEventColor || !scheduleEventColorOverride) return;
+  const overrideEnabled = Boolean(scheduleEventColorOverride.checked);
+  if (!overrideEnabled) {
+    const selectedTypeId = String(scheduleEventType?.value ?? '').trim() || null;
+    const selectedCalendarId = String(scheduleEventCalendar?.value ?? '').trim() || null;
+    const calendarColor = getScheduleCalendarById(selectedCalendarId)?.color ?? null;
+    const nextColor = getResolvedScheduleEventColor(
+      {
+        color_override: null,
+        event_type_id: selectedTypeId
+      },
+      calendarColor
+    );
+    scheduleEventColor.value = nextColor;
+  } else if (!normalizeScheduleEventColor(scheduleEventColor.value)) {
+    scheduleEventColor.value = SCHEDULE_CALENDAR_COLOR_PALETTE[0];
+  }
+  scheduleEventColor.disabled = !overrideEnabled;
+}
+
+function syncScheduleEventRepeatInputs() {
+  if (!scheduleEventRepeatUnit || !scheduleEventRepeatInterval) return;
+  const unit = normalizeScheduleEventRecurrenceUnit(scheduleEventRepeatUnit.value);
+  const hasRepeat = Boolean(unit);
+  scheduleEventRepeatInterval.disabled = !hasRepeat;
+  if (!hasRepeat) {
+    scheduleEventRepeatInterval.value = '';
+    return;
+  }
+  const interval = normalizeScheduleEventRecurrenceInterval(scheduleEventRepeatInterval.value);
+  if (!interval) {
+    scheduleEventRepeatInterval.value = '1';
+  }
+}
+
 function syncScheduleEventDatetimeInputs() {
   if (!scheduleEventStart || !scheduleEventEnd || !scheduleEventAllDay) return;
+  const displayTimeZone = getSchedulingDisplayTimeZone();
   const allDay = Boolean(scheduleEventAllDay.checked);
   const nextType = allDay ? 'date' : 'datetime-local';
   const startValue = scheduleEventStart.value;
@@ -20522,26 +21714,95 @@ function syncScheduleEventDatetimeInputs() {
   if (scheduleEventStart.type !== nextType) {
     scheduleEventStart.type = nextType;
     scheduleEventStart.value = allDay
-      ? toDateInputValue(fromDatetimeLocal(startValue))
-      : toDatetimeLocal(fromDateInputValue(startValue));
+      ? toDateInputValueInTimeZone(fromDatetimeLocalInTimeZone(startValue, displayTimeZone), displayTimeZone)
+      : toDatetimeLocalInTimeZone(fromDateInputValueInTimeZone(startValue, displayTimeZone), displayTimeZone);
   }
   if (scheduleEventEnd.type !== nextType) {
     scheduleEventEnd.type = nextType;
     scheduleEventEnd.value = allDay
-      ? toDateInputValue(fromDatetimeLocal(endValue))
-      : toDatetimeLocal(fromDateInputValue(endValue));
+      ? toDateInputValueInTimeZone(fromDatetimeLocalInTimeZone(endValue, displayTimeZone), displayTimeZone)
+      : toDatetimeLocalInTimeZone(fromDateInputValueInTimeZone(endValue, displayTimeZone), displayTimeZone);
   }
 }
 
-function openScheduleEventModal(event = null, defaults = {}) {
+function setScheduleEventFormDisabled(disabled) {
+  const fields = [
+    scheduleEventTitle,
+    scheduleEventCalendar,
+    scheduleEventKind,
+    scheduleEventType,
+    scheduleEventColorOverride,
+    scheduleEventColor,
+    scheduleEventAllDay,
+    scheduleEventRepeatInterval,
+    scheduleEventRepeatUnit,
+    scheduleEventStart,
+    scheduleEventEnd,
+    scheduleEventReminder,
+    scheduleEventAttendees,
+    scheduleEventNotes
+  ];
+  fields.forEach((field) => {
+    if (!field) return;
+    field.disabled = Boolean(disabled);
+  });
+  if (scheduleEventColor && !scheduleEventColorOverride?.checked) {
+    scheduleEventColor.disabled = true;
+  }
+}
+
+function setScheduleEventModalMode(mode = 'create') {
+  scheduleEventModalMode = mode === 'view' || mode === 'edit' ? mode : 'create';
+  const isView = scheduleEventModalMode === 'view';
+  const isEdit = scheduleEventModalMode === 'edit';
+  const hasExistingEvent = Boolean(activeScheduleEventId);
+
+  setScheduleEventFormDisabled(isView);
+
+  if (scheduleEventModalTitle) {
+    if (!hasExistingEvent) {
+      scheduleEventModalTitle.textContent = 'New event';
+    } else if (isView) {
+      scheduleEventModalTitle.textContent = 'Event details';
+    } else {
+      scheduleEventModalTitle.textContent = 'Edit event';
+    }
+  }
+
+  if (scheduleEventEdit) {
+    scheduleEventEdit.classList.toggle('hidden', !hasExistingEvent || !isView);
+  }
+  if (scheduleEventSave) {
+    scheduleEventSave.classList.toggle('hidden', isView);
+    scheduleEventSave.textContent = hasExistingEvent ? 'Save' : 'Create';
+  }
+  if (scheduleEventDelete) {
+    scheduleEventDelete.classList.toggle('hidden', !hasExistingEvent || isView);
+  }
+  if (scheduleEventCancel) {
+    scheduleEventCancel.textContent = isView ? 'Close' : 'Cancel';
+  }
+}
+
+function openScheduleEventModal(event = null, defaults = {}, options = {}) {
   activeScheduleEventId = event?.id ?? null;
+  const requestedMode = String(options?.mode ?? '').trim();
+  const nextMode = activeScheduleEventId
+    ? (requestedMode === 'edit' ? 'edit' : 'view')
+    : 'create';
+  const displayTimeZone = getSchedulingDisplayTimeZone();
   const startAt = defaults.start_at ?? event?.start_at ?? nowIso();
   const endAt = defaults.end_at ?? event?.end_at ?? null;
   const allDay = defaults.all_day ?? event?.all_day ?? false;
   const calendarId = defaults.calendar_id ?? event?.calendar_id ?? getActiveScheduleCalendarId();
-  if (scheduleEventModalTitle) {
-    scheduleEventModalTitle.textContent = activeScheduleEventId ? 'Edit event' : 'New event';
-  }
+  const defaultTypeId = !event ? (getScheduleEventTypesForWorkspace()[0]?.id ?? null) : null;
+  const eventTypeId = defaults.event_type_id ?? event?.event_type_id ?? defaultTypeId;
+  const attendeeUserIds = defaults.attendee_user_ids ?? event?.attendee_user_ids ?? [];
+  const reminderOffsetMinutes = normalizeScheduleEventReminderOffsetMinutes(
+    defaults.reminder_offset_minutes ?? event?.reminder_offset_minutes
+  );
+  const recurrenceInterval = defaults.recurrence_interval ?? event?.recurrence_interval ?? null;
+  const recurrenceUnit = defaults.recurrence_unit ?? event?.recurrence_unit ?? '';
   if (scheduleEventTitle) {
     scheduleEventTitle.value = event?.title ?? defaults.title ?? '';
   }
@@ -20552,29 +21813,68 @@ function openScheduleEventModal(event = null, defaults = {}) {
   if (scheduleEventKind) {
     scheduleEventKind.value = normalizeScheduleEventFormKind(event?.kind ?? defaults.kind ?? 'event');
   }
+  populateScheduleEventTypeSelect(eventTypeId);
+  if (scheduleEventColorOverride) {
+    scheduleEventColorOverride.checked = Boolean(normalizeScheduleEventColor(defaults.color_override ?? event?.color_override));
+  }
+  if (scheduleEventColor) {
+    scheduleEventColor.value = getResolvedScheduleEventColor(
+      {
+        color_override: defaults.color_override ?? event?.color_override ?? null,
+        event_type_id: eventTypeId
+      },
+      getScheduleCalendarById(resolvedCalendarId)?.color ?? null
+    );
+  }
+  populateScheduleEventAttendeeSelect(attendeeUserIds);
   if (scheduleEventAllDay) {
     scheduleEventAllDay.checked = Boolean(allDay);
   }
+  if (scheduleEventRepeatUnit) {
+    scheduleEventRepeatUnit.value = normalizeScheduleEventRecurrenceUnit(recurrenceUnit) ?? '';
+  }
+  if (scheduleEventRepeatInterval) {
+    const normalizedRepeat = normalizeScheduleEventRecurrenceInterval(recurrenceInterval);
+    scheduleEventRepeatInterval.value = normalizedRepeat ? String(normalizedRepeat) : '';
+  }
+  syncScheduleEventRepeatInputs();
   syncScheduleEventDatetimeInputs();
   if (scheduleEventStart) {
-    scheduleEventStart.value = scheduleEventAllDay?.checked ? toDateInputValue(startAt) : toDatetimeLocal(startAt);
+    scheduleEventStart.value = scheduleEventAllDay?.checked
+      ? toDateInputValueInTimeZone(startAt, displayTimeZone)
+      : toDatetimeLocalInTimeZone(startAt, displayTimeZone);
   }
   if (scheduleEventEnd) {
-    scheduleEventEnd.value = scheduleEventAllDay?.checked ? toDateInputValue(endAt) : toDatetimeLocal(endAt);
+    scheduleEventEnd.value = scheduleEventAllDay?.checked
+      ? toDateInputValueInTimeZone(endAt, displayTimeZone)
+      : toDatetimeLocalInTimeZone(endAt, displayTimeZone);
   }
   if (scheduleEventNotes) {
     scheduleEventNotes.value = event?.notes ?? defaults.notes ?? '';
   }
-  if (scheduleEventDelete) {
-    scheduleEventDelete.classList.toggle('hidden', !activeScheduleEventId);
+  if (scheduleEventReminder) {
+    scheduleEventReminder.value = String(
+      reminderOffsetMinutes === null
+        ? DEFAULT_SCHEDULE_EVENT_REMINDER_MINUTES
+        : reminderOffsetMinutes
+    );
   }
+  syncScheduleEventDescriptionTemplate({ preserveValue: true });
+  syncScheduleEventColorInputs();
+  setScheduleEventModalMode(nextMode);
   scheduleEventModal?.classList.remove('hidden');
-  scheduleEventTitle?.focus();
+  if (nextMode === 'view' && scheduleEventEdit) {
+    scheduleEventEdit.focus();
+  } else {
+    scheduleEventTitle?.focus();
+  }
 }
 
 function closeScheduleEventModal() {
   scheduleEventModal?.classList.add('hidden');
   activeScheduleEventId = null;
+  scheduleEventModalMode = 'create';
+  setScheduleEventFormDisabled(false);
 }
 
 function openScheduleEventCreate(kind = 'event') {
@@ -20582,15 +21882,17 @@ function openScheduleEventCreate(kind = 'event') {
   const now = new Date();
   const startAt = now.toISOString();
   const isDayOff = normalizedKind === 'day-off';
+  const defaultEventTypeId = getScheduleEventTypesForWorkspace()[0]?.id ?? null;
   openScheduleEventModal(null, {
     title: '',
     kind: normalizedKind,
     calendar_id: getActiveScheduleCalendarId(),
+    event_type_id: defaultEventTypeId,
     all_day: isDayOff,
     start_at: startAt,
     end_at: startAt,
     notes: ''
-  });
+  }, { mode: 'create' });
 }
 
 function shouldNotifyNotice(notice) {
@@ -20646,10 +21948,17 @@ modalCancel.addEventListener('click', closeTaskModal);
 taskModal.querySelector('.modal-backdrop').addEventListener('click', closeTaskModal);
 scheduleEventCancel?.addEventListener('click', closeScheduleEventModal);
 scheduleEventModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeScheduleEventModal);
+scheduleEventEdit?.addEventListener('click', () => {
+  if (!activeScheduleEventId) return;
+  setScheduleEventModalMode('edit');
+  scheduleEventTitle?.focus();
+});
 scheduleEventAllDay?.addEventListener('change', () => {
+  if (scheduleEventModalMode === 'view') return;
   syncScheduleEventDatetimeInputs();
 });
 scheduleEventKind?.addEventListener('change', () => {
+  if (scheduleEventModalMode === 'view') return;
   const kind = normalizeScheduleEventFormKind(scheduleEventKind.value);
   if (!scheduleEventAllDay) return;
   if (kind === 'day-off') {
@@ -20657,10 +21966,36 @@ scheduleEventKind?.addEventListener('change', () => {
     syncScheduleEventDatetimeInputs();
   }
 });
+scheduleEventType?.addEventListener('change', () => {
+  if (scheduleEventModalMode === 'view') return;
+  syncScheduleEventDescriptionTemplate({ preserveValue: true });
+  syncScheduleEventColorInputs();
+});
+scheduleEventRepeatUnit?.addEventListener('change', () => {
+  if (scheduleEventModalMode === 'view') return;
+  syncScheduleEventRepeatInputs();
+});
+scheduleEventRepeatInterval?.addEventListener('change', () => {
+  if (scheduleEventModalMode === 'view') return;
+  syncScheduleEventRepeatInputs();
+});
 scheduleEventCalendar?.addEventListener('change', () => {
   const calendarId = String(scheduleEventCalendar.value ?? '').trim();
   if (calendarId) {
     setActiveScheduleCalendarId(calendarId);
+  }
+  if (scheduleEventModalMode !== 'view') {
+    syncScheduleEventColorInputs();
+  }
+});
+scheduleEventColorOverride?.addEventListener('change', () => {
+  if (scheduleEventModalMode === 'view') return;
+  syncScheduleEventColorInputs();
+});
+scheduleEventColor?.addEventListener('change', () => {
+  if (scheduleEventModalMode === 'view') return;
+  if (!normalizeScheduleEventColor(scheduleEventColor.value)) {
+    syncScheduleEventColorInputs();
   }
 });
 scheduleEventDelete?.addEventListener('click', () => {
@@ -21035,6 +22370,9 @@ adminOwnershipTransfer?.addEventListener('click', () => {
 taskTypesOpen?.addEventListener('click', openTaskTypesModal);
 taskTypesClose?.addEventListener('click', closeTaskTypesModal);
 taskTypesModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeTaskTypesModal);
+scheduleEventTypesOpen?.addEventListener('click', openScheduleEventTypesModal);
+scheduleEventTypesClose?.addEventListener('click', closeScheduleEventTypesModal);
+scheduleEventTypesModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeScheduleEventTypesModal);
 storeRulesOpen?.addEventListener('click', openStoreRulesModal);
 storeRulesClose?.addEventListener('click', closeStoreRulesModal);
 storeRulesModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeStoreRulesModal);
@@ -21366,17 +22704,30 @@ taskModalForm.addEventListener('submit', async (event) => {
 
 scheduleEventForm?.addEventListener('submit', (event) => {
   event.preventDefault();
+  if (scheduleEventModalMode === 'view') return;
   if (!state.workspace) return;
+  const displayTimeZone = getSchedulingDisplayTimeZone();
   const title = normalizeTitleInput(scheduleEventTitle?.value ?? '');
   const calendarId = String(scheduleEventCalendar?.value ?? '').trim() || getActiveScheduleCalendarId();
+  const eventTypeId = String(scheduleEventType?.value ?? '').trim() || null;
+  const colorOverride = scheduleEventColorOverride?.checked
+    ? (normalizeScheduleEventColor(scheduleEventColor?.value ?? '') ?? null)
+    : null;
+  const attendeeUserIds = getSelectedScheduleEventAttendeeUserIds();
+  const reminderOffsetMinutes = normalizeScheduleEventReminderOffsetMinutes(scheduleEventReminder?.value ?? '')
+    ?? DEFAULT_SCHEDULE_EVENT_REMINDER_MINUTES;
   const kind = normalizeScheduleEventFormKind(scheduleEventKind?.value ?? 'event');
   const allDay = Boolean(scheduleEventAllDay?.checked) || kind === 'day-off';
+  const repeatUnit = normalizeScheduleEventRecurrenceUnit(scheduleEventRepeatUnit?.value ?? '');
+  const repeatInterval = repeatUnit
+    ? normalizeScheduleEventRecurrenceInterval(scheduleEventRepeatInterval?.value ?? '')
+    : null;
   const startAt = allDay
-    ? fromDateInputValue(scheduleEventStart?.value ?? '')
-    : fromDatetimeLocal(scheduleEventStart?.value ?? '');
+    ? fromDateInputValueInTimeZone(scheduleEventStart?.value ?? '', displayTimeZone)
+    : fromDatetimeLocalInTimeZone(scheduleEventStart?.value ?? '', displayTimeZone);
   let endAt = allDay
-    ? fromDateInputValue(scheduleEventEnd?.value ?? '')
-    : fromDatetimeLocal(scheduleEventEnd?.value ?? '');
+    ? fromDateInputValueInTimeZone(scheduleEventEnd?.value ?? '', displayTimeZone)
+    : fromDatetimeLocalInTimeZone(scheduleEventEnd?.value ?? '', displayTimeZone);
   if (!startAt) {
     alert('Start date/time is required.');
     return;
@@ -21395,11 +22746,17 @@ scheduleEventForm?.addEventListener('submit', (event) => {
   const payload = {
     title: title || (kind === 'day-off' ? 'Day off' : 'Untitled event'),
     calendar_id: calendarId,
+    event_type_id: eventTypeId,
+    color_override: colorOverride,
+    attendee_user_ids: attendeeUserIds,
     kind,
     all_day: allDay ? 1 : 0,
     start_at: startAt,
     end_at: endAt,
-    notes: scheduleEventNotes?.value ?? ''
+    notes: scheduleEventNotes?.value ?? '',
+    reminder_offset_minutes: reminderOffsetMinutes,
+    recurrence_interval: repeatInterval,
+    recurrence_unit: repeatUnit
   };
   if (activeScheduleEventId) {
     updateScheduleEventRecord(activeScheduleEventId, payload);

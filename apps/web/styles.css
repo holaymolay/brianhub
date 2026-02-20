@@ -2667,6 +2667,15 @@ body.mobile-create-open {
   cursor: pointer;
 }
 
+.scheduling-week-event.is-time-draggable {
+  cursor: ns-resize;
+}
+
+.scheduling-week-event.is-time-dragging {
+  z-index: 8;
+  opacity: 0.94;
+}
+
 .scheduling-week-event.schedule-event {
   background: rgba(99, 179, 237, 0.18);
   border-color: rgba(99, 179, 237, 0.55);
@@ -2746,6 +2755,53 @@ body.mobile-create-open {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+.schedule-event-type-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+  align-items: start;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: #0f141c;
+}
+
+.schedule-event-type-row input[type="color"] {
+  width: 2.5rem;
+  min-width: 2.5rem;
+  height: 2.1rem;
+  padding: 0.1rem;
+}
+
+.schedule-event-type-row textarea {
+  grid-column: 1 / -1;
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.schedule-event-type-add {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.schedule-event-type-color-field {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 11rem;
+}
+
+.schedule-event-type-color-field input[type="color"] {
+  width: 2.8rem;
+  min-width: 2.8rem;
+  height: 2.1rem;
+  padding: 0.1rem;
+}
+
+.schedule-event-type-add .subtle-button {
+  justify-self: start;
 }
 
 .store-rule-row {

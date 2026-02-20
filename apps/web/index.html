@@ -954,10 +954,40 @@
               <option value="day-off">Day off</option>
             </select>
           </label>
+          <label>
+            Event type
+            <select id="schedule-event-type"></select>
+          </label>
+          <div class="datetime-row">
+            <label class="setting-checkbox">
+              <input id="schedule-event-color-override" type="checkbox" />
+              Custom color
+            </label>
+            <label>
+              Color
+              <input id="schedule-event-color" type="color" value="#63b3ed" />
+            </label>
+          </div>
           <label class="setting-checkbox">
             <input id="schedule-event-all-day" type="checkbox" />
             All day
           </label>
+          <div class="datetime-row">
+            <label>
+              Repeat every
+              <input id="schedule-event-repeat-interval" type="number" min="1" step="1" placeholder="No repeat" />
+            </label>
+            <label>
+              Repeat unit
+              <select id="schedule-event-repeat-unit">
+                <option value="">No repeat</option>
+                <option value="day">Day</option>
+                <option value="week">Week</option>
+                <option value="month">Month</option>
+                <option value="year">Year</option>
+              </select>
+            </label>
+          </div>
           <div class="datetime-row">
             <label>
               Start
@@ -969,12 +999,21 @@
             </label>
           </div>
           <label>
-            Notes
-            <textarea id="schedule-event-notes" rows="3" placeholder="Optional notes"></textarea>
+            Reminder (minutes before)
+            <input id="schedule-event-reminder" type="number" min="0" step="1" placeholder="10" />
+          </label>
+          <label>
+            Attendees
+            <select id="schedule-event-attendees" multiple size="4"></select>
+          </label>
+          <label>
+            Description
+            <textarea id="schedule-event-notes" rows="3" placeholder="Optional description"></textarea>
           </label>
           <div class="modal-actions">
             <button id="schedule-event-delete" class="danger-button hidden" type="button">Delete</button>
-            <button type="submit">Save</button>
+            <button id="schedule-event-edit" class="subtle-button hidden" type="button">Edit</button>
+            <button id="schedule-event-save" type="submit">Save</button>
             <button id="schedule-event-cancel" type="button">Cancel</button>
           </div>
         </form>
@@ -1364,8 +1403,19 @@
                     <option value="workweek">5 days (Mon-Fri)</option>
                   </select>
                 </div>
+                <div class="setting-row">
+                  <div class="setting-label">Your time zone</div>
+                  <input id="scheduling-ui-time-zone" class="setting-input" type="text" placeholder="America/Los_Angeles" />
+                </div>
               </div>
             </details>
+            <div class="settings-section settings-action-card">
+              <div class="settings-action-copy">
+                <span class="settings-action-title">Event types</span>
+                <span class="settings-action-subtitle">Define event type labels and default description templates.</span>
+              </div>
+              <button id="schedule-event-types-open" class="subtle-button" type="button">Open</button>
+            </div>
           </section>
           <section id="settings-panel-crm" class="settings-tab-panel" role="tabpanel" data-settings-panel="crm">
             <div class="settings-section settings-placeholder-card">
@@ -1440,6 +1490,26 @@
         </div>
         <div class="modal-actions">
           <button type="button" id="store-rules-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="schedule-event-types-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <h2>Event Types</h2>
+        <div id="schedule-event-type-list" class="workspace-list"></div>
+        <div class="schedule-event-type-add">
+          <input id="schedule-event-type-name" type="text" placeholder="Type name" />
+          <label class="schedule-event-type-color-field">
+            Color
+            <input id="schedule-event-type-color" type="color" value="#63b3ed" />
+          </label>
+          <textarea id="schedule-event-type-template" rows="3" placeholder="Default description template (optional)"></textarea>
+          <button id="schedule-event-type-add" class="subtle-button" type="button">Add type</button>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="schedule-event-types-close">Close</button>
         </div>
       </div>
     </div>
