@@ -123,7 +123,9 @@
           <div id="tasks-sidebar-content" class="sidebar-content">
             <div class="sidebar-header-row">
               <button id="tasks-open" class="sidebar-section-button" type="button">My Tasks</button>
+              <button id="new-task-list-btn" class="icon-button menu-icon" type="button" title="New list">＋</button>
             </div>
+            <div id="task-list-list" class="workspace-list"></div>
             <div class="sidebar-divider"></div>
             <div class="sidebar-header-row">
               <button id="projects-open" class="sidebar-section-button" type="button">Projects</button>
@@ -144,11 +146,11 @@
             </div>
             <div id="workflow-list" class="workspace-list"></div>
             <div class="sidebar-divider"></div>
-            <div class="sidebar-header-row">
-              <button id="shopping-open" class="sidebar-section-button" type="button">Shopping Lists</button>
-              <div class="sidebar-header-actions">
-                <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
-                <div class="workspace-menu-wrapper">
+          <div class="sidebar-header-row">
+            <button id="shopping-open" class="sidebar-section-button" type="button">Shopping Lists</button>
+            <div class="sidebar-header-actions">
+              <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
+              <div class="workspace-menu-wrapper">
                   <button id="shopping-list-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Shopping list menu">⋯</button>
                   <div id="shopping-list-sidebar-menu" class="workspace-menu hidden">
                     <label class="workspace-menu-item checkbox-item">
@@ -156,14 +158,26 @@
                       Show completed
                     </label>
                   </div>
-                </div>
               </div>
             </div>
-            <div id="shopping-list-list" class="workspace-list"></div>
-            <div class="sidebar-divider"></div>
-            <div class="sidebar-header-row">
-              <button id="notices-open" class="sidebar-section-button" type="button">Notices</button>
-              <button id="new-notice-sidebar-btn" class="icon-button menu-icon" type="button" title="New notice">＋</button>
+          </div>
+          <div id="task-shopping-inbox" class="task-shopping-inbox sidebar-shopping-inbox">
+            <div class="task-shopping-inbox-compose">
+              <input
+                id="task-shopping-inbox-input"
+                class="setting-input"
+                type="text"
+                placeholder="Quick Add"
+                autocomplete="off"
+              />
+              <button id="task-shopping-inbox-add" class="subtle-button" type="button" aria-label="Add inbox item">＋</button>
+            </div>
+          </div>
+          <div id="shopping-list-list" class="workspace-list"></div>
+          <div class="sidebar-divider"></div>
+          <div class="sidebar-header-row">
+            <button id="notices-open" class="sidebar-section-button" type="button">Notices</button>
+            <button id="new-notice-sidebar-btn" class="icon-button menu-icon" type="button" title="New notice">＋</button>
             </div>
             <div id="notice-list" class="workspace-list"></div>
           </div>
@@ -273,10 +287,6 @@
                 <button class="workspace-menu-item" type="button" data-filter="unassigned">Unassigned</button>
               </div>
             </div>
-            <div class="task-ai">
-              <button id="task-ai-button" class="icon-button menu-icon task-ai-button" type="button" title="AI suggestions">🔔</button>
-              <div id="task-ai-menu" class="workspace-menu task-ai-menu hidden"></div>
-            </div>
             <div class="task-view-toggle">
               <div class="task-sort">
                 <button id="task-sort-button" class="subtle-button" type="button">Sort ▾</button>
@@ -284,7 +294,6 @@
                   <button class="workspace-menu-item" type="button" data-sort="default">Default</button>
                   <button class="workspace-menu-item" type="button" data-sort="due-asc">Due date (soonest)</button>
                   <button class="workspace-menu-item" type="button" data-sort="due-desc">Due date (latest)</button>
-                  <button class="workspace-menu-item" type="button" data-sort="ai-queue">AI queue</button>
                 </div>
               </div>
               <div class="task-group">
@@ -300,6 +309,7 @@
                 <option value="list">List view</option>
                 <option value="kanban">Kanban view</option>
                 <option value="calendar">Calendar view</option>
+                <option value="smart">Smart view</option>
               </select>
               <button id="task-columns-button" class="subtle-button" type="button" title="Add section">＋</button>
             </div>
@@ -958,15 +968,16 @@
             Event type
             <select id="schedule-event-type"></select>
           </label>
-          <div class="datetime-row">
+          <div class="datetime-row schedule-event-color-row">
             <label class="setting-checkbox">
               <input id="schedule-event-color-override" type="checkbox" />
               Custom color
             </label>
-            <label>
-              Color
-              <input id="schedule-event-color" type="color" value="#63b3ed" />
-            </label>
+            <div class="schedule-event-color-field">
+              <span class="schedule-event-color-label">Color</span>
+              <div id="schedule-event-color-presets" class="schedule-event-color-presets" aria-label="Event color options"></div>
+              <input id="schedule-event-color" class="schedule-event-color-input" type="color" value="#63b3ed" />
+            </div>
           </div>
           <label class="setting-checkbox">
             <input id="schedule-event-all-day" type="checkbox" />
@@ -1008,10 +1019,27 @@
           </label>
           <label>
             Description
-            <textarea id="schedule-event-notes" rows="3" placeholder="Optional description"></textarea>
+            <div id="schedule-event-description-editor" class="schedule-rich-editor">
+              <div class="schedule-rich-toolbar">
+                <button type="button" class="notes-btn" data-command="bold" title="Bold"><strong>B</strong></button>
+                <button type="button" class="notes-btn" data-command="italic" title="Italic"><em>I</em></button>
+                <button type="button" class="notes-btn" data-command="underline" title="Underline"><span style="text-decoration: underline;">U</span></button>
+                <button type="button" class="notes-btn" data-command="bullet" title="Bullet list">• List</button>
+                <button type="button" class="notes-btn" data-command="ordered" title="Numbered list">1. List</button>
+                <button type="button" class="notes-btn" data-command="link" title="Insert link">Link</button>
+              </div>
+              <div
+                id="schedule-event-description"
+                class="schedule-rich-content"
+                contenteditable="true"
+                data-placeholder="Optional description"
+              ></div>
+              <textarea id="schedule-event-notes" class="hidden" rows="3" placeholder="Optional description"></textarea>
+            </div>
           </label>
           <div class="modal-actions">
             <button id="schedule-event-delete" class="danger-button hidden" type="button">Delete</button>
+            <button id="schedule-event-print" class="subtle-button hidden" type="button">Print</button>
             <button id="schedule-event-edit" class="subtle-button hidden" type="button">Edit</button>
             <button id="schedule-event-save" type="submit">Save</button>
             <button id="schedule-event-cancel" type="button">Cancel</button>
@@ -1338,7 +1366,6 @@
                     <option value="default">Default</option>
                     <option value="due-asc">Due date (soonest)</option>
                     <option value="due-desc">Due date (latest)</option>
-                    <option value="ai-queue">AI queue</option>
                   </select>
                 </div>
                 <div class="setting-row">
@@ -1356,6 +1383,7 @@
                     <option value="list">List</option>
                     <option value="kanban">Kanban</option>
                     <option value="calendar">Calendar</option>
+                    <option value="smart">Smart</option>
                   </select>
                 </div>
                 <div class="setting-row setting-row-stack">
@@ -1406,6 +1434,10 @@
                 <div class="setting-row">
                   <div class="setting-label">Your time zone</div>
                   <input id="scheduling-ui-time-zone" class="setting-input" type="text" placeholder="America/Los_Angeles" />
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">Default event duration (minutes)</div>
+                  <input id="scheduling-ui-default-duration" class="setting-input" type="number" min="5" max="1440" step="5" />
                 </div>
               </div>
             </details>

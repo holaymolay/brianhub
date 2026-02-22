@@ -12,6 +12,7 @@ This document is a binding constraint for work in this repository.
 - Keep scope tight; if work spans multiple concepts, split into separate commits.
 - Push each commit to GitHub promptly; do not leave local-only changes beyond the current session unless explicitly requested.
 - Update `.ceres/workspace/completed.md` and `.ceres/workspace/handover.md` after work.
+- Update documentation with feature changes in the same workstream (at minimum `README.md` and the relevant docs page).
 
 ## Allowed patterns
 - planning (when needed for multi‑step work)

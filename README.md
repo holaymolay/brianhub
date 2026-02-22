@@ -1,85 +1,128 @@
 # BrianHub
 
-BrianHub is a lightweight task hub with list, kanban, and calendar views, plus shopping lists and standalone notices.
+BrianHub is a local-first planning application with two active modules:
+- `Tasks` for task management, workflows, projects, shopping, and notices
+- `Scheduling` for calendar-first planning (events, time blocks, and day-off entries)
 
-## Features (high level)
-- Tasks with subtasks, dependencies, and due-date reminders
-- List, kanban, and calendar views
-- Shopping lists with store selection
-- Notices (standalone alerts) with types, sorting, and filtering
+## Product snapshot
 
-## Development
+### Tasks module
+- Task views: `List`, `Kanban`, `Calendar`, and `Smart`
+- Task hierarchy: sections, subtasks, dependencies, tags, due dates, reminders, recurrence
+- Calendar view supports `Month`, `Week`, and `Day` ranges
+- Week and month date-click navigation to day view
+- Notices are shown in task calendar (holidays intentionally not shown in task calendar)
+- Sidebar includes: task lists, projects, workflows, shopping lists, notices
+- Shopping quick-add inbox in sidebar for rapid capture
+
+### Scheduling module
+- Calendar views: `Month`, `Week`, and `Day`
+- Multiple user calendars with show/hide and per-calendar colors
+- Event kinds: event, time block, day off
+- Drag-and-drop rescheduling in time grid
+- Calendar layers (events, time blocks, day off, tasks, holidays)
+- Mobile-tailored scheduling experience with dedicated controls
+
+### Shared platform features
+- Local-first sync with `/sync/push` and `/sync/pull`
+- Authentication and session support (optional auth requirement)
+- Owner/admin console with invite tokens and user controls
+- Audit log page
+- Automation console page
+- Import/export page
+- Backup scripts with retention and restore-check tooling
+
+For detailed module behavior, see `docs/product-features.md`.
+
+## Stack
+- Frontend: vanilla HTML/CSS/JS (`apps/web`)
+- API: Fastify v4 (`services/api/src/server.js`)
+- Data: SQLite (`data/brianhub.sqlite`) via `sql.js`
+- Runtime: Node.js ESM (`"type": "module"`)
+- Tests: native Node test runner (`node --test`)
+
+## Quick start
 
 Install dependencies:
-```
+```bash
 npm install
 ```
 
-Run the dev server (API + web UI):
-```
+Run API + web in dev:
+```bash
 npm run dev
 ```
 
-Run tests:
-```
-npm test
+Default endpoints:
+- Web UI: `http://localhost:5173/apps/web/`
+- API: `http://localhost:3000`
+
+## Common scripts
+
+```bash
+npm run dev                  # API + web
+npm run dev:api              # API only
+npm run migrate              # run DB migrations
+npm run seed:test-data       # seed test/demo data
+npm run test                 # run test suite
+npm run security:semgrep     # run static security scan
+npm run backup:db            # create snapshot backup
+npm run backup:retention     # retention cleanup only
+npm run backup:restore-check # restore integrity check
 ```
 
-Run static security scan:
-```
-npm run security:semgrep
-```
-
-Web UI runs at:
-```
-http://localhost:5173
+Auth bootstrap helper:
+```bash
+npm run auth:bootstrap-owner
 ```
 
-API runs at:
-```
-http://localhost:3000
-```
+## Configuration
 
-## Data
-- Local sqlite DB: `data/brianhub.sqlite` (or `BRIANHUB_DB`)
-- Migrations live in: `services/api/db/migrations`
+### Core API/runtime
+Key environment variables:
+- `HOST` (default `0.0.0.0`)
+- `PORT` (default `3000`)
+- `LOG_LEVEL` (default `debug` in dev)
+- `BRIANHUB_DB` (default `data/brianhub.sqlite`)
+- `BRIANHUB_MIGRATIONS` (default `services/api/db/migrations`)
+- `BRIANHUB_CORS_ORIGINS` (default `*` in local dev)
+- `BRIANHUB_APP_ORIGIN` (optional, recommended for production)
 
-## Backups
-Run an on-demand backup:
-```
-npm run backup:db
-```
+### Auth/admin
+- `BRIANHUB_OWNER_EMAIL` (default `brian@pipecaminc.com`)
+- `BRIANHUB_REQUIRE_AUTH` (default `false`)
+- `BRIANHUB_SESSION_COOKIE_NAME` (default `brianhub_session`)
+- `BRIANHUB_SESSION_TTL_DAYS` (default `30`)
+- `BRIANHUB_EXPOSE_INVITE_TOKEN` (default enabled outside production)
 
-Run retention-only cleanup:
-```
-npm run backup:retention
-```
+### Backups
+- `BRIANHUB_BACKUP_DIR` (default `data/backups`)
+- `BRIANHUB_BACKUP_PREFIX` (default `brianhub`)
+- `BRIANHUB_BACKUP_ENCRYPTION_KEY` (optional)
+- `BRIANHUB_BACKUP_UPLOAD_DIR` (optional)
+- `BRIANHUB_BACKUP_S3_URI` (optional)
+- `BRIANHUB_BACKUP_DAILY_KEEP_DAYS` (default `7`)
+- `BRIANHUB_BACKUP_WEEKLY_KEEP_WEEKS` (default `52`)
 
-Run restore integrity check against latest backup:
-```
-npm run backup:restore-check
-```
-
-Backup behavior:
-- Snapshot DB file, gzip it, optional AES-256-GCM encryption, optional upload.
-- Retention policy defaults to:
-  - Keep last 7 daily snapshots.
-  - Keep 52 weekly snapshots after that.
-  - Keep quarterly snapshots for anything older.
-- Configure with env vars:
-  - `BRIANHUB_BACKUP_DIR` (default `data/backups`)
-  - `BRIANHUB_BACKUP_PREFIX` (default `brianhub`)
-  - `BRIANHUB_BACKUP_ENCRYPTION_KEY` (optional)
-  - `BRIANHUB_BACKUP_UPLOAD_DIR` (optional offsite mounted directory)
-  - `BRIANHUB_BACKUP_S3_URI` (optional S3 destination)
-  - `BRIANHUB_BACKUP_DAILY_KEEP_DAYS` (default `7`)
-  - `BRIANHUB_BACKUP_WEEKLY_KEEP_WEEKS` (default `52`)
+Retention defaults:
+- Keep last 7 daily snapshots
+- Keep 52 weekly snapshots
+- Keep quarterly snapshots for older backups
 
 Scheduling templates:
-- systemd: `scripts/systemd/brianhub-backup.service` + `scripts/systemd/brianhub-backup.timer`
+- systemd: `scripts/systemd/brianhub-backup.service`, `scripts/systemd/brianhub-backup.timer`
 - cron: `scripts/cron/brianhub-backup.cron`
 
-## Notes
-- "Notices" are standalone items.
-- Task "reminders" are due-date alerts tied to tasks.
-- Sync endpoints enforce request validation and return request-correlated error payloads.
+## Documentation
+
+- Documentation index: `docs/README.md`
+- Product features: `docs/product-features.md`
+- Security: `docs/security.md`
+- Hardening/testing: `docs/pre-deploy-hardening.md`
+- Domain/email rollout planning: `docs/domain-email-rollout-plan.md`
+
+## Documentation policy
+
+Feature changes must include documentation updates in the same workstream:
+- Update `README.md` if setup, scripts, or top-level behavior changed
+- Update feature docs (`docs/product-features.md` or relevant doc) when UX/behavior changes
