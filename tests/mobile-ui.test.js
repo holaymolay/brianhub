@@ -17,6 +17,7 @@ test('mobile quick add opens task creation directly from tasks view', () => {
 
 test('task modal keeps the action row reachable on mobile', () => {
   const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(css, /\.modal \{[\s\S]*z-index: 220;/);
   assert.match(css, /#task-modal \.modal-card \{[\s\S]*max-height: calc\(100dvh - 2rem\);/);
   assert.match(css, /#task-modal-form \{[\s\S]*overflow-y: auto;/);
   assert.match(css, /#task-modal-form \.modal-actions \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
