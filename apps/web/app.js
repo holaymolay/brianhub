@@ -1,5 +1,11 @@
 import { loadState, saveState, createId } from './localStore.js';
-import { loadLocalData, saveLocalData, recordLocalChange } from './localData.js';
+import {
+  loadLocalData,
+  saveLocalData,
+  recordLocalChange,
+  getBootLocalData,
+  prepareLocalDataForStorage
+} from './localData.js';
 import { applyRemoteChanges } from './syncState.js';
 import { replayPendingChanges } from './syncQueue.js';
 import { getClientId } from './clientId.js';
@@ -13,37 +19,38 @@ import { applyCheckIn, applyWaitingFollowup, TaskStatus } from '../../packages/c
 const DEFAULT_OWNER_EMAIL = 'brian@pipecaminc.com';
 
 const localData = loadLocalData();
+const bootLocalData = getBootLocalData(localData);
 const state = {
   ...loadState(),
-  workspaces: localData.workspaces ?? [],
+  workspaces: bootLocalData.workspaces ?? [],
   workspace: null,
-  projects: localData.projects ?? [],
-  templates: localData.templates ?? [],
-  workflows: localData.workflows ?? [],
-  workflowVariants: localData.workflowVariants ?? [],
-  workflowPhases: localData.workflowPhases ?? [],
-  workflowVariantPhases: localData.workflowVariantPhases ?? [],
-  workflowPhaseTasks: localData.workflowPhaseTasks ?? [],
-  workflowPatterns: localData.workflowPatterns ?? localData.workflowFragments ?? [],
-  workflowPatternTasks: localData.workflowPatternTasks ?? localData.workflowFragmentTasks ?? [],
-  workflowInstances: localData.workflowInstances ?? [],
-  workflowInstanceTasks: localData.workflowInstanceTasks ?? [],
-  scheduleCalendars: localData.scheduleCalendars ?? [],
-  scheduleEventTypes: localData.scheduleEventTypes ?? [],
-  scheduleEvents: localData.scheduleEvents ?? [],
-  statuses: localData.statuses ?? [],
-  taskTypes: localData.taskTypes ?? [],
-  users: localData.users ?? [],
-  workspaceMemberships: localData.workspaceMemberships ?? [],
-  taskSections: (localData.taskSections ?? []).map(normalizeTaskSection),
-  storeRules: localData.storeRules ?? [],
-  tasks: localData.tasks ?? {},
-  taskDependencies: localData.taskDependencies ?? [],
-  notices: localData.notices ?? [],
-  noticeTypes: localData.noticeTypes ?? [],
-  shoppingLists: localData.shoppingLists ?? [],
-  shoppingItems: localData.shoppingItems ?? {},
-  auditLog: localData.auditLog ?? [],
+  projects: bootLocalData.projects ?? [],
+  templates: bootLocalData.templates ?? [],
+  workflows: bootLocalData.workflows ?? [],
+  workflowVariants: bootLocalData.workflowVariants ?? [],
+  workflowPhases: bootLocalData.workflowPhases ?? [],
+  workflowVariantPhases: bootLocalData.workflowVariantPhases ?? [],
+  workflowPhaseTasks: bootLocalData.workflowPhaseTasks ?? [],
+  workflowPatterns: bootLocalData.workflowPatterns ?? bootLocalData.workflowFragments ?? [],
+  workflowPatternTasks: bootLocalData.workflowPatternTasks ?? bootLocalData.workflowFragmentTasks ?? [],
+  workflowInstances: bootLocalData.workflowInstances ?? [],
+  workflowInstanceTasks: bootLocalData.workflowInstanceTasks ?? [],
+  scheduleCalendars: bootLocalData.scheduleCalendars ?? [],
+  scheduleEventTypes: bootLocalData.scheduleEventTypes ?? [],
+  scheduleEvents: bootLocalData.scheduleEvents ?? [],
+  statuses: bootLocalData.statuses ?? [],
+  taskTypes: bootLocalData.taskTypes ?? [],
+  users: bootLocalData.users ?? [],
+  workspaceMemberships: bootLocalData.workspaceMemberships ?? [],
+  taskSections: (bootLocalData.taskSections ?? []).map(normalizeTaskSection),
+  storeRules: bootLocalData.storeRules ?? [],
+  tasks: bootLocalData.tasks ?? {},
+  taskDependencies: bootLocalData.taskDependencies ?? [],
+  notices: bootLocalData.notices ?? [],
+  noticeTypes: bootLocalData.noticeTypes ?? [],
+  shoppingLists: bootLocalData.shoppingLists ?? [],
+  shoppingItems: bootLocalData.shoppingItems ?? {},
+  auditLog: bootLocalData.auditLog ?? [],
   local: {
     localSeq: localData.localSeq ?? 0,
     pendingChanges: localData.pendingChanges ?? []
@@ -189,6 +196,7 @@ const taskFilterTagInput = document.getElementById('task-filter-tag-input');
 const taskCreatePrimary = document.getElementById('task-create-primary');
 const taskCreateMenuButton = document.getElementById('task-create-menu-button');
 const taskCreateMenu = document.getElementById('task-create-menu');
+const tasksMobileAddBtn = document.getElementById('tasks-mobile-add-btn');
 const taskAiButton = document.getElementById('task-ai-button');
 const taskAiMenu = document.getElementById('task-ai-menu');
 const taskSortButton = document.getElementById('task-sort-button');
@@ -1018,6 +1026,15 @@ archivedWorkspacesBtn?.addEventListener('click', (event) => {
 });
 
 taskCreatePrimary?.addEventListener('click', () => {
+  taskCreateMenu?.classList.add('hidden');
+  if (openMenu === taskCreateMenu) openMenu = null;
+  setActiveView('tasks');
+  clearActiveWorkflowChecklistInstanceId();
+  render();
+  openTaskModal();
+});
+
+tasksMobileAddBtn?.addEventListener('click', () => {
   taskCreateMenu?.classList.add('hidden');
   if (openMenu === taskCreateMenu) openMenu = null;
   setActiveView('tasks');
@@ -4326,6 +4343,11 @@ function renderMobileNavigation() {
     syncMobileNavStandardButtons(activeView);
   }
   mobileNav.classList.toggle('is-scheduling-module', mobileSchedulingNav);
+  if (mobileNavAdd) {
+    const taskQuickAdd = activeView === 'tasks';
+    mobileNavAdd.title = taskQuickAdd ? 'Add task' : 'Create';
+    mobileNavAdd.setAttribute('aria-label', taskQuickAdd ? 'Add task' : 'Create');
+  }
   mobileNavButtons.forEach((button) => {
     const view = String(button.dataset.view ?? '').trim();
     const isHidden = button.classList.contains('hidden');
@@ -4534,6 +4556,10 @@ function runMobileCreateAction(action) {
 }
 
 function handleMobileQuickAdd() {
+  if (getActiveView() === 'tasks') {
+    runMobileCreateAction('task');
+    return;
+  }
   openMobileCreateSheet();
 }
 
@@ -7740,7 +7766,7 @@ function hasPendingLocalChanges() {
 }
 
 function persistLocalData() {
-  saveLocalData({
+  saveLocalData(prepareLocalDataForStorage({
     localSeq: state.local?.localSeq ?? 0,
     pendingChanges: state.local?.pendingChanges ?? [],
     auditLog: state.auditLog ?? [],
@@ -7771,7 +7797,7 @@ function persistLocalData() {
     storeRules: state.storeRules ?? [],
     shoppingLists: state.shoppingLists ?? [],
     shoppingItems: state.shoppingItems ?? {}
-  });
+  }, { keepDomainData: hasPendingLocalChanges() }));
 }
 
 function queueLocalChange(change) {

@@ -9,11 +9,8 @@ function createMutationId() {
   return `mut-${Date.now().toString(36)}-${mutationCounter.toString(36)}`;
 }
 
-function defaultData() {
+function defaultDomainData() {
   return {
-    localSeq: 0,
-    pendingChanges: [],
-    auditLog: [],
     workspaces: [],
     projects: [],
     statuses: [],
@@ -43,6 +40,15 @@ function defaultData() {
     storeRules: [],
     shoppingLists: [],
     shoppingItems: {}
+  };
+}
+
+function defaultData() {
+  return {
+    localSeq: 0,
+    pendingChanges: [],
+    auditLog: [],
+    ...defaultDomainData()
   };
 }
 
@@ -120,6 +126,28 @@ export function loadLocalData() {
 export function saveLocalData(data) {
   const payload = normalizeData(data);
   localStorage.setItem(DATA_KEY, JSON.stringify(payload));
+}
+
+export function shouldHydrateLocalDomainData(data) {
+  return normalizeData(data).pendingChanges.length > 0;
+}
+
+export function getBootLocalData(data) {
+  const normalized = normalizeData(data);
+  if (normalized.pendingChanges.length > 0) return normalized;
+  return {
+    ...normalized,
+    ...defaultDomainData()
+  };
+}
+
+export function prepareLocalDataForStorage(data, { keepDomainData = true } = {}) {
+  const normalized = normalizeData(data);
+  if (keepDomainData) return normalized;
+  return {
+    ...normalized,
+    ...defaultDomainData()
+  };
 }
 
 export function recordLocalChange(data, change) {
