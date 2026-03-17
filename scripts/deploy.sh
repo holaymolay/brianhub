@@ -85,6 +85,15 @@ DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 }
 
+release_commit_sha() {
+  local release_dir="$1"
+  local meta_path
+  meta_path="$(release_meta_path "$release_dir")"
+  if [[ -f "$meta_path" ]]; then
+    awk -F= '$1=="COMMIT_SHA"{print $2}' "$meta_path"
+  fi
+}
+
 prune_releases() {
   local keep_count="$1"
   local current_release previous_release release
@@ -106,13 +115,18 @@ prune_releases() {
 }
 
 cleanup_on_error() {
-  local active_release=""
+  local active_release="" restored_commit=""
   active_release="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
   if [[ -n "$NEW_RELEASE_DIR" && -n "$PREVIOUS_RELEASE_DIR" && "$active_release" == "$NEW_RELEASE_DIR" ]]; then
     log "deploy failed after switch; restoring previous release"
     if [[ -n "$PENDING_LINK_PATH" ]]; then
       ln -sfn "$PREVIOUS_RELEASE_DIR" "$PENDING_LINK_PATH"
       mv -Tf "$PENDING_LINK_PATH" "$CURRENT_LINK"
+    fi
+    printf '%s\n' "$PREVIOUS_RELEASE_DIR" >"$STATE_DIR/current-release.txt"
+    restored_commit="$(release_commit_sha "$PREVIOUS_RELEASE_DIR")"
+    if [[ -n "$restored_commit" ]]; then
+      printf '%s\n' "$restored_commit" >"$STATE_DIR/current-commit.txt"
     fi
     systemctl_cmd restart "$SERVICE_NAME" || true
   fi
@@ -190,7 +204,7 @@ main() {
 
   : "${PORT:=3100}"
   log "waiting for healthcheck on http://127.0.0.1:${PORT}${HEALTHCHECK_PATH}"
-  curl --fail --silent --show-error --retry 10 --retry-delay 1 \
+  curl --fail --silent --show-error --retry 10 --retry-delay 1 --retry-connrefused \
     "http://127.0.0.1:${PORT}${HEALTHCHECK_PATH}" >/dev/null
 
   prune_releases "$KEEP_RELEASES"

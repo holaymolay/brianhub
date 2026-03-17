@@ -13,6 +13,8 @@ TAILSCALE_AUTHKEY="${BRIANHUB_TAILSCALE_AUTHKEY:-}"
 TAILSCALE_HOSTNAME="${BRIANHUB_TAILSCALE_HOSTNAME:-brianhub}"
 TAILSCALE_TAGS="${BRIANHUB_TAILSCALE_TAGS:-tag:brianhub,tag:server}"
 INSTALL_ROGER_ADMIN="${BRIANHUB_INSTALL_ROGER_ADMIN:-false}"
+SERVICE_NAME="${BRIANHUB_SERVICE_NAME:-brianhub.service}"
+RUNTIME_SUDOERS_PATH="${BRIANHUB_RUNTIME_SUDOERS_PATH:-/etc/sudoers.d/brianhub-runtime-systemctl}"
 
 log() {
   printf '[provision] %s\n' "$*"
@@ -59,8 +61,18 @@ sync_repo() {
 install_env_file() {
   if [[ ! -f "$ENV_FILE" ]]; then
     cp "$REPO_DIR/.env.example" "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
   fi
+  chown root:"$RUNTIME_GROUP" "$ENV_FILE"
+  chmod 640 "$ENV_FILE"
+}
+
+install_runtime_sudoers() {
+  sed \
+    -e "s|__RUNTIME_USER__|$RUNTIME_USER|g" \
+    -e "s|__SERVICE_NAME__|$SERVICE_NAME|g" \
+    "$REPO_DIR/scripts/sudoers/brianhub-runtime-systemctl" >"$RUNTIME_SUDOERS_PATH"
+  chmod 0440 "$RUNTIME_SUDOERS_PATH"
+  visudo -cf "$RUNTIME_SUDOERS_PATH"
 }
 
 install_service_units() {
@@ -71,7 +83,10 @@ install_service_units() {
 }
 
 install_caddy_config() {
-  sed "s/^brianhub.com {/${DOMAIN} {/" "$REPO_DIR/scripts/caddy/Caddyfile" >/etc/caddy/Caddyfile
+  sed \
+    -e "s/^www\\.brianhub\\.com {/www.${DOMAIN} {/" \
+    -e "s/^brianhub\\.com {/${DOMAIN} {/" \
+    "$REPO_DIR/scripts/caddy/Caddyfile" >/etc/caddy/Caddyfile
   systemctl reload caddy
 }
 
@@ -120,7 +135,7 @@ Next steps:
 2. Run the first deploy:
    sudo -u $RUNTIME_USER BRIANHUB_REPO_DIR=$REPO_DIR BRIANHUB_ENV_FILE=$ENV_FILE $REPO_DIR/scripts/deploy.sh
 3. Bootstrap the owner account:
-   sudo -u $RUNTIME_USER bash -lc 'set -a; source $ENV_FILE; set +a; node $APP_ROOT/current/scripts/bootstrap-owner-auth.js "\$BRIANHUB_OWNER_EMAIL" "<password>" "Owner Name"'
+   sudo -u $RUNTIME_USER bash -lc 'cd $APP_ROOT/current && set -a; source $ENV_FILE; set +a; node scripts/bootstrap-owner-auth.js "\$BRIANHUB_OWNER_EMAIL" "<password>" "Owner Name"'
 4. Enable runtime services:
    sudo systemctl enable --now brianhub.service brianhub-backup.timer
 EOF
@@ -132,6 +147,7 @@ main() {
   configure_runtime_user
   sync_repo
   install_env_file
+  install_runtime_sudoers
   install_service_units
   install_caddy_config
   configure_firewall

@@ -50,7 +50,8 @@ sudo chown -R brianhub:brianhub /opt/brianhub /var/lib/brianhub /var/backups/bri
 
 ```bash
 sudo cp /opt/brianhub/repo/.env.example /etc/brianhub.env
-sudo chmod 600 /etc/brianhub.env
+sudo chown root:brianhub /etc/brianhub.env
+sudo chmod 640 /etc/brianhub.env
 sudoedit /etc/brianhub.env
 ```
 
@@ -77,10 +78,20 @@ Note:
 4. Install the service and Caddy config:
 
 ```bash
+DOMAIN=brianhub.com
 sudo cp /opt/brianhub/repo/scripts/systemd/brianhub.service /etc/systemd/system/brianhub.service
 sudo cp /opt/brianhub/repo/scripts/systemd/brianhub-backup.service /etc/systemd/system/brianhub-backup.service
 sudo cp /opt/brianhub/repo/scripts/systemd/brianhub-backup.timer /etc/systemd/system/brianhub-backup.timer
-sudo cp /opt/brianhub/repo/scripts/caddy/Caddyfile /etc/caddy/Caddyfile
+sudo sed \
+  -e "s/^www\\.brianhub\\.com {/www.${DOMAIN} {/" \
+  -e "s/^brianhub\\.com {/${DOMAIN} {/" \
+  /opt/brianhub/repo/scripts/caddy/Caddyfile | sudo tee /etc/caddy/Caddyfile >/dev/null
+sudo sed \
+  -e 's|__RUNTIME_USER__|brianhub|g' \
+  -e 's|__SERVICE_NAME__|brianhub.service|g' \
+  /opt/brianhub/repo/scripts/sudoers/brianhub-runtime-systemctl | sudo tee /tmp/brianhub-runtime-systemctl >/dev/null
+sudo install -m 0440 /tmp/brianhub-runtime-systemctl /etc/sudoers.d/brianhub-runtime-systemctl
+sudo visudo -cf /etc/sudoers.d/brianhub-runtime-systemctl
 sudo systemctl daemon-reload
 sudo systemctl reload caddy
 ```
@@ -98,7 +109,7 @@ If you are provisioning with an auth key, add `--auth-key=<key>` to the `tailsca
 
 ```bash
 sudo -u brianhub BRIANHUB_REPO_DIR=/opt/brianhub/repo BRIANHUB_ENV_FILE=/etc/brianhub.env /opt/brianhub/repo/scripts/deploy.sh
-sudo -u brianhub bash -lc 'set -a; source /etc/brianhub.env; set +a; node /opt/brianhub/current/scripts/bootstrap-owner-auth.js "$BRIANHUB_OWNER_EMAIL" "<password>" "Owner Name"'
+sudo -u brianhub bash -lc 'cd /opt/brianhub/current && set -a; source /etc/brianhub.env; set +a; node scripts/bootstrap-owner-auth.js "$BRIANHUB_OWNER_EMAIL" "<password>" "Owner Name"'
 sudo systemctl enable --now brianhub.service brianhub-backup.timer
 ```
 
@@ -139,6 +150,7 @@ The deploy script:
 - verifies `http://127.0.0.1:$PORT/health`
 
 Non-root deploys require passwordless `sudo` access to restart the system service. The restricted Roger admin path handles this through the wrapper described above.
+The runtime user also needs restricted passwordless access to `systemctl daemon-reload`, `systemctl restart brianhub.service`, and `systemctl is-active --quiet brianhub.service`. `scripts/provision-vps.sh` installs that sudoers file automatically.
 
 ## Rollback
 

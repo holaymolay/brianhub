@@ -1,0 +1,5 @@
+# Allow the BrianHub runtime user to restart only the BrianHub service during deploys.
+Defaults:__RUNTIME_USER__ !requiretty
+__RUNTIME_USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+__RUNTIME_USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart __SERVICE_NAME__
+__RUNTIME_USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl is-active --quiet __SERVICE_NAME__
