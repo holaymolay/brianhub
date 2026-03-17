@@ -1,0 +1,3 @@
+# Allow Roger to operate the BrianHub app without unrestricted root access.
+Defaults:__ROGER_USER__ !requiretty
+__ROGER_USER__ ALL=(root) NOPASSWD: __INSTALL_PATH__ *

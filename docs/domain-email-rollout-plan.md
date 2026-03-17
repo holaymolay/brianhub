@@ -20,6 +20,11 @@ Define a production rollout plan for hosting BrianHub at `brianhub.com` with rel
 - API already has owner-gated admin invite endpoints and pluggable email sender (`services/api/src/email.js`).
 - Backup scripts exist with retention and restore-check support.
 
+## Current deployment stance
+- The first production launch uses manual invite sharing, not transactional email.
+- Keep `BRIANHUB_EMAIL_PROVIDER=log` and `BRIANHUB_EXPOSE_INVITE_TOKEN=true` for the initial invited beta.
+- Once a real email provider is enabled, disable invite-token exposure in the admin API.
+
 ## Decisions to lock before implementation
 1. Hosting target:
    - Single VM with reverse proxy (fastest)
@@ -80,11 +85,11 @@ Set and validate env vars:
 - `NODE_ENV=production`
 - `BRIANHUB_APP_ORIGIN=https://brianhub.com`
 - `BRIANHUB_OWNER_EMAIL=brian@pipecaminc.com`
-- `BRIANHUB_EMAIL_PROVIDER=resend` (or `log` for staging)
+- `BRIANHUB_EMAIL_PROVIDER=resend` (or `log` for manual-invite staging/beta)
 - `BRIANHUB_EMAIL_FROM=noreply@brianhub.com`
 - `RESEND_API_KEY=<secret>`
 - `BRIANHUB_DB=/path/to/data/brianhub.sqlite`
-- `BRIANHUB_EXPOSE_INVITE_TOKEN=0` (production)
+- `BRIANHUB_EXPOSE_INVITE_TOKEN=0` after transactional invite email is live
 
 Also verify:
 - CORS origin strictness aligns with `BRIANHUB_APP_ORIGIN`.
@@ -140,7 +145,7 @@ Exit criteria:
 - [ ] No secrets in repo or client-side source
 - [ ] Parameterized SQL only
 - [ ] CORS restricted to production origin
-- [ ] `BRIANHUB_EXPOSE_INVITE_TOKEN=0` in production
+- [ ] `BRIANHUB_EXPOSE_INVITE_TOKEN=0` once email delivery replaces manual invite sharing
 - [ ] HTTPS-only cookies for authenticated sessions
 - [ ] Audit logging for invite create/accept/fail events
 

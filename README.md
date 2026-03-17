@@ -46,6 +46,8 @@ For detailed module behavior, see `docs/product-features.md`.
 Install dependencies:
 ```bash
 npm install
+# optional: copy the example env and adjust it for local dev
+cp .env.example .env
 ```
 
 Run API + web in dev:
@@ -69,6 +71,11 @@ npm run security:semgrep     # run static security scan
 npm run backup:db            # create snapshot backup
 npm run backup:retention     # retention cleanup only
 npm run backup:restore-check # restore integrity check
+npm run deploy:host          # host-side release deploy
+npm run provision:vps        # root-side VPS bootstrap helper
+npm run rollback:host        # host-side rollback
+npm run backups:pull         # local helper to mirror VPS backups
+npm run roger:setup-admin    # install restricted Roger admin access on the VPS
 ```
 
 Auth bootstrap helper:
@@ -91,6 +98,7 @@ Key environment variables:
 ### Auth/admin
 - `BRIANHUB_OWNER_EMAIL` (default `brian@pipecaminc.com`)
 - `BRIANHUB_REQUIRE_AUTH` (default `false`)
+- `BRIANHUB_ALLOW_HEADER_ACTOR_AUTH` (default `true`, set `false` in production)
 - `BRIANHUB_SESSION_COOKIE_NAME` (default `brianhub_session`)
 - `BRIANHUB_SESSION_TTL_DAYS` (default `30`)
 - `BRIANHUB_EXPOSE_INVITE_TOKEN` (default enabled outside production)
@@ -117,9 +125,21 @@ Scheduling templates:
 
 - Documentation index: `docs/README.md`
 - Product features: `docs/product-features.md`
+- Deployment: `docs/deployment.md`
 - Security: `docs/security.md`
 - Hardening/testing: `docs/pre-deploy-hardening.md`
 - Domain/email rollout planning: `docs/domain-email-rollout-plan.md`
+
+## Production deploy
+
+Production is designed for:
+
+- a dedicated VPS
+- `systemd + Caddy + Node 22`
+- immutable releases under `/opt/brianhub/releases`
+- a manual `origin/main` deploy flow with rollback
+
+See `docs/deployment.md` for the complete host layout, service templates, Caddy config, upgrade workflow, and off-host backup pull process.
 
 ## Documentation policy
 

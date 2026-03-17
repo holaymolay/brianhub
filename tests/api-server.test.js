@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 let server = null;
+let serverModuleRef = null;
 const tempDir = mkdtempSync(join(tmpdir(), 'brianhub-api-test-'));
 const tempDbPath = join(tempDir, 'api-test.sqlite');
 const previousDb = process.env.BRIANHUB_DB;
@@ -86,6 +87,7 @@ before(async () => {
   process.env.BRIANHUB_REQUIRE_AUTH = 'false';
   process.env.BRIANHUB_ALLOW_HEADER_ACTOR_AUTH = 'true';
   const serverModule = await import('../services/api/src/server.js');
+  serverModuleRef = serverModule;
   server = serverModule.server;
   await server.ready();
 });
@@ -476,6 +478,50 @@ test('admin can delete a pending invite (revokes and removes from pending list)'
   assert.equal(allRes.json().count, 1);
   assert.equal(allRes.json().invites[0].id, inviteId);
   assert.equal(allRes.json().invites[0].status, 'revoked');
+});
+
+test('admin invite endpoints honor exposeInviteToken config', async () => {
+  const previousValue = serverModuleRef.config.exposeInviteToken;
+  serverModuleRef.config.exposeInviteToken = false;
+  try {
+    const workspaceRes = await server.inject({
+      method: 'POST',
+      url: '/workspaces',
+      payload: {
+        name: 'No token workspace',
+        type: 'personal',
+        org_id: '00000000-0000-4000-8000-000000000001'
+      }
+    });
+    assert.equal(workspaceRes.statusCode, 200);
+    const workspaceId = workspaceRes.json().id;
+
+    const inviteRes = await server.inject({
+      method: 'POST',
+      url: '/admin/invites',
+      headers: {
+        'x-actor-email': ownerEmail
+      },
+      payload: {
+        workspace_id: workspaceId,
+        email: 'no.token@example.com'
+      }
+    });
+    assert.equal(inviteRes.statusCode, 200);
+    assert.equal(inviteRes.json().invite.invite_token, undefined);
+
+    const listRes = await server.inject({
+      method: 'GET',
+      url: `/admin/invites?workspace_id=${encodeURIComponent(workspaceId)}&status=pending`,
+      headers: {
+        'x-actor-email': ownerEmail
+      }
+    });
+    assert.equal(listRes.statusCode, 200);
+    assert.equal(listRes.json().invites[0].invite_token, undefined);
+  } finally {
+    serverModuleRef.config.exposeInviteToken = previousValue;
+  }
 });
 
 test('owner account is normalized to admin role in user records', async () => {

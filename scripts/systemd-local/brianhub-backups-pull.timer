@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly BrianHub off-host backup pull
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=brianhub-backups-pull.service
+
+[Install]
+WantedBy=timers.target

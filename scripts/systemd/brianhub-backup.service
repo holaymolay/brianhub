@@ -4,10 +4,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-# Change this to your installation path.
-WorkingDirectory=/opt/brianhub
-# Optional env file for backup settings (DB path, encryption key, upload destination).
-EnvironmentFile=-/etc/default/brianhub-backup
+User=brianhub
+Group=brianhub
+WorkingDirectory=/opt/brianhub/current
+EnvironmentFile=/etc/brianhub.env
 ExecStart=/usr/bin/env node scripts/backup-db.js
 ExecStartPost=/usr/bin/env node scripts/restore-check.js
-

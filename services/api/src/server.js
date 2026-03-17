@@ -554,6 +554,10 @@ function sanitizeInvite(invite, { includeToken = false } = {}) {
   };
 }
 
+function shouldExposeInviteToken() {
+  return Boolean(config.exposeInviteToken);
+}
+
 function sanitizeAdminUserRecord(user, { ownerEmail = OWNER_SUPER_ADMIN_EMAIL } = {}) {
   if (!user) return null;
   const email = normalizeEmail(user.email ?? null);
@@ -900,8 +904,7 @@ server.get('/admin/invites', async (request, reply) => {
       status: status ?? 'pending'
     });
     return {
-      // Owner-only endpoint: include token so invite links can be re-shared later.
-      invites: invites.map((invite) => sanitizeInvite(invite, { includeToken: true })),
+      invites: invites.map((invite) => sanitizeInvite(invite, { includeToken: shouldExposeInviteToken() })),
       count: invites.length
     };
   } catch (err) {
@@ -937,8 +940,7 @@ server.post('/admin/invites', async (request, reply) => {
       invitedByEmail: security.actor.email,
       expiresAt: created.expires_at
     });
-    // Owner-only admin flow needs the raw invite token for manual sharing.
-    const includeToken = true;
+    const includeToken = shouldExposeInviteToken();
     return {
       invite: sanitizeInvite(created, { includeToken }),
       delivery: {
@@ -970,7 +972,7 @@ server.delete('/admin/invites/:id', async (request, reply) => {
       return reply.code(404).send({ error: 'not found' });
     }
     return {
-      invite: sanitizeInvite(revoked, { includeToken: true })
+      invite: sanitizeInvite(revoked, { includeToken: shouldExposeInviteToken() })
     };
   } catch (err) {
     return reply.code(400).send({ error: err.message });

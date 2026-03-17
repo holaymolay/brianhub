@@ -5,15 +5,20 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "dev:api": "node services/api/src/server.js",
+    "deploy:host": "bash scripts/deploy.sh",
+    "provision:vps": "bash scripts/provision-vps.sh",
     "auth:bootstrap-owner": "node scripts/bootstrap-owner-auth.js",
     "migrate:data-layer": "node scripts/migrate-data-layer.js",
     "migrate": "node services/api/src/migrate.js",
     "backup:db": "node scripts/backup-db.js",
     "backup:retention": "node scripts/backup-db.js --retention-only",
     "backup:restore-check": "node scripts/restore-check.js",
+    "rollback:host": "bash scripts/rollback.sh",
+    "backups:pull": "bash scripts/sync-backups-from-host.sh",
+    "roger:setup-admin": "bash scripts/setup-roger-admin.sh",
     "seed:test-data": "node scripts/seed-test-data.js",
     "security:semgrep": "node scripts/security-semgrep.js",
-    "test": "node --test"
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "fastify": "^4.26.2",

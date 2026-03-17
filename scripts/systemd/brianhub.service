@@ -1,0 +1,22 @@
+[Unit]
+Description=BrianHub application service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=brianhub
+Group=brianhub
+WorkingDirectory=/opt/brianhub/current
+EnvironmentFile=/etc/brianhub.env
+ExecStart=/usr/bin/env node services/api/src/server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/brianhub
+
+[Install]
+WantedBy=multi-user.target

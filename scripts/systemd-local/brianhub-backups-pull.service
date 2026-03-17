@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull encrypted BrianHub backups from the VPS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=%h
+EnvironmentFile=%h/.config/brianhub-backups.env
+ExecStart=%h/WorkingDir/Code/brianhub/scripts/sync-backups-from-host.sh
