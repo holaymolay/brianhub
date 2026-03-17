@@ -5250,6 +5250,11 @@ body.auth-gated #auth-cancel-invite {
 
 #task-modal .modal-card {
   width: min(720px, 94vw);
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
 }
 
 .modal-card label {
@@ -5334,10 +5339,19 @@ body.auth-gated #auth-cancel-invite {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.75rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
 }
 
 #task-modal-form .modal-actions {
-  margin-top: 0.25rem;
+  margin-top: 0;
+  position: sticky;
+  bottom: 0;
+  padding-top: 0.75rem;
+  padding-bottom: calc(0.1rem + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, rgba(19, 24, 33, 0) 0%, var(--panel) 34%);
 }
 
 #group-rename-form .modal-actions {
