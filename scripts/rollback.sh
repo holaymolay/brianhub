@@ -23,12 +23,14 @@ systemctl_cmd() {
     systemctl "$@"
     return 0
   fi
-  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-    sudo -n systemctl "$@"
-    return 0
+  if command -v sudo >/dev/null 2>&1; then
+    if sudo -n systemctl "$@"; then
+      return 0
+    fi
   else
     fail "non-root rollback requires passwordless sudo for systemctl"
   fi
+  fail "non-root rollback requires passwordless sudo for systemctl"
 }
 
 load_env_file() {

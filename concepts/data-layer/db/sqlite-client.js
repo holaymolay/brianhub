@@ -10,13 +10,15 @@ import {
   renameSync,
   writeSync
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
 let SQL;
+const require = createRequire(import.meta.url);
 
 async function loadSqlJs() {
   if (SQL) return SQL;
-  const wasmPath = resolve(process.cwd(), 'node_modules/sql.js/dist');
+  const wasmPath = dirname(require.resolve('sql.js/dist/sql-wasm.wasm'));
   SQL = await initSqlJs({ locateFile: file => resolve(wasmPath, file) });
   return SQL;
 }

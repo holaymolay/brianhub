@@ -1,3 +1,7 @@
+www.brianhub.com {
+  redir https://brianhub.com{uri} 308
+}
+
 brianhub.com {
   encode zstd gzip
 
