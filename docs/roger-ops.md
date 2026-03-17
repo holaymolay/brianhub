@@ -71,3 +71,7 @@ ssh roger-admin@<brianhub-tailnet-hostname> sudo /usr/local/bin/brianhub-admin d
 - SSH stays off the public path if you choose to close it later.
 - Root privileges stay behind a narrow wrapper instead of a full shell.
 - BrianHub remains upgradeable from GitHub through the same deploy script used by humans.
+
+## Related doc
+
+For the current production API auth model, allowed route categories, and the reasons Roger should not yet automate a human workspace through the product API, see `docs/roger-api-brief.md`.
