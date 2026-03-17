@@ -382,11 +382,16 @@ const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-butto
 const mobileNavAdd = document.getElementById('mobile-nav-add');
 const mobileCreateSheet = document.getElementById('mobile-create-sheet');
 const mobileCreateSheetBackdrop = document.getElementById('mobile-create-sheet-backdrop');
+const mobileCreateSheetTitle = document.getElementById('mobile-create-sheet-title');
 const mobileCreateSheetClose = document.getElementById('mobile-create-sheet-close');
+const mobileCreateSheetActions = document.getElementById('mobile-create-sheet-actions');
 const mobileCreateTask = document.getElementById('mobile-create-task');
 const mobileCreateNotice = document.getElementById('mobile-create-notice');
 const mobileCreateWorkflow = document.getElementById('mobile-create-workflow');
 const mobileCreateShopping = document.getElementById('mobile-create-shopping');
+const mobileTaskQuickAddForm = document.getElementById('mobile-task-quick-add-form');
+const mobileTaskQuickAddInput = document.getElementById('mobile-task-quick-add-input');
+const mobileTaskQuickAddCancel = document.getElementById('mobile-task-quick-add-cancel');
 const mobileSearchModal = document.getElementById('mobile-search-modal');
 const mobileSearchBackdrop = document.getElementById('mobile-search-backdrop');
 const mobileSearchClose = document.getElementById('mobile-search-close');
@@ -1777,6 +1782,10 @@ mobileCreateSheetClose?.addEventListener('click', () => {
   closeMobileCreateSheet();
 });
 
+mobileTaskQuickAddCancel?.addEventListener('click', () => {
+  closeMobileCreateSheet();
+});
+
 mobileSearchBackdrop?.addEventListener('click', () => {
   closeMobileSearchModal();
 });
@@ -1898,8 +1907,7 @@ mobileCalendarLayerHolidays?.addEventListener('change', () => {
 });
 
 mobileCreateTask?.addEventListener('click', () => {
-  closeMobileCreateSheet();
-  runMobileCreateAction('task');
+  openMobileTaskQuickAdd();
 });
 
 mobileCreateNotice?.addEventListener('click', () => {
@@ -3728,22 +3736,48 @@ function isMobileViewport() {
   return window.matchMedia('(max-width: 980px)').matches;
 }
 
-function openMobileCreateSheet() {
+function setMobileCreateSheetMode(mode = 'actions') {
+  const taskMode = mode === 'task';
+  if (mobileCreateSheetTitle) {
+    mobileCreateSheetTitle.textContent = taskMode ? 'Quick task' : 'Create';
+  }
+  mobileCreateSheetActions?.classList.toggle('hidden', taskMode);
+  mobileTaskQuickAddForm?.classList.toggle('hidden', !taskMode);
+  if (!taskMode && mobileTaskQuickAddInput) {
+    mobileTaskQuickAddInput.value = '';
+  }
+}
+
+function openMobileCreateSheet({ mode = 'actions' } = {}) {
   if (!isMobileViewport() || !mobileCreateSheet) {
-    runMobileCreateAction('task');
+    openTaskModal();
     return;
   }
   closeMobileTopMenu();
   closeMobileTitleMenu();
+  setMobileCreateSheetMode(mode);
   mobileCreateSheet.classList.remove('hidden');
   document.body.classList.add('mobile-create-open');
+  if (mode === 'task') {
+    requestAnimationFrame(() => {
+      mobileTaskQuickAddInput?.focus();
+    });
+  }
 }
 
 function closeMobileCreateSheet() {
   if (mobileCreateSheet) {
     mobileCreateSheet.classList.add('hidden');
   }
+  setMobileCreateSheetMode('actions');
   document.body.classList.remove('mobile-create-open');
+}
+
+function openMobileTaskQuickAdd() {
+  setActiveView('tasks');
+  clearActiveWorkflowChecklistInstanceId();
+  render();
+  openMobileCreateSheet({ mode: 'task' });
 }
 
 function closeMobileTopMenu() {
@@ -4522,9 +4556,7 @@ function renderModuleNavigation() {
 
 function runMobileCreateAction(action) {
   if (action === 'task') {
-    setActiveView('tasks');
-    render();
-    openTaskModal();
+    openMobileTaskQuickAdd();
     return;
   }
   if (action === 'notice') {
@@ -23878,6 +23910,24 @@ scheduleEventDelete?.addEventListener('click', () => {
 });
 modalAssignee?.addEventListener('change', () => {
   setAssigneeLabelInputVisibility(modalAssignee, modalAssigneeLabelRow, modalAssigneeLabel);
+});
+
+mobileTaskQuickAddForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const title = normalizeTitleInput(mobileTaskQuickAddInput?.value ?? '');
+  if (!title) {
+    mobileTaskQuickAddInput?.focus();
+    return;
+  }
+  const created = await createTaskRecord({
+    title,
+    project_id: getProjectIdFromTaskFilter(),
+    status: getDefaultStatusKey()
+  });
+  if (!created) return;
+  closeMobileCreateSheet();
+  render();
+  showToast({ type: 'success', message: 'Task added.' });
 });
 
 async function handleTaskShoppingInboxAdd() {

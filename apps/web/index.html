@@ -733,15 +733,36 @@
       <div id="mobile-create-sheet-backdrop" class="mobile-create-sheet-backdrop"></div>
       <div class="mobile-create-sheet-card">
         <div class="mobile-create-sheet-header">
-          <h3>Create</h3>
+          <h3 id="mobile-create-sheet-title">Create</h3>
           <button id="mobile-create-sheet-close" class="mobile-create-sheet-close" type="button" aria-label="Close create options">✕</button>
         </div>
-        <div class="mobile-create-sheet-actions">
+        <div id="mobile-create-sheet-actions" class="mobile-create-sheet-actions">
           <button id="mobile-create-task" class="mobile-create-action" type="button">Task</button>
           <button id="mobile-create-notice" class="mobile-create-action" type="button">Notice</button>
           <button id="mobile-create-workflow" class="mobile-create-action" type="button">Workflow</button>
           <button id="mobile-create-shopping" class="mobile-create-action" type="button">Shopping list</button>
         </div>
+        <form id="mobile-task-quick-add-form" class="mobile-task-quick-add hidden">
+          <label>
+            Task
+            <input
+              id="mobile-task-quick-add-input"
+              type="text"
+              name="mobile_task_title"
+              placeholder="What needs to be done?"
+              autocomplete="off"
+              data-form-type="other"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+              required
+            />
+          </label>
+          <div class="mobile-task-quick-add-actions">
+            <button type="submit">Add task</button>
+            <button id="mobile-task-quick-add-cancel" type="button">Cancel</button>
+          </div>
+        </form>
       </div>
     </div>
 
