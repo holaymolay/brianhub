@@ -22,7 +22,7 @@ const localData = loadLocalData();
 const bootLocalData = getBootLocalData(localData);
 const state = {
   ...loadState(),
-  workspaces: bootLocalData.workspaces ?? [],
+  workspaces: (bootLocalData.workspaces ?? []).map(normalizeWorkspace),
   workspace: null,
   projects: bootLocalData.projects ?? [],
   templates: bootLocalData.templates ?? [],
@@ -56,6 +56,11 @@ const state = {
     pendingChanges: localData.pendingChanges ?? []
   }
 };
+const cachedPreferredWorkspaceId = state.ui?.activeWorkspaceId;
+state.workspace = state.workspaces.find(ws => ws.id === cachedPreferredWorkspaceId && !ws.archived)
+  ?? state.workspaces.find(ws => !ws.archived)
+  ?? state.workspaces[0]
+  ?? null;
 state.ui = state.ui ?? {};
 state.ui.forceAuthGate = Boolean(state.ui.forceAuthGate);
 // Never trust persisted auth flags across refresh; hydrate from /auth/me + cookie each boot.
@@ -6876,6 +6881,7 @@ async function autoRefreshOnChanges() {
           await refreshWorkspace();
         } else {
           applyLocalDataSnapshot(merged.data);
+          persistLocalData();
           render();
         }
       }
@@ -7797,7 +7803,7 @@ function persistLocalData() {
     storeRules: state.storeRules ?? [],
     shoppingLists: state.shoppingLists ?? [],
     shoppingItems: state.shoppingItems ?? {}
-  }, { keepDomainData: hasPendingLocalChanges() }));
+  }));
 }
 
 function queueLocalChange(change) {
@@ -8201,6 +8207,7 @@ async function loadWorkspaces() {
     ?? normalized[0];
   state.ui.activeWorkspaceId = state.workspace?.id ?? null;
   ensureLocalWorkspaceDefaults(state.workspace);
+  persistLocalData();
 }
 
 async function loadWorkspaceData() {
@@ -8245,6 +8252,7 @@ async function loadWorkspaceData() {
     ?? availableLists[0]
     ?? null;
   state.ui.activeShoppingListId = activeList?.id ?? null;
+  persistLocalData();
 }
 
 async function refreshWorkspace() {
@@ -25011,6 +25019,7 @@ async function init() {
     }
     return;
   }
+  render();
   await loadWorkspaces();
   await refreshWorkspace();
   await primeSyncCursor();

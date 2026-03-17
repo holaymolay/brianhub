@@ -129,25 +129,22 @@ export function saveLocalData(data) {
 }
 
 export function shouldHydrateLocalDomainData(data) {
-  return normalizeData(data).pendingChanges.length > 0;
+  const normalized = normalizeData(data);
+  return normalized.pendingChanges.length > 0
+    || normalized.workspaces.length > 0
+    || normalized.projects.length > 0
+    || Object.keys(normalized.tasks).length > 0
+    || normalized.shoppingLists.length > 0
+    || Object.keys(normalized.shoppingItems).length > 0
+    || normalized.notices.length > 0;
 }
 
 export function getBootLocalData(data) {
-  const normalized = normalizeData(data);
-  if (normalized.pendingChanges.length > 0) return normalized;
-  return {
-    ...normalized,
-    ...defaultDomainData()
-  };
+  return normalizeData(data);
 }
 
-export function prepareLocalDataForStorage(data, { keepDomainData = true } = {}) {
-  const normalized = normalizeData(data);
-  if (keepDomainData) return normalized;
-  return {
-    ...normalized,
-    ...defaultDomainData()
-  };
+export function prepareLocalDataForStorage(data) {
+  return normalizeData(data);
 }
 
 export function recordLocalChange(data, change) {
