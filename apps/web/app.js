@@ -206,10 +206,8 @@ const tasksMobileToolsBtn = document.getElementById('tasks-mobile-tools-btn');
 const tasksMobileAddBtn = document.getElementById('tasks-mobile-add-btn');
 const taskAiButton = document.getElementById('task-ai-button');
 const taskAiMenu = document.getElementById('task-ai-menu');
-const taskSortButton = document.getElementById('task-sort-button');
-const taskSortMenu = document.getElementById('task-sort-menu');
-const taskGroupButton = document.getElementById('task-group-button');
-const taskGroupMenu = document.getElementById('task-group-menu');
+const taskSortSelect = document.getElementById('task-sort-select');
+const taskGroupSelect = document.getElementById('task-group-select');
 const taskViewSelect = document.getElementById('task-view-select');
 const taskColumnsButton = document.getElementById('task-columns-button');
 const taskShoppingInbox = document.getElementById('task-shopping-inbox');
@@ -247,6 +245,15 @@ const teamMemberEmailInput = document.getElementById('team-member-email');
 const teamMemberRoleSelect = document.getElementById('team-member-role');
 const teamMemberAddBtn = document.getElementById('team-member-add');
 const teamMemberListEl = document.getElementById('team-member-list');
+const organizationWorkspaceName = document.getElementById('organization-workspace-name');
+const organizationWorkspaceType = document.getElementById('organization-workspace-type');
+const organizationMemberCount = document.getElementById('organization-member-count');
+const organizationCreatePersonalBtn = document.getElementById('organization-create-personal');
+const organizationCreateSharedBtn = document.getElementById('organization-create-shared');
+const organizationInviteStatus = document.getElementById('organization-invite-status');
+const organizationInviteTokenWrap = document.getElementById('organization-invite-token-wrap');
+const organizationInviteToken = document.getElementById('organization-invite-token');
+const organizationInviteCopy = document.getElementById('organization-invite-copy');
 const taskTypeListEl = document.getElementById('task-type-list');
 const taskTypeNameInput = document.getElementById('task-type-name');
 const taskTypeAddBtn = document.getElementById('task-type-add');
@@ -422,6 +429,12 @@ const mobileCalendarLayerDayOff = document.getElementById('mobile-calendar-layer
 const mobileCalendarLayerTasks = document.getElementById('mobile-calendar-layer-tasks');
 const mobileCalendarLayerHolidays = document.getElementById('mobile-calendar-layer-holidays');
 const newWorkspaceBtn = document.getElementById('new-workspace-btn');
+const workspaceCreateModal = document.getElementById('workspace-create-modal');
+const workspaceCreateForm = document.getElementById('workspace-create-form');
+const workspaceCreateName = document.getElementById('workspace-create-name');
+const workspaceCreateType = document.getElementById('workspace-create-type');
+const workspaceCreateTypeNote = document.getElementById('workspace-create-type-note');
+const workspaceCreateCancel = document.getElementById('workspace-create-cancel');
 const moduleNavTodo = document.getElementById('module-nav-todo');
 const moduleNavScheduling = document.getElementById('module-nav-scheduling');
 const noticeBell = document.getElementById('notice-bell');
@@ -546,6 +559,7 @@ const helpWorkspaceId = document.getElementById('help-workspace-id');
 const helpTaskCreateExample = document.getElementById('help-task-create-example');
 const helpTaskUpdateExample = document.getElementById('help-task-update-example');
 const helpShoppingListCreateExample = document.getElementById('help-shopping-list-create-example');
+const helpProjectCreateExample = document.getElementById('help-project-create-example');
 const helpShoppingItemCreateExample = document.getElementById('help-shopping-item-create-example');
 const helpNoticeTypeCreateExample = document.getElementById('help-notice-type-create-example');
 const helpNoticeCreateExample = document.getElementById('help-notice-create-example');
@@ -739,6 +753,8 @@ const bulkEditApplyPriority = document.getElementById('bulk-edit-apply-priority'
 const bulkEditPriority = document.getElementById('bulk-edit-priority');
 const bulkEditApplyProject = document.getElementById('bulk-edit-apply-project');
 const bulkEditProject = document.getElementById('bulk-edit-project');
+const bulkEditApplyParent = document.getElementById('bulk-edit-apply-parent');
+const bulkEditParent = document.getElementById('bulk-edit-parent');
 const bulkEditApplyType = document.getElementById('bulk-edit-apply-type');
 const bulkEditType = document.getElementById('bulk-edit-type');
 const bulkEditApplyStart = document.getElementById('bulk-edit-apply-start');
@@ -772,10 +788,12 @@ let taskModalDefaults = {};
 let draggingTaskId = null;
 let draggingTaskEl = null;
 let draggingTaskOrigin = null;
+let taskPointerDragState = null;
 let draggingColumnKey = null;
 let draggingColumnEl = null;
 let draggingSectionId = null;
 let draggingSectionEl = null;
+let draggingSectionInfo = null;
 let draggingWorkflowEntryMeta = null;
 let draggingWorkflowEntryEl = null;
 let draggingWorkflowPhaseMeta = null;
@@ -1285,55 +1303,13 @@ taskAiMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
 });
 
-taskSortButton?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  if (openMenu && openMenu !== taskSortMenu) {
-    openMenu.classList.add('hidden');
-  }
-  if (taskSortMenu.classList.contains('hidden')) {
-    taskSortMenu.classList.remove('hidden');
-    openMenu = taskSortMenu;
-  } else {
-    taskSortMenu.classList.add('hidden');
-    openMenu = null;
-  }
-});
-
-taskSortMenu?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) return;
-  const sortKey = target.dataset.sort;
-  if (!sortKey) return;
-  setTaskSortKey(sortKey);
-  taskSortMenu.classList.add('hidden');
-  openMenu = null;
+taskSortSelect?.addEventListener('change', () => {
+  setTaskSortKey(taskSortSelect.value);
   render();
 });
 
-taskGroupButton?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  if (openMenu && openMenu !== taskGroupMenu) {
-    openMenu.classList.add('hidden');
-  }
-  if (taskGroupMenu.classList.contains('hidden')) {
-    taskGroupMenu.classList.remove('hidden');
-    openMenu = taskGroupMenu;
-  } else {
-    taskGroupMenu.classList.add('hidden');
-    openMenu = null;
-  }
-});
-
-taskGroupMenu?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) return;
-  const mode = target.dataset.group;
-  if (!mode) return;
-  setTaskGroupMode(mode);
-  taskGroupMenu.classList.add('hidden');
-  openMenu = null;
+taskGroupSelect?.addEventListener('change', () => {
+  setTaskGroupMode(taskGroupSelect.value);
   render();
 });
 
@@ -8360,13 +8336,15 @@ async function loadWorkspaces() {
     return;
   }
   let workspaces = state.workspaces ?? [];
+  let createdWorkspace = null;
   const allowRemote = !hasPendingLocalChanges();
   if (allowRemote) {
     try {
       workspaces = await api.listWorkspaces();
       if (!workspaces.length) {
         const created = await api.createWorkspace({ name: 'Personal', type: 'personal' });
-        workspaces = [created];
+        createdWorkspace = created ? normalizeWorkspace(created) : null;
+        workspaces = created ? [created] : [];
       }
     } catch {
       // offline: keep local workspaces
@@ -8382,6 +8360,7 @@ async function loadWorkspaces() {
       created_at: now,
       updated_at: now
     };
+    createdWorkspace = normalizeWorkspace(localWorkspace);
     workspaces = [localWorkspace];
   }
   const normalized = workspaces.map(normalizeWorkspace);
@@ -8391,6 +8370,9 @@ async function loadWorkspaces() {
     ?? normalized.find(ws => !ws.archived)
     ?? normalized[0];
   state.ui.activeWorkspaceId = state.workspace?.id ?? null;
+  if (createdWorkspace?.id) {
+    await ensureWorkspaceCreatorMembership(createdWorkspace);
+  }
   ensureLocalWorkspaceDefaults(state.workspace);
   persistLocalData();
 }
@@ -8468,9 +8450,17 @@ async function selectWorkspace(workspace) {
 function normalizeWorkspace(workspace) {
   return {
     ...workspace,
+    type: normalizeWorkspaceType(workspace?.type),
     org_id: workspace.org_id ?? DEFAULT_ORG_ID,
     archived: Boolean(workspace.archived)
   };
+}
+
+function normalizeWorkspaceType(value) {
+  const type = String(value ?? '').trim().toLowerCase();
+  if (!type) return 'personal';
+  if (type === 'team' || type === 'organization' || type === 'org') return 'shared';
+  return type;
 }
 
 function normalizeProjectKind(kind) {
@@ -10847,7 +10837,15 @@ async function undoBulkAction(entryId) {
   if (entry.kind === 'edit') {
     for (const snapshot of entry.tasks) {
       if (!state.tasks[snapshot.id]) continue;
-      await updateTaskRecord(snapshot.id, snapshot.before);
+      const before = { ...(snapshot.before ?? {}) };
+      if (Object.prototype.hasOwnProperty.call(before, 'parent_id')) {
+        const previousParentId = before.parent_id ?? null;
+        delete before.parent_id;
+        await reparentTaskRecord(snapshot.id, previousParentId);
+      }
+      if (Object.keys(before).length) {
+        await updateTaskRecord(snapshot.id, before);
+      }
     }
   } else if (entry.kind === 'delete') {
     await restoreTasksFromSnapshots(entry.tasks);
@@ -11413,11 +11411,12 @@ function getFirstTaskSortOrder(parentId = null, statusKey = null) {
 }
 
 function beginTaskDrag(event, task, itemEl = event.currentTarget) {
-  if (event.target.closest('button')) {
+  const eventTarget = event?.target instanceof Element ? event.target : null;
+  if (eventTarget?.closest('button')) {
     event.preventDefault();
     return;
   }
-  event.stopPropagation();
+  event?.stopPropagation?.();
   draggingTaskId = task.id;
   draggingTaskEl = itemEl;
   const descendantIds = new Set(getDescendants(task.id).map(child => child.id));
@@ -11435,19 +11434,38 @@ function beginTaskDrag(event, task, itemEl = event.currentTarget) {
       event.dataTransfer.setDragImage(itemEl, 16, Math.min(rect.height / 2, 20));
     }
   }
-  itemEl?.classList.add('dragging');
+  getTaskElementsByIds(getSelectedDragTaskIds(task.parent_id ?? null))
+    .forEach((element) => element.classList.add('dragging'));
 }
 
 function endTaskDrag(event) {
-  draggingTaskEl?.classList.remove('dragging');
-  document.querySelectorAll('.task-item.drop-subtask').forEach(item => item.classList.remove('drop-subtask'));
-  taskTreeEl?.classList.remove('drag-over');
+  getTaskElementsByIds(getSelectedDragTaskIds())
+    .forEach((element) => {
+      element.style.pointerEvents = '';
+      element.classList.remove('dragging');
+    });
+  clearTaskDragIndicators();
+  clearTaskSidebarListDropTargets();
   draggingTaskId = null;
   draggingTaskEl = null;
   draggingTaskOrigin = null;
   setTimeout(() => {
     suppressTaskClick = false;
   }, 0);
+}
+
+function clearTaskDragIndicators() {
+  document.querySelectorAll('.task-item.drop-subtask').forEach(item => item.classList.remove('drop-subtask'));
+  document.querySelectorAll('.task-root-dropzone.drag-over, .task-list.drag-over, .task-group-list.drag-over').forEach((container) => {
+    container.classList.remove('drag-over');
+  });
+  taskTreeEl?.classList.remove('drag-over');
+}
+
+function clearTaskSidebarListDropTargets() {
+  if (!taskListListEl) return;
+  taskListListEl.querySelectorAll('.workspace-row.is-drop-target')
+    .forEach((row) => row.classList.remove('is-drop-target'));
 }
 
 function canDropTaskInContainer(parentId, statusKey) {
@@ -11464,9 +11482,14 @@ function canDropTaskInContainer(parentId, statusKey) {
 
 function canReparentTask(targetId) {
   if (!draggingTaskOrigin || !draggingTaskId) return false;
-  if (draggingTaskId === targetId) return false;
-  if ((draggingTaskOrigin.parentId ?? null) === targetId) return false;
-  if (draggingTaskOrigin.descendants && draggingTaskOrigin.descendants.has(targetId)) return false;
+  const draggedIds = getSelectedDragTaskIds(draggingTaskOrigin.parentId ?? null);
+  if (draggedIds.includes(targetId)) return false;
+  if (draggedIds.every((taskId) => (state.tasks?.[taskId]?.parent_id ?? null) === targetId)) return false;
+  const descendantIds = new Set();
+  draggedIds.forEach((taskId) => {
+    getDescendants(taskId).forEach((task) => descendantIds.add(task.id));
+  });
+  if (descendantIds.has(targetId)) return false;
   return true;
 }
 
@@ -11480,14 +11503,14 @@ function isSubtaskDropZone(event, item) {
 async function handleSubtaskDrop(targetId) {
   if (!draggingTaskId) return;
   if (!canReparentTask(targetId)) return;
+  const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
+  let nextSort = getNextTaskSortOrder(targetId);
   try {
-    await reparentTaskRecord(draggingTaskId, targetId);
-  } catch (err) {
-    alert(err?.message ?? 'Unable to move task.');
-    return;
-  }
-  try {
-    await updateTaskRecord(draggingTaskId, { sort_order: getNextTaskSortOrder(targetId) });
+    for (const taskId of selectedIds) {
+      await reparentTaskRecord(taskId, targetId);
+      await updateTaskRecord(taskId, { sort_order: nextSort });
+      nextSort += 10;
+    }
   } catch (err) {
     const message = String(err?.message ?? '');
     if (err?.status === 404 || message.toLowerCase().includes('not found')) {
@@ -11498,6 +11521,22 @@ async function handleSubtaskDrop(targetId) {
     return;
   }
   render();
+}
+
+function getTaskContainerContext(container) {
+  const parentId = container?.dataset?.parentId ?? null;
+  const statusKey = container?.dataset?.statusKey ?? null;
+  const groupMode = container?.dataset?.groupMode ?? null;
+  const groupValue = container?.dataset?.groupValue;
+  const groupMeta = groupMode
+    ? { mode: groupMode, value: groupValue !== undefined ? (groupValue || null) : null }
+    : null;
+  return {
+    container,
+    parentId: parentId ? parentId : null,
+    statusKey: statusKey || null,
+    groupMeta
+  };
 }
 
 function getDirectTaskItems(container) {
@@ -11515,23 +11554,158 @@ function getGroupMetaForContainer(container) {
 function getSelectedDragTaskIds(originParentId) {
   const selected = getSelectedTaskIds();
   if (!selected.includes(draggingTaskId)) return [draggingTaskId];
-  if (originParentId !== null) return [draggingTaskId];
-  const roots = selected.filter(id => (state.tasks?.[id]?.parent_id ?? null) === null);
-  if (roots.length <= 1) return [draggingTaskId];
   const originContainer = draggingTaskEl?.parentElement;
   if (originContainer) {
-    const ordered = Array.from(originContainer.querySelectorAll(':scope > .task-item'))
+    const ordered = Array.from(originContainer.querySelectorAll(':scope > .task-item, :scope > .kanban-card'))
       .map(el => el.dataset.taskId)
-      .filter(id => roots.includes(id));
-    return ordered.length ? ordered : roots;
+      .filter(id => selected.includes(id));
+    return ordered.length > 1 ? ordered : [draggingTaskId];
   }
-  return roots;
+  return [draggingTaskId];
 }
 
 function getTaskElementsByIds(taskIds) {
   return taskIds
-    .map(id => document.querySelector(`.task-item[data-task-id="${id}"]`))
+    .map(id => document.querySelector(`.task-item[data-task-id="${id}"], .kanban-card[data-task-id="${id}"]`))
     .filter(Boolean);
+}
+
+function getRootTaskIdsForSection(sectionInfo) {
+  const workspaceId = state.workspace?.id ?? null;
+  if (!workspaceId) return [];
+  const label = String(sectionInfo?.label ?? '').trim();
+  if (!label) return [];
+  const scopeProjectId = normalizeSectionScopeProjectId(
+    sectionInfo?.project_id ?? getActiveTaskSectionScopeProjectId()
+  );
+  const matchingIds = Object.values(state.tasks ?? {})
+    .filter((task) =>
+      task.workspace_id === workspaceId
+      && taskMatchesSectionScope(task, scopeProjectId)
+      && String(task.group_label ?? '').trim() === label
+    )
+    .map((task) => task.id);
+  return getRootTaskIds(matchingIds);
+}
+
+function taskRootNeedsSidebarListMove(taskId, targetListId) {
+  const task = state.tasks?.[taskId] ?? null;
+  if (!task) return false;
+  if ((task.parent_id ?? null) !== null) return true;
+  if ((task.project_id ?? null) !== targetListId) return true;
+  return getDescendants(taskId).some((child) => (child.project_id ?? null) !== targetListId);
+}
+
+async function moveTaskRootsToSidebarList(rootTaskIds, targetListId) {
+  const targetList = getTaskListsForWorkspace({ includeArchived: false })
+    .find((list) => list.id === targetListId);
+  if (!targetList) return 0;
+  const orderedRootIds = getRootTaskIds(Array.from(new Set(rootTaskIds.filter(Boolean))));
+  if (!orderedRootIds.length) return 0;
+  let nextSort = getNextTaskSortOrder(null, null);
+  let movedCount = 0;
+  const updatedDescendants = new Set();
+
+  for (const rootId of orderedRootIds) {
+    let rootTask = state.tasks?.[rootId] ?? null;
+    if (!rootTask) continue;
+    const rootNeedsMove = taskRootNeedsSidebarListMove(rootId, targetListId);
+    if (!rootNeedsMove) continue;
+    if ((rootTask.parent_id ?? null) !== null) {
+      const reparented = await reparentTaskRecord(rootId, null);
+      rootTask = reparented ?? state.tasks?.[rootId] ?? rootTask;
+    }
+    const rootPatch = {};
+    if ((rootTask.project_id ?? null) !== targetListId) {
+      rootPatch.project_id = targetListId;
+    }
+    if ((rootTask.sort_order ?? null) !== nextSort) {
+      rootPatch.sort_order = nextSort;
+    }
+    if (Object.keys(rootPatch).length) {
+      await updateTaskRecord(rootId, rootPatch);
+    }
+    nextSort += 10;
+    movedCount += 1;
+
+    for (const descendant of getDescendants(rootId)) {
+      if (updatedDescendants.has(descendant.id)) continue;
+      updatedDescendants.add(descendant.id);
+      if ((descendant.project_id ?? null) === targetListId) continue;
+      await updateTaskRecord(descendant.id, { project_id: targetListId });
+    }
+  }
+
+  return movedCount;
+}
+
+function moveTaskSectionRecordToSidebarList(sectionInfo, targetListId) {
+  const workspaceId = state.workspace?.id ?? null;
+  if (!workspaceId) return false;
+  const label = String(sectionInfo?.label ?? '').trim();
+  if (!label) return false;
+  const sourceScopeProjectId = normalizeSectionScopeProjectId(
+    sectionInfo?.project_id ?? getActiveTaskSectionScopeProjectId()
+  );
+  const targetScopeProjectId = normalizeSectionScopeProjectId(targetListId);
+  if (sourceScopeProjectId === targetScopeProjectId) return false;
+
+  const sections = [...(state.taskSections ?? [])].map(normalizeTaskSection);
+  const sourceIndex = getTaskSectionRecordIndex({
+    id: sectionInfo?.id ?? null,
+    label,
+    project_id: sourceScopeProjectId
+  }, sections);
+  if (sourceIndex < 0) return false;
+
+  const duplicateIndex = sections.findIndex((section, index) =>
+    index !== sourceIndex
+    && section.workspace_id === workspaceId
+    && section.label === label
+    && normalizeSectionScopeProjectId(section.project_id) === targetScopeProjectId
+  );
+
+  if (duplicateIndex >= 0) {
+    sections.splice(sourceIndex, 1);
+  } else {
+    const maxSort = Math.max(0, ...sections
+      .filter((section, index) =>
+        index !== sourceIndex
+        && section.workspace_id === workspaceId
+        && normalizeSectionScopeProjectId(section.project_id) === targetScopeProjectId
+      )
+      .map((section) => section.sort_order ?? 0));
+    sections[sourceIndex] = {
+      ...sections[sourceIndex],
+      project_id: targetScopeProjectId,
+      sort_order: maxSort + 10,
+      updated_at: nowIso()
+    };
+  }
+
+  state.taskSections = sections;
+  persistLocalData();
+  return true;
+}
+
+async function moveDraggedTasksToSidebarList(targetListId) {
+  if (!draggingTaskId) return { moved: false, count: 0 };
+  const rootIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
+  const movedCount = await moveTaskRootsToSidebarList(rootIds, targetListId);
+  return { moved: movedCount > 0, count: movedCount };
+}
+
+async function moveDraggedSectionToSidebarList(targetListId) {
+  if (!draggingSectionInfo?.label) return { moved: false, count: 0, label: null };
+  const rootIds = getRootTaskIdsForSection(draggingSectionInfo);
+  const movedCount = await moveTaskRootsToSidebarList(rootIds, targetListId);
+  const movedSectionRecord = moveTaskSectionRecordToSidebarList(draggingSectionInfo, targetListId);
+  sectionOrderDirty = false;
+  return {
+    moved: movedCount > 0 || movedSectionRecord,
+    count: movedCount,
+    label: draggingSectionInfo.label
+  };
 }
 
 function attachQuickAddClick(addInput) {
@@ -11617,6 +11791,223 @@ async function persistColumnOrder(board) {
   render();
 }
 
+async function dropTaskIntoContainer(container) {
+  if (!draggingTaskId || draggingColumnKey) return;
+  const {
+    parentId,
+    statusKey,
+    groupMeta
+  } = getTaskContainerContext(container);
+  const allowed = canDropTaskInContainer(parentId, statusKey);
+  if (!allowed) return;
+  const targetContainer = container.classList.contains('task-root-dropzone')
+    ? taskTreeEl?.querySelector('.task-list')
+    : container;
+  const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
+  const originContainer = draggingEl?.parentElement ?? null;
+  const originParent = draggingTaskOrigin?.parentId ?? null;
+  const selectedIds = getSelectedDragTaskIds(originParent);
+  const movingToRoot = parentId === null && originParent !== null;
+  const movingBetweenRoots = parentId === null && originParent === null && draggingEl && draggingEl.parentElement !== targetContainer;
+  if (movingToRoot) {
+    try {
+      for (const taskId of selectedIds) {
+        const task = state.tasks?.[taskId];
+        if (!task || (task.parent_id ?? null) === null) continue;
+        await reparentTaskRecord(taskId, null);
+      }
+    } catch (err) {
+      alert(err?.message ?? 'Unable to move task.');
+      return;
+    }
+  }
+  if (draggingEl && targetContainer && (draggingEl.parentElement === targetContainer || movingToRoot || movingBetweenRoots)) {
+    const addRow = targetContainer.querySelector('.task-add-task');
+    if (selectedIds.length > 1) {
+      const elements = getTaskElementsByIds(selectedIds);
+      elements.forEach(el => {
+        if (addRow) {
+          targetContainer.insertBefore(el, addRow);
+        } else {
+          targetContainer.appendChild(el);
+        }
+      });
+    } else {
+      if (addRow) {
+        targetContainer.insertBefore(draggingEl, addRow);
+      } else {
+        targetContainer.appendChild(draggingEl);
+      }
+    }
+  }
+  if (targetContainer) {
+    await persistTaskOrder(targetContainer, parentId, statusKey, groupMeta);
+    if (originContainer && originContainer !== targetContainer) {
+      const originMeta = getGroupMetaForContainer(originContainer);
+      await persistTaskOrder(
+        originContainer,
+        originContainer.dataset.parentId || null,
+        originContainer.dataset.statusKey || null,
+        originMeta
+      );
+    }
+  }
+}
+
+async function dropTaskOnItem(item, clientY) {
+  if (!draggingTaskId || draggingColumnKey) return;
+  const taskId = item?.dataset?.taskId;
+  if (!taskId) return;
+  const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
+  if (canReparentTask(taskId) && isSubtaskDropZone({ clientY }, item)) {
+    if (selectedIds.length > 1) return;
+    item.classList.remove('drop-subtask');
+    await handleSubtaskDrop(taskId);
+    return;
+  }
+  item.classList.remove('drop-subtask');
+  const container = item.parentElement;
+  if (!container) return;
+  const {
+    parentId,
+    statusKey,
+    groupMeta
+  } = getTaskContainerContext(container);
+  const allowed = canDropTaskInContainer(parentId, statusKey);
+  if (!allowed) return;
+  const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
+  if (!draggingEl || draggingEl === item) return;
+  const originContainer = draggingEl.parentElement;
+  const originParent = draggingTaskOrigin?.parentId ?? null;
+  const movingToRoot = parentId === null && originParent !== null;
+  const movingBetweenRoots = parentId === null && originParent === null && draggingEl.parentElement !== container;
+  if (draggingEl.parentElement !== container) {
+    if (!movingToRoot && !movingBetweenRoots) return;
+    try {
+      if (movingToRoot) {
+        for (const selectedId of selectedIds) {
+          const task = state.tasks?.[selectedId];
+          if (!task || (task.parent_id ?? null) === null) continue;
+          await reparentTaskRecord(selectedId, null);
+        }
+      }
+    } catch (err) {
+      alert(err?.message ?? 'Unable to move task.');
+      return;
+    }
+  }
+  const rect = item.getBoundingClientRect();
+  const insertAfter = clientY > rect.top + rect.height / 2;
+  if (selectedIds.length > 1) {
+    const elements = getTaskElementsByIds(selectedIds);
+    const referenceNode = insertAfter ? item.nextSibling : item;
+    elements.forEach(el => container.insertBefore(el, referenceNode));
+  } else {
+    container.insertBefore(draggingEl, insertAfter ? item.nextSibling : item);
+  }
+  await persistTaskOrder(container, parentId, statusKey, groupMeta);
+  if (originContainer && originContainer !== container) {
+    const originMeta = getGroupMetaForContainer(originContainer);
+    await persistTaskOrder(
+      originContainer,
+      originContainer.dataset.parentId || null,
+      originContainer.dataset.statusKey || null,
+      originMeta
+    );
+  }
+}
+
+function getTaskDropTargetAtPoint(clientX, clientY) {
+  const element = document.elementFromPoint(clientX, clientY);
+  if (!element) return null;
+  const item = element.closest('.task-item');
+  if (item instanceof HTMLElement) {
+    const taskId = item.dataset.taskId;
+    if (taskId && canReparentTask(taskId) && isSubtaskDropZone({ clientY }, item)) {
+      return { type: 'subtask', item };
+    }
+    return { type: 'item', item };
+  }
+  const container = element.closest('.task-root-dropzone, .task-list, .task-group-list');
+  if (container instanceof HTMLElement) {
+    return { type: 'container', container };
+  }
+  return null;
+}
+
+function updateTaskPointerDragTarget(clientX, clientY) {
+  clearTaskDragIndicators();
+  const target = getTaskDropTargetAtPoint(clientX, clientY);
+  if (target?.type === 'subtask') {
+    target.item.classList.add('drop-subtask');
+  } else if (target?.type === 'container') {
+    const { parentId, statusKey } = getTaskContainerContext(target.container);
+    if (canDropTaskInContainer(parentId, statusKey)) {
+      target.container.classList.add('drag-over');
+    }
+  }
+  if (taskPointerDragState) {
+    taskPointerDragState.dropTarget = target;
+  }
+}
+
+async function commitTaskPointerDrop(clientX, clientY) {
+  const target = taskPointerDragState?.dropTarget ?? getTaskDropTargetAtPoint(clientX, clientY);
+  if (!target) return;
+  if (target.type === 'subtask' || target.type === 'item') {
+    await dropTaskOnItem(target.item, clientY);
+    return;
+  }
+  if (target.type === 'container') {
+    await dropTaskIntoContainer(target.container);
+  }
+}
+
+function beginTaskPointerGesture(event, task, item) {
+  if (event.button !== 0) return;
+  if (event.pointerType === 'mouse') return;
+  taskPointerDragState = {
+    pointerId: event.pointerId,
+    task,
+    item,
+    startX: event.clientX,
+    startY: event.clientY,
+    dragging: false,
+    dropTarget: null
+  };
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function moveTaskPointerGesture(event) {
+  if (!taskPointerDragState) return;
+  if (taskPointerDragState.pointerId !== event.pointerId) return;
+  const deltaX = Math.abs(event.clientX - taskPointerDragState.startX);
+  const deltaY = Math.abs(event.clientY - taskPointerDragState.startY);
+  if (!taskPointerDragState.dragging) {
+    if (deltaX < 6 && deltaY < 6) return;
+    beginTaskDrag({ target: event.target, stopPropagation() {} }, taskPointerDragState.task, taskPointerDragState.item);
+    taskPointerDragState.dragging = true;
+    if (draggingTaskEl) {
+      draggingTaskEl.style.pointerEvents = 'none';
+    }
+  }
+  updateTaskPointerDragTarget(event.clientX, event.clientY);
+  event.preventDefault();
+}
+
+async function finishTaskPointerGesture(event, commit = false) {
+  if (!taskPointerDragState) return;
+  if (taskPointerDragState.pointerId !== event.pointerId) return;
+  const activeGesture = taskPointerDragState;
+  taskPointerDragState = null;
+  event.currentTarget?.releasePointerCapture?.(event.pointerId);
+  if (activeGesture.dragging && commit) {
+    await commitTaskPointerDrop(event.clientX, event.clientY);
+  }
+  endTaskDrag();
+}
+
 function attachTaskDropzone(container, { parentId = null, statusKey = null, groupMode = null, groupValue } = {}) {
   const normalizedParent = parentId ? parentId : null;
   container.dataset.parentId = normalizedParent ?? '';
@@ -11648,67 +12039,28 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
     if (!allowed) return;
     event.preventDefault();
     container.classList.remove('drag-over');
-    const targetContainer = container.classList.contains('task-root-dropzone')
-      ? taskTreeEl?.querySelector('.task-list')
-      : container;
-    const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
-    const originContainer = draggingEl?.parentElement ?? null;
-    const originParent = draggingTaskOrigin?.parentId ?? null;
-    const normalizedParent = parentId ? parentId : null;
-    const movingToRoot = normalizedParent === null && originParent !== null;
-    const movingBetweenRoots = normalizedParent === null && originParent === null && draggingEl && draggingEl.parentElement !== targetContainer;
-    if (movingToRoot) {
-      try {
-        await reparentTaskRecord(draggingTaskId, null);
-        if (statusKey && draggingTaskOrigin?.status !== statusKey) {
-          await updateTaskRecord(draggingTaskId, { status: statusKey });
-        }
-      } catch (err) {
-        alert(err?.message ?? 'Unable to move task.');
-        return;
-      }
-    }
-    if (draggingEl && targetContainer && (draggingEl.parentElement === targetContainer || movingToRoot || movingBetweenRoots)) {
-      const addRow = targetContainer.querySelector('.task-add-task');
-      const selectedIds = getSelectedDragTaskIds(originParent);
-      if (selectedIds.length > 1 && normalizedParent === null) {
-        const elements = getTaskElementsByIds(selectedIds);
-        elements.forEach(el => {
-          if (addRow) {
-            targetContainer.insertBefore(el, addRow);
-          } else {
-            targetContainer.appendChild(el);
-          }
-        });
-      } else {
-        if (addRow) {
-          targetContainer.insertBefore(draggingEl, addRow);
-        } else {
-          targetContainer.appendChild(draggingEl);
-        }
-      }
-    }
-    if (targetContainer) {
-      const meta = groupMode ? { mode: groupMode, value: groupValue ?? null } : null;
-      await persistTaskOrder(targetContainer, parentId, statusKey, meta);
-      if (originContainer && originContainer !== targetContainer) {
-        const originParentId = originContainer.dataset.parentId || null;
-        const originStatus = originContainer.dataset.statusKey || null;
-        const originMeta = getGroupMetaForContainer(originContainer);
-        await persistTaskOrder(originContainer, originParentId || null, originStatus || null, originMeta);
-      }
-    }
+    await dropTaskIntoContainer(container);
   });
 }
 
 function attachTaskDragHandlers(item, task) {
-  item.draggable = false;
+  item.draggable = true;
   item.dataset.taskId = task.id;
+  item.addEventListener('dragstart', (event) => beginTaskDrag(event, task, item));
+  item.addEventListener('dragend', endTaskDrag);
   const handle = item.querySelector('.task-drag-handle');
   if (handle) {
     handle.draggable = true;
     handle.addEventListener('dragstart', (event) => beginTaskDrag(event, task, item));
     handle.addEventListener('dragend', endTaskDrag);
+    handle.addEventListener('pointerdown', (event) => beginTaskPointerGesture(event, task, item));
+    handle.addEventListener('pointermove', moveTaskPointerGesture);
+    handle.addEventListener('pointerup', (event) => {
+      void finishTaskPointerGesture(event, true);
+    });
+    handle.addEventListener('pointercancel', (event) => {
+      void finishTaskPointerGesture(event, false);
+    });
   }
   item.addEventListener('dragover', (event) => {
     if (!draggingTaskId || draggingColumnKey) return;
@@ -11732,59 +12084,12 @@ function attachTaskDragHandlers(item, task) {
     if (!draggingTaskId || draggingColumnKey) return;
     const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
     if (canReparentTask(task.id) && isSubtaskDropZone(event, item)) {
-      if (selectedIds.length > 1) return;
       event.preventDefault();
-      item.classList.remove('drop-subtask');
-      await handleSubtaskDrop(task.id);
+      await dropTaskOnItem(item, event.clientY);
       return;
     }
-    item.classList.remove('drop-subtask');
-    const container = item.parentElement;
-    const parentId = container?.dataset?.parentId ?? null;
-    const statusKey = container?.dataset?.statusKey ?? null;
-    const groupMode = container?.dataset?.groupMode ?? null;
-    const groupValue = container?.dataset?.groupValue;
-    const groupMeta = groupMode ? { mode: groupMode, value: groupValue !== undefined ? (groupValue || null) : null } : null;
-    const allowed = canDropTaskInContainer(parentId ? parentId : null, statusKey ?? null);
-    if (!allowed) return;
     event.preventDefault();
-    const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
-    if (!draggingEl || draggingEl === item) return;
-    const originContainer = draggingEl.parentElement;
-    const originParent = draggingTaskOrigin?.parentId ?? null;
-    const normalizedParent = parentId ? parentId : null;
-    const movingToRoot = normalizedParent === null && originParent !== null;
-    const movingBetweenRoots = normalizedParent === null && originParent === null && draggingEl.parentElement !== container;
-    if (draggingEl.parentElement !== container) {
-      if (!movingToRoot && !movingBetweenRoots) return;
-      try {
-        if (movingToRoot) {
-          await reparentTaskRecord(draggingTaskId, null);
-          if (statusKey && draggingTaskOrigin?.status !== statusKey) {
-            await updateTaskRecord(draggingTaskId, { status: statusKey });
-          }
-        }
-      } catch (err) {
-        alert(err?.message ?? 'Unable to move task.');
-        return;
-      }
-    }
-    const rect = item.getBoundingClientRect();
-    const insertAfter = event.clientY > rect.top + rect.height / 2;
-    if (selectedIds.length > 1 && normalizedParent === null) {
-      const elements = getTaskElementsByIds(selectedIds);
-      const referenceNode = insertAfter ? item.nextSibling : item;
-      elements.forEach(el => container.insertBefore(el, referenceNode));
-    } else {
-      container.insertBefore(draggingEl, insertAfter ? item.nextSibling : item);
-    }
-    await persistTaskOrder(container, normalizedParent, statusKey ?? null, groupMeta);
-    if (originContainer && originContainer !== container) {
-      const originParentId = originContainer.dataset.parentId || null;
-      const originStatus = originContainer.dataset.statusKey || null;
-      const originMeta = getGroupMetaForContainer(originContainer);
-      await persistTaskOrder(originContainer, originParentId || null, originStatus || null, originMeta);
-    }
+    await dropTaskOnItem(item, event.clientY);
   });
 }
 
@@ -11802,10 +12107,9 @@ function attachKanbanDropzone(container, statusKey) {
     if (!draggingTaskId || draggingColumnKey) return;
     event.preventDefault();
     container.classList.remove('drag-over');
-    const draggingEl = document.querySelector(`.kanban-card[data-task-id="${draggingTaskId}"]`);
-    if (draggingEl) {
-      container.appendChild(draggingEl);
-    }
+    const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
+    const elements = getTaskElementsByIds(selectedIds);
+    elements.forEach((element) => container.appendChild(element));
     await persistKanbanOrder(container, statusKey);
   });
 }
@@ -11829,9 +12133,16 @@ function attachKanbanDragHandlers(card, task) {
       await persistKanbanOrder(container, statusKey);
       return;
     }
+    const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
     const rect = card.getBoundingClientRect();
     const insertAfter = event.clientY > rect.top + rect.height / 2;
-    container.insertBefore(draggingEl, insertAfter ? card.nextSibling : card);
+    const referenceNode = insertAfter ? card.nextSibling : card;
+    if (selectedIds.length > 1) {
+      const elements = getTaskElementsByIds(selectedIds);
+      elements.forEach((element) => container.insertBefore(element, referenceNode));
+    } else {
+      container.insertBefore(draggingEl, referenceNode);
+    }
     await persistKanbanOrder(container, statusKey);
   });
 }
@@ -11865,18 +12176,26 @@ function endColumnDrag(event) {
   }
 }
 
-function beginSectionDrag(event, sectionId, sectionEl) {
-  if (!sectionId || !sectionEl) return;
+function beginSectionDrag(event, sectionInfo, sectionEl) {
+  const label = String(sectionInfo?.label ?? '').trim();
+  if (!label || !sectionEl) return;
   if (event.target.closest('button')) {
     event.preventDefault();
     return;
   }
-  draggingSectionId = sectionId;
+  draggingSectionId = sectionInfo?.id ?? null;
   draggingSectionEl = sectionEl;
+  draggingSectionInfo = {
+    id: sectionInfo?.id ?? null,
+    label,
+    project_id: normalizeSectionScopeProjectId(
+      sectionInfo?.project_id ?? getActiveTaskSectionScopeProjectId()
+    )
+  };
   sectionOrderDirty = false;
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', sectionId);
+    event.dataTransfer.setData('text/plain', label);
   }
   sectionEl.classList.add('dragging-section');
 }
@@ -11885,10 +12204,12 @@ function endSectionDrag() {
   if (draggingSectionEl) {
     draggingSectionEl.classList.remove('dragging-section');
   }
+  clearTaskSidebarListDropTargets();
   const list = draggingSectionEl?.parentElement;
   const shouldPersist = sectionOrderDirty && list;
   draggingSectionId = null;
   draggingSectionEl = null;
+  draggingSectionInfo = null;
   sectionOrderDirty = false;
   if (shouldPersist) {
     persistSectionOrder(list);
@@ -12563,6 +12884,7 @@ function render() {
   renderWorkspaceList();
   renderAccountMenu();
   renderProfilePage();
+  renderOrganizationPanel();
   renderAdminPage();
   renderTaskSidebarList();
   renderProjectList();
@@ -12748,6 +13070,14 @@ function renderHelpPage() {
     helpShoppingListCreateExample.textContent = JSON.stringify({
       workspace_id: workspaceId,
       name: 'Safeway run',
+      archived: false
+    }, null, 2);
+  }
+  if (helpProjectCreateExample) {
+    helpProjectCreateExample.textContent = JSON.stringify({
+      workspace_id: workspaceId,
+      name: 'Launch website',
+      kind: 'project',
       archived: false
     }, null, 2);
   }
@@ -13745,26 +14075,13 @@ function renderTaskHolidaySettings() {
 }
 
 function renderTaskSort() {
-  if (!taskSortButton || !taskSortMenu) return;
-  const key = getTaskSortKey();
-  const labelMap = {
-    default: 'Sort',
-    'due-asc': 'Due date (soonest)',
-    'due-desc': 'Due date (latest)'
-  };
-  taskSortButton.textContent = `${labelMap[key] ?? 'Sort'} ▾`;
+  if (!taskSortSelect) return;
+  taskSortSelect.value = getTaskSortKey();
 }
 
 function renderTaskGroup() {
-  if (!taskGroupButton || !taskGroupMenu) return;
-  const mode = getTaskGroupMode();
-  const labelMap = {
-    none: 'Group by',
-    section: 'Group by: Section',
-    'task-type': 'Group by: Task type',
-    priority: 'Group by: Priority'
-  };
-  taskGroupButton.textContent = `${labelMap[mode] ?? 'Group by'} ▾`;
+  if (!taskGroupSelect) return;
+  taskGroupSelect.value = getTaskGroupMode();
 }
 
 function renderNoticeFilter() {
@@ -14341,14 +14658,154 @@ function renderAccountMenu() {
   }
 }
 
-function getWorkspaceTypeLabel() {
-  const raw = String(state.workspace?.type ?? 'personal').trim();
-  if (!raw) return 'Personal';
-  return raw
+function getWorkspaceTypeLabelForWorkspace(workspace) {
+  const type = normalizeWorkspaceType(workspace?.type);
+  if (type === 'personal') return 'Personal workspace';
+  if (type === 'shared') return 'Shared workspace';
+  return type
     .split(/[\s_-]+/)
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function getWorkspaceTypeLabel() {
+  return getWorkspaceTypeLabelForWorkspace(state.workspace);
+}
+
+function getWorkspaceMemberCount(workspaceId = state.workspace?.id ?? null) {
+  if (!workspaceId) return 0;
+  return (state.workspaceMemberships ?? []).filter((membership) =>
+    membership.workspace_id === workspaceId && !membership.archived
+  ).length;
+}
+
+function setOrganizationInviteStatus(message = '', tone = '') {
+  if (!organizationInviteStatus) return;
+  organizationInviteStatus.textContent = String(message ?? '');
+  if (tone) {
+    organizationInviteStatus.dataset.tone = tone;
+  } else {
+    delete organizationInviteStatus.dataset.tone;
+  }
+}
+
+function setOrganizationInviteToken(token = '') {
+  if (!organizationInviteTokenWrap || !organizationInviteToken) return;
+  const safeToken = String(token ?? '').trim();
+  organizationInviteToken.value = safeToken;
+  organizationInviteTokenWrap.classList.toggle('hidden', !safeToken);
+}
+
+function syncWorkspaceCreateTypeNote() {
+  if (!workspaceCreateTypeNote) return;
+  const type = normalizeWorkspaceType(workspaceCreateType?.value ?? 'personal');
+  workspaceCreateTypeNote.textContent = type === 'shared'
+    ? 'Shared workspaces are the point of intersection where people can share tasks, assign work, and collaborate together.'
+    : 'Personal workspaces stay private until you intentionally add or invite collaborators.';
+}
+
+function closeWorkspaceCreateModal() {
+  workspaceCreateModal?.classList.add('hidden');
+}
+
+function openWorkspaceCreateModal(defaultType = null) {
+  if (!workspaceCreateModal || !workspaceCreateType || !workspaceCreateName) return;
+  workspaceCreateType.value = normalizeWorkspaceType(
+    defaultType ?? state.workspace?.type ?? 'personal'
+  );
+  workspaceCreateName.value = '';
+  syncWorkspaceCreateTypeNote();
+  workspaceCreateModal.classList.remove('hidden');
+  workspaceCreateName.focus();
+}
+
+async function ensureWorkspaceCreatorMembership(workspace, role = null) {
+  const auth = getAuthState();
+  const actor = auth.user;
+  if (!workspace?.id || !auth.authenticated || !actor?.id) return null;
+  const membershipRole = role ?? (normalizeWorkspaceType(workspace.type) === 'shared' ? 'manager' : 'member');
+  upsertUser({ ...actor, archived: 0 });
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      return await api.createWorkspaceMembership({
+        workspace_id: workspace.id,
+        user_id: actor.id,
+        role: membershipRole
+      });
+    } catch {
+      // Fall through to a queued local change so the workspace stays usable offline.
+    }
+  }
+  const now = new Date().toISOString();
+  const membership = normalizeWorkspaceMembership({
+    id: createId(),
+    workspace_id: workspace.id,
+    user_id: actor.id,
+    role: membershipRole,
+    archived: 0,
+    created_at: now,
+    updated_at: now
+  });
+  upsertWorkspaceMembership(membership);
+  queueLocalChange({
+    entity_type: 'workspace_membership',
+    entity_id: membership.id,
+    action: 'create',
+    payload: {
+      id: membership.id,
+      workspace_id: membership.workspace_id,
+      user_id: membership.user_id,
+      role: membership.role,
+      archived: membership.archived
+    }
+  });
+  syncStatus.textContent = 'Offline changes pending';
+  return membership;
+}
+
+async function createWorkspaceRecord(name, type = 'personal') {
+  const trimmed = normalizeTitleInput(name);
+  if (!trimmed) return null;
+  const normalizedType = normalizeWorkspaceType(type);
+  let workspace = null;
+  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  if (canUseRemote) {
+    try {
+      const created = await api.createWorkspace({ name: trimmed, type: normalizedType });
+      workspace = created ? normalizeWorkspace(created) : null;
+    } catch {
+      // offline fallback
+    }
+  }
+  if (!workspace) {
+    const now = new Date().toISOString();
+    workspace = normalizeWorkspace({
+      id: createId(),
+      name: trimmed,
+      type: normalizedType,
+      org_id: state.workspace?.org_id ?? getAuthState().user?.org_id ?? DEFAULT_ORG_ID,
+      archived: 0,
+      created_at: now,
+      updated_at: now
+    });
+    queueLocalChange({
+      entity_type: 'workspace',
+      entity_id: workspace.id,
+      action: 'create',
+      payload: {
+        id: workspace.id,
+        name: trimmed,
+        type: normalizedType,
+        org_id: workspace.org_id
+      }
+    });
+    syncStatus.textContent = 'Offline changes pending';
+  }
+  upsertWorkspace(workspace);
+  await ensureWorkspaceCreatorMembership(workspace);
+  return workspace;
 }
 
 function renderProfilePage() {
@@ -14370,6 +14827,39 @@ function renderProfilePage() {
   }
   if (profilePageWorkspaceType) {
     profilePageWorkspaceType.textContent = getWorkspaceTypeLabel();
+  }
+}
+
+function renderOrganizationPanel() {
+  if (organizationWorkspaceName) {
+    organizationWorkspaceName.textContent = state.workspace?.name?.trim() || 'No active workspace';
+  }
+  if (organizationWorkspaceType) {
+    organizationWorkspaceType.textContent = state.workspace
+      ? getWorkspaceTypeLabelForWorkspace(state.workspace)
+      : 'Select a workspace to manage collaboration.';
+  }
+  if (organizationMemberCount) {
+    organizationMemberCount.textContent = String(getWorkspaceMemberCount());
+  }
+  const canManageMembers = Boolean(state.workspace);
+  if (teamMemberAddBtn) {
+    teamMemberAddBtn.disabled = !canManageMembers;
+  }
+  if (teamMemberNameInput) {
+    teamMemberNameInput.disabled = !canManageMembers;
+  }
+  if (teamMemberEmailInput) {
+    teamMemberEmailInput.disabled = !canManageMembers;
+  }
+  if (teamMemberRoleSelect) {
+    teamMemberRoleSelect.disabled = !canManageMembers;
+  }
+  if (organizationCreatePersonalBtn) {
+    organizationCreatePersonalBtn.disabled = shouldShowAuthGatePage();
+  }
+  if (organizationCreateSharedBtn) {
+    organizationCreateSharedBtn.disabled = shouldShowAuthGatePage();
   }
 }
 
@@ -14498,20 +14988,20 @@ function buildInviteLinkFromToken(token) {
   return `${base}/apps/web/?invite_token=${encodeURIComponent(safeToken)}`;
 }
 
-async function copyInviteLinkToClipboard(token) {
+async function copyInviteLinkToClipboard(token, { setStatus = setAdminInviteStatus } = {}) {
   const inviteUrl = buildInviteLinkFromToken(token);
   if (!inviteUrl) {
-    setAdminInviteStatus('No invite token available.', 'error');
+    setStatus?.('No invite token available.', 'error');
     showToast({ type: 'error', message: 'No invite link available to copy.' });
     return false;
   }
   try {
     await navigator.clipboard.writeText(inviteUrl);
-    setAdminInviteStatus('Invite link copied to clipboard.');
+    setStatus?.('Invite link copied to clipboard.');
     showToast({ type: 'success', message: 'Invite link copied to clipboard.' });
     return true;
   } catch {
-    setAdminInviteStatus('Could not copy invite link. Copy it manually from the token field.', 'error');
+    setStatus?.('Could not copy invite link. Copy it manually from the token field.', 'error');
     showToast({ type: 'error', message: 'Could not copy invite link.' });
     return false;
   }
@@ -15141,6 +15631,37 @@ function renderTaskSidebarList() {
       render();
     });
 
+    row.addEventListener('dragover', (event) => {
+      if ((!draggingTaskId && !draggingSectionEl) || draggingColumnKey) return;
+      event.preventDefault();
+      row.classList.add('is-drop-target');
+    });
+    row.addEventListener('dragleave', (event) => {
+      if (!draggingTaskId && !draggingSectionEl) return;
+      const related = event.relatedTarget;
+      if (related instanceof Node && row.contains(related)) return;
+      row.classList.remove('is-drop-target');
+    });
+    row.addEventListener('drop', async (event) => {
+      if ((!draggingTaskId && !draggingSectionEl) || draggingColumnKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      row.classList.remove('is-drop-target');
+      const result = draggingSectionEl
+        ? await moveDraggedSectionToSidebarList(list.id)
+        : await moveDraggedTasksToSidebarList(list.id);
+      clearTaskSidebarListDropTargets();
+      if (!result?.moved) return;
+      clearActiveWorkflowChecklistInstanceId();
+      showToast({
+        type: 'success',
+        message: result.label
+          ? `Moved section "${result.label}" to ${list.name}.`
+          : `Moved ${result.count} task${result.count === 1 ? '' : 's'} to ${list.name}.`
+      });
+      render();
+    });
+
     const menuWrapper = document.createElement('div');
     menuWrapper.className = 'workspace-menu-wrapper';
     const menuButton = document.createElement('button');
@@ -15472,6 +15993,60 @@ function populateParentSelect(selectEl, taskId = null, selectedParentId = null) 
   selectEl.value = selectedParentId ?? '';
 }
 
+function populateBulkEditParentSelect(selectEl, selectedTaskIds = getSelectedTaskIds(), selectedParentId = null) {
+  if (!selectEl) return { mixedScope: false, rootIds: [] };
+  selectEl.innerHTML = '';
+  const noneOption = document.createElement('option');
+  noneOption.value = '';
+  noneOption.textContent = 'None';
+  selectEl.appendChild(noneOption);
+  const rootIds = getRootTaskIds(selectedTaskIds);
+  const rootTasks = rootIds
+    .map(id => state.tasks?.[id] ?? null)
+    .filter(Boolean);
+  if (!state.workspace || !rootTasks.length) {
+    selectEl.disabled = true;
+    selectEl.value = '';
+    return { mixedScope: false, rootIds };
+  }
+  const scopeProjectIds = new Set(rootTasks.map(task => normalizeSectionScopeProjectId(task.project_id)));
+  const mixedScope = scopeProjectIds.size > 1;
+  if (mixedScope) {
+    noneOption.textContent = 'Unavailable for mixed projects/lists';
+    selectEl.disabled = true;
+    selectEl.value = '';
+    return { mixedScope: true, rootIds };
+  }
+  const scopeProjectId = scopeProjectIds.values().next().value ?? null;
+  const disallowed = new Set();
+  rootIds.forEach(id => {
+    disallowed.add(id);
+    getDescendants(id).forEach(task => disallowed.add(task.id));
+  });
+  const candidates = Object.values(state.tasks ?? {})
+    .filter(task =>
+      task.workspace_id === state.workspace.id
+      && !disallowed.has(task.id)
+      && normalizeSectionScopeProjectId(task.project_id) === scopeProjectId
+    )
+    .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
+  candidates.forEach(task => {
+    const option = document.createElement('option');
+    option.value = task.id;
+    option.textContent = task.title;
+    selectEl.appendChild(option);
+  });
+  if (selectedParentId && !candidates.some(task => task.id === selectedParentId)) {
+    const option = document.createElement('option');
+    option.value = selectedParentId;
+    option.textContent = 'Unknown task';
+    selectEl.appendChild(option);
+  }
+  selectEl.disabled = false;
+  selectEl.value = selectedParentId ?? '';
+  return { mixedScope: false, rootIds };
+}
+
 function populateStatusSelect(selectEl, selectedKey = null) {
   if (!selectEl) return;
   const statuses = getStatusDefinitions();
@@ -15635,7 +16210,7 @@ function renderTeamMemberList() {
   if (!users.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
-    empty.textContent = 'No members yet.';
+    empty.textContent = 'No collaborators yet.';
     teamMemberListEl.appendChild(empty);
     return;
   }
@@ -15648,8 +16223,9 @@ function renderTeamMemberList() {
 
     const summary = document.createElement('div');
     summary.className = 'workspace-select';
+    const currentActorSuffix = getAuthState().user?.id === user.id ? ' · You' : '';
     const emailText = user.email ? ` · ${user.email}` : '';
-    summary.textContent = `${user.display_name}${emailText}`;
+    summary.textContent = `${user.display_name}${emailText}${currentActorSuffix}`;
 
     const roleSelect = document.createElement('select');
     roleSelect.className = 'setting-input';
@@ -17152,7 +17728,13 @@ function renderWorkflowsPage() {
   }
 
   if (!workflow) {
-    // Subtitle already communicates this empty state; avoid duplicate copy in the detail pane.
+    const emptyState = document.createElement('div');
+    emptyState.className = 'workflow-section';
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-note';
+    empty.textContent = 'No workflows yet.';
+    emptyState.appendChild(empty);
+    workflowDetailEl.appendChild(emptyState);
     return;
   }
 
@@ -17944,16 +18526,12 @@ function renderTaskList(roots) {
       const dragHandle = document.createElement('span');
       dragHandle.className = 'section-drag-handle';
       dragHandle.textContent = '⋮⋮';
-      if (isPersisted) {
-        dragHandle.draggable = true;
-        dragHandle.addEventListener('dragstart', (event) => beginSectionDrag(event, sectionInfo.id, section));
-        dragHandle.addEventListener('dragend', endSectionDrag);
-      }
+      dragHandle.draggable = true;
+      dragHandle.addEventListener('dragstart', (event) => beginSectionDrag(event, sectionInfo, section));
+      dragHandle.addEventListener('dragend', endSectionDrag);
       const labelSpan = document.createElement('span');
       labelSpan.textContent = label;
-      if (isPersisted) {
-        sectionHeader.appendChild(dragHandle);
-      }
+      sectionHeader.appendChild(dragHandle);
       sectionHeader.appendChild(labelSpan);
       sectionHeader.addEventListener('contextmenu', (event) => {
         event.preventDefault();
@@ -20756,10 +21334,24 @@ function createWorkspaceManageRow(workspace, isArchivedView) {
   const info = document.createElement('div');
   info.className = 'workspace-manage-info';
 
+  const copy = document.createElement('div');
+  copy.className = 'workspace-manage-copy';
+
   const name = document.createElement('div');
   name.className = 'workspace-manage-name';
   name.textContent = workspace.name;
-  info.appendChild(name);
+  copy.appendChild(name);
+
+  const meta = document.createElement('div');
+  meta.className = 'workspace-manage-meta';
+  const metaParts = [getWorkspaceTypeLabelForWorkspace(workspace)];
+  if (workspace.id === state.workspace?.id) {
+    metaParts.push(`${getWorkspaceMemberCount(workspace.id)} member${getWorkspaceMemberCount(workspace.id) === 1 ? '' : 's'}`);
+  }
+  meta.textContent = metaParts.join(' • ');
+  copy.appendChild(meta);
+
+  info.appendChild(copy);
 
   if (workspace.id === state.workspace?.id && !workspace.archived) {
     const badge = document.createElement('span');
@@ -20772,6 +21364,18 @@ function createWorkspaceManageRow(workspace, isArchivedView) {
   actions.className = 'workspace-manage-actions';
 
   if (!isArchivedView) {
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'setting-input workspace-manage-type';
+    typeSelect.innerHTML = [
+      '<option value="personal">Personal workspace</option>',
+      '<option value="shared">Shared workspace</option>'
+    ].join('');
+    typeSelect.value = normalizeWorkspaceType(workspace.type) === 'shared' ? 'shared' : 'personal';
+    typeSelect.addEventListener('change', async () => {
+      await api.updateWorkspace(workspace.id, { type: typeSelect.value });
+      await reloadWorkspacesAndData();
+    });
+
     const renameBtn = document.createElement('button');
     renameBtn.type = 'button';
     renameBtn.className = 'subtle-button workspace-manage-button';
@@ -20794,6 +21398,7 @@ function createWorkspaceManageRow(workspace, isArchivedView) {
       await reloadWorkspacesAndData();
     });
 
+    actions.appendChild(typeSelect);
     actions.appendChild(renameBtn);
     actions.appendChild(archiveBtn);
   } else {
@@ -21668,12 +22273,22 @@ function openBulkEditModal() {
   if (bulkEditApplyStatus) bulkEditApplyStatus.checked = false;
   if (bulkEditApplyPriority) bulkEditApplyPriority.checked = false;
   if (bulkEditApplyProject) bulkEditApplyProject.checked = false;
+  if (bulkEditApplyParent) {
+    bulkEditApplyParent.checked = false;
+    bulkEditApplyParent.disabled = false;
+    bulkEditApplyParent.title = '';
+  }
   if (bulkEditApplyType) bulkEditApplyType.checked = false;
   if (bulkEditApplyStart) bulkEditApplyStart.checked = false;
   if (bulkEditApplyDue) bulkEditApplyDue.checked = false;
   if (bulkEditApplyReminder) bulkEditApplyReminder.checked = false;
   populateStatusSelect(bulkEditStatus, getDefaultStatusKey());
   populateProjectSelect(bulkEditProject, '', true);
+  const bulkParentInfo = populateBulkEditParentSelect(bulkEditParent, selected);
+  if (bulkEditApplyParent && bulkParentInfo.mixedScope) {
+    bulkEditApplyParent.disabled = true;
+    bulkEditApplyParent.title = 'Bulk parent assignment only works within one project or list at a time.';
+  }
   populateTaskTypeSelect(bulkEditType, '');
   if (bulkEditPriority) bulkEditPriority.value = 'medium';
   if (bulkEditStart) bulkEditStart.value = '';
@@ -21738,6 +22353,8 @@ function closeSectionSettingsModal() {
 function buildBulkEditTemplate() {
   const template = {};
   const fields = new Set();
+  const applyParent = Boolean(bulkEditApplyParent?.checked && bulkEditParent && !bulkEditParent.disabled);
+  const nextParentId = applyParent ? (bulkEditParent.value || null) : null;
   if (bulkEditApplyStatus?.checked && bulkEditStatus?.value) {
     template.status = bulkEditStatus.value;
     fields.add('status');
@@ -21770,7 +22387,7 @@ function buildBulkEditTemplate() {
     template.reminder_offset_days = Number.isFinite(reminderValue) ? reminderValue : null;
     fields.add('reminder_offset_days');
   }
-  return { template, fields: Array.from(fields) };
+  return { template, fields: Array.from(fields), applyParent, nextParentId };
 }
 
 function buildBulkUndoSnapshot(task, fields) {
@@ -21808,17 +22425,33 @@ function buildBulkPatchForTask(task, template) {
 async function applyBulkEdit() {
   const selected = getSelectedTaskIds();
   if (!selected.length) return;
-  const { template, fields } = buildBulkEditTemplate();
-  if (!Object.keys(template).length) {
+  const { template, fields, applyParent, nextParentId } = buildBulkEditTemplate();
+  if (!Object.keys(template).length && !applyParent) {
     closeBulkEditModal();
     return;
   }
+  const rootSet = new Set(applyParent ? getRootTaskIds(selected) : []);
   const snapshots = [];
   for (const taskId of selected) {
     const task = state.tasks[taskId];
     if (!task) continue;
-    snapshots.push(buildBulkUndoSnapshot(task, fields));
+    const snapshotFields = new Set(fields);
+    if (applyParent && rootSet.has(task.id) && (task.parent_id ?? null) !== (nextParentId ?? null)) {
+      snapshotFields.add('parent_id');
+      snapshotFields.add('sort_order');
+    }
+    snapshots.push(buildBulkUndoSnapshot(task, Array.from(snapshotFields)));
     const patch = buildBulkPatchForTask(task, template);
+    if (applyParent && rootSet.has(task.id) && (task.parent_id ?? null) !== (nextParentId ?? null)) {
+      const nextStatus = Object.prototype.hasOwnProperty.call(patch, 'status')
+        ? patch.status
+        : normalizeTaskStatusValue(task.status);
+      patch.sort_order = getNextTaskSortOrder(nextParentId, nextParentId ? null : nextStatus);
+      await reparentTaskRecord(task.id, nextParentId);
+    }
+    if (!Object.keys(patch).length) {
+      continue;
+    }
     await updateTaskRecord(task.id, patch);
     if (patch.status && isDoneStatusKey(patch.status)) {
       await maybeCreateRecurringTask(state.tasks[task.id]);
@@ -24405,23 +25038,92 @@ settingsOpenAutomation?.addEventListener('click', () => {
 settingsOpenHelp?.addEventListener('click', () => {
   openSettingsLinkedPage('help');
 });
+organizationCreatePersonalBtn?.addEventListener('click', () => {
+  openWorkspaceCreateModal('personal');
+});
+organizationCreateSharedBtn?.addEventListener('click', () => {
+  openWorkspaceCreateModal('shared');
+});
+organizationInviteCopy?.addEventListener('click', async () => {
+  await copyInviteLinkToClipboard(organizationInviteToken?.value ?? '', {
+    setStatus: setOrganizationInviteStatus
+  });
+});
+workspaceCreateCancel?.addEventListener('click', closeWorkspaceCreateModal);
+workspaceCreateModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeWorkspaceCreateModal);
+workspaceCreateType?.addEventListener('change', syncWorkspaceCreateTypeNote);
+workspaceCreateForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const workspace = await createWorkspaceRecord(
+    workspaceCreateName?.value ?? '',
+    workspaceCreateType?.value ?? 'personal'
+  );
+  if (!workspace) {
+    workspaceCreateName?.focus();
+    return;
+  }
+  closeWorkspaceCreateModal();
+  setOrganizationInviteStatus(`${getWorkspaceTypeLabelForWorkspace(workspace)} created.`, 'success');
+  await selectWorkspace(workspace);
+});
 templateManagerClose?.addEventListener('click', () => closeTemplateManagerModal());
 templateManagerModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => closeTemplateManagerModal());
 teamMemberAddBtn?.addEventListener('click', async () => {
   if (!state.workspace) return;
   const name = teamMemberNameInput?.value?.trim() ?? '';
   if (!name) return;
-  const email = teamMemberEmailInput?.value?.trim() ?? '';
+  const rawEmail = teamMemberEmailInput?.value?.trim() ?? '';
+  const email = rawEmail ? normalizeActorEmail(rawEmail) : '';
+  if (rawEmail && !email) {
+    setOrganizationInviteStatus('Enter a valid email address.', 'error');
+    teamMemberEmailInput?.focus();
+    return;
+  }
   const role = teamMemberRoleSelect?.value ?? 'member';
   try {
-    let user = null;
     const existingUsers = getUsersForCurrentWorkspace();
     if (email) {
-      user = existingUsers.find(entry => String(entry.email ?? '').toLowerCase() === email.toLowerCase()) ?? null;
+      const existingMember = existingUsers.find((entry) =>
+        String(entry.email ?? '').toLowerCase() === email.toLowerCase()
+      ) ?? null;
+      if (existingMember) {
+        const existingMembership = (state.workspaceMemberships ?? []).find((item) =>
+          item.workspace_id === state.workspace.id && item.user_id === existingMember.id && !item.archived
+        );
+        if (existingMembership) {
+          await updateWorkspaceMembershipRecord(existingMembership.id, { role });
+          setOrganizationInviteStatus(`${existingMember.display_name} is already in this workspace. Updated role.`, 'success');
+          render();
+          return;
+        }
+      }
     }
-    if (!user) {
-      user = existingUsers.find(entry => entry.display_name === name) ?? null;
+    if (email && isCurrentActorAdmin() && isAuthenticatedActor()) {
+      const response = await api.createAdminInvite({
+        workspace_id: state.workspace.id,
+        email,
+        role
+      });
+      const inviteToken = String(response?.invite?.invite_token ?? '').trim();
+      setOrganizationInviteToken(inviteToken);
+      setOrganizationInviteStatus(
+        inviteToken
+          ? `Invite ready for ${response?.invite?.email ?? email}.`
+          : 'Invite created, but token is hidden by server configuration.',
+        inviteToken ? 'success' : 'error'
+      );
+      if (inviteToken) {
+        await copyInviteLinkToClipboard(inviteToken, {
+          setStatus: setOrganizationInviteStatus
+        });
+      }
+      if (teamMemberNameInput) teamMemberNameInput.value = '';
+      if (teamMemberEmailInput) teamMemberEmailInput.value = '';
+      if (teamMemberRoleSelect) teamMemberRoleSelect.value = 'member';
+      return;
     }
+    let user = null;
+    user = existingUsers.find(entry => entry.display_name === name) ?? null;
     if (!user) {
       user = await createUserRecord({ display_name: name, email: email || null });
     }
@@ -24437,9 +25139,17 @@ teamMemberAddBtn?.addEventListener('click', async () => {
     if (teamMemberNameInput) teamMemberNameInput.value = '';
     if (teamMemberEmailInput) teamMemberEmailInput.value = '';
     if (teamMemberRoleSelect) teamMemberRoleSelect.value = 'member';
+    setOrganizationInviteToken('');
+    setOrganizationInviteStatus(
+      email
+        ? `${user.display_name} added to ${state.workspace.name}.`
+        : `${user.display_name} added as a local collaborator for ${state.workspace.name}.`,
+      'success'
+    );
     render();
   } catch (err) {
-    alert(err?.message ?? 'Unable to add member.');
+    setOrganizationInviteStatus(err?.message ?? 'Unable to add collaborator.', 'error');
+    showToast({ type: 'error', message: err?.message ?? 'Unable to add collaborator.' });
   }
 });
 dataTransferBack?.addEventListener('click', returnFromSettingsLinkedPage);
@@ -25054,40 +25764,7 @@ workflowApplicabilityForm?.addEventListener('submit', (event) => {
 newWorkspaceBtn.addEventListener('click', async () => {
   workspaceMenu?.classList.add('hidden');
   openMenu = null;
-  const name = prompt('Workspace name');
-  if (!name) return;
-  const trimmed = normalizeTitleInput(name);
-  let workspace = null;
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
-  if (canUseRemote) {
-    try {
-      const created = await api.createWorkspace({ name: trimmed, type: 'personal' });
-      workspace = created ? normalizeWorkspace(created) : null;
-    } catch {
-      // offline fallback
-    }
-  }
-  if (!workspace) {
-    const now = new Date().toISOString();
-    workspace = normalizeWorkspace({
-      id: createId(),
-      name: trimmed,
-      type: 'personal',
-      archived: 0,
-      created_at: now,
-      updated_at: now
-    });
-    queueLocalChange({
-      entity_type: 'workspace',
-      entity_id: workspace.id,
-      action: 'create',
-      payload: { id: workspace.id, name: trimmed, type: 'personal' }
-    });
-    syncStatus.textContent = 'Offline changes pending';
-  }
-  state.workspaces = state.workspaces ?? [];
-  state.workspaces.push(workspace);
-  await selectWorkspace(workspace);
+  openWorkspaceCreateModal();
 });
 
 newProjectBtn?.addEventListener('click', async () => {

@@ -578,6 +578,13 @@ body.mobile-create-open {
   letter-spacing: 0.04em;
 }
 
+.mobile-task-tools-field .setting-input,
+.mobile-task-tools-field .task-toolbar-select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .mobile-task-tools-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1390,6 +1397,45 @@ body.mobile-create-open {
   align-items: flex-start;
   justify-content: flex-start;
   gap: 0.5rem;
+}
+
+.organization-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+
+.organization-summary-card {
+  border: 1px solid rgba(154, 166, 186, 0.22);
+  border-radius: 0.75rem;
+  background: rgba(13, 21, 34, 0.45);
+  padding: 0.75rem 0.8rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.organization-summary-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.organization-callout,
+.organization-member-note {
+  margin: 0;
+}
+
+.organization-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.organization-invite-token {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .settings-holiday-options {
@@ -2504,7 +2550,34 @@ body.mobile-create-open {
 .task-view-toggle {
   display: inline-flex;
   gap: 0.5rem;
-  align-items: center;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.task-toolbar-field {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+  flex: 0 1 170px;
+}
+
+.task-toolbar-label {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.task-toolbar-select {
+  width: 100%;
+  min-width: 0;
+  border-radius: 0.65rem;
+  background: #243145;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  min-height: 2.2rem;
+  padding: 0.45rem 0.65rem;
 }
 
 .notices-toolbar {
@@ -2514,13 +2587,10 @@ body.mobile-create-open {
 
 .task-view-select {
   min-width: 140px;
-  background: #243145;
-  border: 1px solid var(--border);
-  color: var(--text);
 }
 
-.task-view-select:focus,
-.task-view-select:focus-visible {
+.task-toolbar-select:focus,
+.task-toolbar-select:focus-visible {
   outline: none;
   border-color: rgba(115, 158, 255, 0.6);
   box-shadow: 0 0 0 1px rgba(115, 158, 255, 0.25);
@@ -3594,10 +3664,22 @@ button:hover { opacity: 0.9; }
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+}
+
+.workspace-manage-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
 }
 
 .workspace-manage-name {
   font-weight: 600;
+}
+
+.workspace-manage-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
 .workspace-badge {
@@ -3611,7 +3693,13 @@ button:hover { opacity: 0.9; }
 .workspace-manage-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.4rem;
+}
+
+.workspace-manage-type {
+  min-width: 165px;
 }
 
 .workspace-manage-button {
@@ -4432,6 +4520,9 @@ button:hover { opacity: 0.9; }
   pointer-events: none;
   cursor: grab;
   position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .task-drag-handle::before {
@@ -4458,6 +4549,13 @@ button:hover { opacity: 0.9; }
 
 .task-drag-handle:active {
   cursor: grabbing;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .task-drag-handle {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .task-title {
@@ -5296,6 +5394,15 @@ button:hover { opacity: 0.9; }
   border-radius: 1rem;
   border: 1px solid var(--border);
   padding: 1.5rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+#workspace-create-modal .modal-card {
+  width: min(520px, 92vw);
+}
+
+.workspace-create-form {
   display: grid;
   gap: 0.75rem;
 }
@@ -6237,6 +6344,20 @@ body.auth-gated #auth-cancel-invite {
 }
 
 @media (max-width: 720px) {
+  .organization-invite-token {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-manage-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .workspace-manage-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .header-left h1 {
     font-size: 1.3rem;
   }

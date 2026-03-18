@@ -298,29 +298,32 @@
               </div>
             </div>
             <div class="task-view-toggle">
-              <div class="task-sort">
-                <button id="task-sort-button" class="subtle-button" type="button">Sort ▾</button>
-                <div id="task-sort-menu" class="workspace-menu hidden">
-                  <button class="workspace-menu-item" type="button" data-sort="default">Default</button>
-                  <button class="workspace-menu-item" type="button" data-sort="due-asc">Due date (soonest)</button>
-                  <button class="workspace-menu-item" type="button" data-sort="due-desc">Due date (latest)</button>
-                </div>
+              <div class="task-toolbar-field task-sort">
+                <label class="task-toolbar-label" for="task-sort-select">Sort</label>
+                <select id="task-sort-select" class="task-view-select task-toolbar-select" aria-label="Task sort">
+                  <option value="default">Default</option>
+                  <option value="due-asc">Due date (soonest)</option>
+                  <option value="due-desc">Due date (latest)</option>
+                </select>
               </div>
-              <div class="task-group">
-                <button id="task-group-button" class="subtle-button" type="button">Group by ▾</button>
-                <div id="task-group-menu" class="workspace-menu hidden">
-                  <button class="workspace-menu-item" type="button" data-group="none">None</button>
-                  <button class="workspace-menu-item" type="button" data-group="section">Section</button>
-                  <button class="workspace-menu-item" type="button" data-group="task-type">Task type</button>
-                  <button class="workspace-menu-item" type="button" data-group="priority">Priority</button>
-                </div>
+              <div class="task-toolbar-field task-group">
+                <label class="task-toolbar-label" for="task-group-select">Group by</label>
+                <select id="task-group-select" class="task-view-select task-toolbar-select" aria-label="Task grouping">
+                  <option value="none">None</option>
+                  <option value="section">Section</option>
+                  <option value="task-type">Task type</option>
+                  <option value="priority">Priority</option>
+                </select>
               </div>
-              <select id="task-view-select" class="task-view-select" aria-label="Task view">
-                <option value="list">List view</option>
-                <option value="kanban">Kanban view</option>
-                <option value="calendar">Calendar view</option>
-                <option value="smart">Smart view</option>
-              </select>
+              <div class="task-toolbar-field">
+                <label class="task-toolbar-label" for="task-view-select">View</label>
+                <select id="task-view-select" class="task-view-select task-toolbar-select" aria-label="Task view">
+                  <option value="list">List view</option>
+                  <option value="kanban">Kanban view</option>
+                  <option value="calendar">Calendar view</option>
+                  <option value="smart">Smart view</option>
+                </select>
+              </div>
               <button id="task-columns-button" class="subtle-button" type="button" title="Add section">＋</button>
             </div>
             </div>
@@ -574,6 +577,16 @@
                 </ul>
               </div>
               <div class="settings-section">
+                <h3>Projects</h3>
+                <div class="sidebar-note setting-help">Projects are first-class API resources. Use <code class="help-inline-code">kind</code> to distinguish standard projects from task lists when needed.</div>
+                <ul class="help-route-list">
+                  <li><code class="help-inline-code">GET /projects?workspace_id=&lt;uuid&gt;</code> lists projects for a workspace.</li>
+                  <li><code class="help-inline-code">POST /projects</code> creates a project or list.</li>
+                  <li><code class="help-inline-code">PATCH /projects/:id</code> updates fields like <code class="help-inline-code">name</code>, <code class="help-inline-code">kind</code>, and <code class="help-inline-code">archived</code>.</li>
+                  <li><code class="help-inline-code">DELETE /projects/:id</code> deletes a project.</li>
+                </ul>
+              </div>
+              <div class="settings-section">
                 <h3>Notices</h3>
                 <div class="sidebar-note setting-help">Notices and notice types are first-class API resources. Notice types define reusable categories, and notices carry scheduling and recurrence fields.</div>
                 <ul class="help-route-list">
@@ -603,6 +616,10 @@
                   <pre id="help-shopping-list-create-example" class="help-code-block"></pre>
                 </div>
                 <div class="help-code-group">
+                  <div class="help-code-label">Create project</div>
+                  <pre id="help-project-create-example" class="help-code-block"></pre>
+                </div>
+                <div class="help-code-group">
                   <div class="help-code-label">Add shopping items</div>
                   <pre id="help-shopping-item-create-example" class="help-code-block"></pre>
                 </div>
@@ -624,6 +641,7 @@
                 <ul class="help-route-list">
                   <li><code class="help-inline-code">GET /workspaces</code>, <code class="help-inline-code">POST /workspaces</code></li>
                   <li><code class="help-inline-code">GET /tasks</code>, <code class="help-inline-code">GET /tasks/tree</code>, <code class="help-inline-code">POST /tasks/search</code></li>
+                  <li><code class="help-inline-code">GET /projects</code>, <code class="help-inline-code">POST /projects</code>, <code class="help-inline-code">PATCH|DELETE /projects/:id</code></li>
                   <li><code class="help-inline-code">GET /shopping-lists</code>, <code class="help-inline-code">POST /shopping-lists</code>, <code class="help-inline-code">PATCH|DELETE /shopping-lists/:id</code></li>
                   <li><code class="help-inline-code">GET /shopping-items</code>, <code class="help-inline-code">POST /shopping-items</code>, <code class="help-inline-code">PATCH|DELETE /shopping-items/:id</code></li>
                   <li><code class="help-inline-code">GET /notice-types</code>, <code class="help-inline-code">POST /notice-types</code>, <code class="help-inline-code">PATCH|DELETE /notice-types/:id</code></li>
@@ -792,7 +810,7 @@
                 <button id="workspace-manage-back" class="subtle-button" type="button">← Tasks</button>
                 <div>
                   <h2>Manage Workspaces</h2>
-                  <div class="sidebar-note">Rename, archive, or delete active workspaces.</div>
+                  <div class="sidebar-note">Rename, convert between personal and shared, archive, or delete active workspaces.</div>
                 </div>
               </div>
             </div>
@@ -916,11 +934,11 @@
           </label>
           <label class="mobile-task-tools-field">
             <span>Filter</span>
-            <select id="mobile-task-tools-filter" class="setting-input"></select>
+            <select id="mobile-task-tools-filter" class="setting-input task-toolbar-select"></select>
           </label>
           <label class="mobile-task-tools-field">
             <span>Sort</span>
-            <select id="mobile-task-tools-sort" class="setting-input">
+            <select id="mobile-task-tools-sort" class="setting-input task-toolbar-select">
               <option value="default">Default</option>
               <option value="due-asc">Due date (soonest)</option>
               <option value="due-desc">Due date (latest)</option>
@@ -928,7 +946,7 @@
           </label>
           <label class="mobile-task-tools-field">
             <span>Group by</span>
-            <select id="mobile-task-tools-group" class="setting-input">
+            <select id="mobile-task-tools-group" class="setting-input task-toolbar-select">
               <option value="none">None</option>
               <option value="section">Section</option>
               <option value="task-type">Task type</option>
@@ -937,7 +955,7 @@
           </label>
           <label class="mobile-task-tools-field">
             <span>View</span>
-            <select id="mobile-task-tools-view" class="setting-input">
+            <select id="mobile-task-tools-view" class="setting-input task-toolbar-select">
               <option value="list">List view</option>
               <option value="kanban">Kanban view</option>
               <option value="calendar">Calendar view</option>
@@ -1493,20 +1511,43 @@
             <details class="settings-section settings-accordion">
               <summary class="settings-accordion-summary">
                 <span class="settings-accordion-copy">
-                  <span class="settings-accordion-title">Collaboration</span>
-                  <span class="settings-accordion-subtitle">Manage local team members and roles.</span>
+                  <span class="settings-accordion-title">Organization</span>
+                  <span class="settings-accordion-subtitle">Create shared workspaces, invite collaborators, and assign work in one place.</span>
                 </span>
                 <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
               </summary>
               <div class="settings-accordion-content">
-                <div class="setting-row team-add-row">
-                  <input id="team-member-name" class="setting-input" type="text" placeholder="Member name" />
-                  <input id="team-member-email" class="setting-input" type="email" placeholder="Email (optional)" />
+                <div class="organization-summary-grid">
+                  <div class="organization-summary-card">
+                    <div class="setting-label">Active workspace</div>
+                    <div id="organization-workspace-name" class="organization-summary-value">No active workspace</div>
+                    <div id="organization-workspace-type" class="sidebar-note">Select a workspace to manage collaboration.</div>
+                  </div>
+                  <div class="organization-summary-card">
+                    <div class="setting-label">Members available for assignment</div>
+                    <div id="organization-member-count" class="organization-summary-value">0</div>
+                    <div class="sidebar-note">Active members in this workspace appear in task assignee menus.</div>
+                  </div>
+                </div>
+                <div class="sidebar-note organization-callout">Shared workspaces are the point of intersection where people can share tasks, assign work, and collaborate together.</div>
+                <div class="organization-actions">
+                  <button id="organization-create-personal" class="subtle-button" type="button">New personal workspace</button>
+                  <button id="organization-create-shared" class="subtle-button" type="button">New shared workspace</button>
+                </div>
+                <div class="setting-row team-add-row organization-add-row">
+                  <input id="team-member-name" class="setting-input" type="text" placeholder="Collaborator name" />
+                  <input id="team-member-email" class="setting-input" type="email" placeholder="Email to invite or track" />
                   <select id="team-member-role" class="setting-input">
                     <option value="member">Member</option>
                     <option value="manager">Manager</option>
                   </select>
-                  <button id="team-member-add" class="subtle-button" type="button">Add member</button>
+                  <button id="team-member-add" class="subtle-button" type="button">Add collaborator</button>
+                </div>
+                <div class="sidebar-note organization-member-note">Use email to invite a real collaborator. Name-only entries create a local placeholder that can still be assigned tasks in this workspace.</div>
+                <div id="organization-invite-status" class="sidebar-note"></div>
+                <div id="organization-invite-token-wrap" class="organization-invite-token hidden">
+                  <input id="organization-invite-token" class="setting-input" type="text" readonly />
+                  <button id="organization-invite-copy" class="subtle-button" type="button">Copy invite link</button>
                 </div>
                 <div id="team-member-list" class="workspace-list"></div>
               </div>
@@ -2215,6 +2256,10 @@
             <select id="bulk-edit-project"></select>
           </label>
           <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-parent" type="checkbox" /> Parent task</span>
+            <select id="bulk-edit-parent"></select>
+          </label>
+          <label class="bulk-edit-field">
             <span><input id="bulk-edit-apply-type" type="checkbox" /> Type</span>
             <select id="bulk-edit-type"></select>
           </label>
@@ -2333,6 +2378,33 @@
           </div>
           <div class="auth-switch-row">
             <button id="auth-back-login" class="auth-switch-link" type="button">Back to sign in</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="workspace-create-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card workspace-create-card">
+        <div class="modal-header">
+          <h2>New workspace</h2>
+        </div>
+        <form id="workspace-create-form" class="workspace-create-form">
+          <label>
+            Workspace name
+            <input id="workspace-create-name" type="text" autocomplete="off" placeholder="Team Ops" required />
+          </label>
+          <label>
+            Workspace type
+            <select id="workspace-create-type">
+              <option value="personal">Personal workspace</option>
+              <option value="shared">Shared workspace</option>
+            </select>
+          </label>
+          <div id="workspace-create-type-note" class="sidebar-note">Personal workspaces stay private until you invite collaborators.</div>
+          <div class="modal-actions">
+            <button type="submit">Create workspace</button>
+            <button id="workspace-create-cancel" class="subtle-button" type="button">Cancel</button>
           </div>
         </form>
       </div>

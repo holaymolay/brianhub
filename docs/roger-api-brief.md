@@ -123,6 +123,10 @@ General authenticated routes:
 - `POST /tasks/:id/checkin`
 - `POST /tasks/:id/reschedule`
 - `POST /tasks/:id/reparent`
+- `GET /projects?workspace_id=<uuid>`
+- `POST /projects`
+- `PATCH /projects/:id`
+- `DELETE /projects/:id`
 - `GET /shopping-lists?workspace_id=<uuid>`
 - `POST /shopping-lists`
 - `PATCH /shopping-lists/:id`
@@ -205,6 +209,27 @@ Minimal shopping list create:
 {
   "workspace_id": "00000000-0000-4000-8000-000000000001",
   "name": "Safeway run",
+  "archived": false
+}
+```
+
+Minimal project create:
+
+```json
+{
+  "workspace_id": "00000000-0000-4000-8000-000000000001",
+  "name": "Launch website",
+  "kind": "project",
+  "archived": false
+}
+```
+
+Minimal project update:
+
+```json
+{
+  "name": "Launch website v2",
+  "kind": "project",
   "archived": false
 }
 ```

@@ -26,6 +26,18 @@ test('help page documents shopping list and shopping item endpoints', () => {
   assert.match(html, /id="help-shopping-item-create-example"/);
 });
 
+test('help page documents project endpoints', () => {
+  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  assert.match(html, /GET \/projects\?workspace_id=&lt;uuid&gt;/);
+  assert.match(html, /POST \/projects/);
+  assert.match(html, /PATCH \/projects\/:id/);
+  assert.match(html, /DELETE \/projects\/:id/);
+  assert.match(html, /id="help-project-create-example"/);
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  assert.match(script, /const helpProjectCreateExample = document\.getElementById\('help-project-create-example'\);/);
+  assert.match(script, /helpProjectCreateExample\.textContent = JSON\.stringify\(\{\s*workspace_id: workspaceId,\s*name: 'Launch website',\s*kind: 'project',\s*archived: false\s*\}, null, 2\);/s);
+});
+
 test('help page documents notice and notice type endpoints', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
   assert.match(html, /GET \/notice-types\?workspace_id=&lt;uuid&gt;/);
