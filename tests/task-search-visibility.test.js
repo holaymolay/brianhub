@@ -7,8 +7,9 @@ test('task filtering derives effective project scope from ancestor tasks', () =>
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /function getTaskEffectiveProjectId\(taskOrId\) \{/);
   assert.match(script, /function taskMatchesActiveProjectFilter\(task, activeFilter = getActiveTaskFilter\(\)\) \{/);
+  assert.match(script, /const directProjectId = normalizeSectionScopeProjectId\(task\?\.project_id\);/);
   assert.match(script, /const effectiveProjectId = getTaskEffectiveProjectId\(task\);/);
-  assert.match(script, /return !effectiveProjectId;/);
+  assert.match(script, /return !directProjectId;/);
   assert.match(script, /return effectiveProjectId === activeFilter;/);
 });
 

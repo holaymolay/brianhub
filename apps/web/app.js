@@ -5142,17 +5142,18 @@ function getTaskEffectiveProjectId(taskOrId) {
 }
 
 function taskMatchesActiveProjectFilter(task, activeFilter = getActiveTaskFilter()) {
+  const directProjectId = normalizeSectionScopeProjectId(task?.project_id);
   const effectiveProjectId = getTaskEffectiveProjectId(task);
   if (activeFilter === TASK_FILTER_UNASSIGNED) {
-    return !effectiveProjectId;
+    return !directProjectId;
   }
   if (activeFilter === TASK_FILTER_INBOX) {
-    return !effectiveProjectId && isInboxStatusKey(normalizeTaskStatusValue(task?.status));
+    return !directProjectId && isInboxStatusKey(normalizeTaskStatusValue(task?.status));
   }
   if (activeFilter) {
     return effectiveProjectId === activeFilter;
   }
-  return !effectiveProjectId;
+  return !directProjectId;
 }
 
 function taskMatchesSectionScope(task, projectId) {
