@@ -6,7 +6,7 @@ import {
   getBootLocalData,
   prepareLocalDataForStorage
 } from './localData.js';
-import { applyRemoteChanges } from './syncState.js';
+import { applyRemoteChanges, reconcileServerDataWithPendingChanges } from './syncState.js';
 import { replayPendingChanges } from './syncQueue.js';
 import { getClientId } from './clientId.js';
 import { suppressQuickAddPointerEvents } from './quickAdd.js';
@@ -6738,7 +6738,7 @@ async function addTaskDependencyRecord(taskId, dependsOnId) {
   const existing = (state.taskDependencies ?? [])
     .some(dep => dep.task_id === taskId && dep.depends_on_id === dependsOnId);
   if (existing) return null;
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const created = await api.addTaskDependency(taskId, dependsOnId);
@@ -7998,6 +7998,10 @@ function hasPendingLocalChanges() {
   return (state.local?.pendingChanges ?? []).length > 0;
 }
 
+function canUseRemoteApi() {
+  return navigator.onLine;
+}
+
 function persistLocalData() {
   saveLocalData(prepareLocalDataForStorage({
     localSeq: state.local?.localSeq ?? 0,
@@ -8152,6 +8156,17 @@ function applyLocalDataSnapshot(data) {
   state.storeRules = data.storeRules ?? [];
   state.shoppingLists = data.shoppingLists ?? [];
   state.shoppingItems = data.shoppingItems ?? {};
+}
+
+function reapplyPendingLocalChanges(localSnapshot) {
+  const pendingChanges = [...(state.local?.pendingChanges ?? [])];
+  if (!localSnapshot || !pendingChanges.length) return;
+  const reconciled = reconcileServerDataWithPendingChanges(
+    snapshotLocalData(),
+    localSnapshot,
+    pendingChanges
+  );
+  applyLocalDataSnapshot(reconciled);
 }
 
 async function pushPendingChanges() {
@@ -8403,7 +8418,8 @@ async function loadWorkspaces() {
   }
   let workspaces = state.workspaces ?? [];
   let createdWorkspace = null;
-  const allowRemote = !hasPendingLocalChanges();
+  const localSnapshot = hasPendingLocalChanges() ? snapshotLocalData() : null;
+  const allowRemote = canUseRemoteApi();
   if (allowRemote) {
     try {
       workspaces = await api.listWorkspaces();
@@ -8435,6 +8451,13 @@ async function loadWorkspaces() {
   state.workspace = normalized.find(ws => ws.id === preferredId && !ws.archived)
     ?? normalized.find(ws => !ws.archived)
     ?? normalized[0];
+  reapplyPendingLocalChanges(localSnapshot);
+  const resolvedWorkspaces = (state.workspaces ?? []).map(normalizeWorkspace);
+  state.workspaces = resolvedWorkspaces;
+  state.workspace = resolvedWorkspaces.find(ws => ws.id === preferredId && !ws.archived)
+    ?? resolvedWorkspaces.find(ws => !ws.archived)
+    ?? resolvedWorkspaces[0]
+    ?? null;
   state.ui.activeWorkspaceId = state.workspace?.id ?? null;
   if (createdWorkspace?.id) {
     await ensureWorkspaceCreatorMembership(createdWorkspace);
@@ -8449,7 +8472,8 @@ async function loadWorkspaceData() {
     return;
   }
   if (!state.workspace) return;
-  if (!hasPendingLocalChanges()) {
+  const localSnapshot = hasPendingLocalChanges() ? snapshotLocalData() : null;
+  if (canUseRemoteApi()) {
     try {
       state.projects = (await api.listProjects(state.workspace.id)).map(normalizeProject);
       state.templates = (await api.listTemplates(state.workspace.id)).map(normalizeTemplate);
@@ -8470,6 +8494,9 @@ async function loadWorkspaceData() {
       // offline: keep local data
     }
   }
+  reapplyPendingLocalChanges(localSnapshot);
+  state.workspace = (state.workspaces ?? []).find(workspace => workspace.id === state.workspace?.id)
+    ?? state.workspace;
   reconcileWorkflowWorkspaceIds();
   backfillWorkflowTaskTypeMarkers();
   ensureLocalWorkspaceDefaults(state.workspace);
@@ -9170,7 +9197,7 @@ async function createTaskRecord(payload) {
     sort_order: sortOrder,
     workspace_id: state.workspace.id
   };
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const created = await api.createTask(taskPayload);
@@ -9272,7 +9299,7 @@ async function updateTaskRecord(id, patch) {
   if (patch.tags !== undefined) {
     patch = { ...patch, tags: normalizeTagList(patch.tags) };
   }
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const updated = await api.updateTask(id, patch);
@@ -9325,7 +9352,7 @@ async function updateTaskRecord(id, patch) {
 }
 
 async function reparentTaskRecord(id, newParentId) {
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const updated = await api.reparentTask(id, newParentId);
@@ -9353,7 +9380,7 @@ async function reparentTaskRecord(id, newParentId) {
 }
 
 async function deleteTaskRecord(id) {
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const result = await api.deleteTask(id);
@@ -9463,7 +9490,7 @@ async function createProjectRecord(name, options = {}) {
   const trimmed = normalizeTitleInput(name);
   if (!trimmed) return null;
   const projectKind = normalizeProjectKind(options.kind);
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const created = await api.createProject({
@@ -9510,7 +9537,7 @@ async function updateProjectRecord(id, patch) {
   if (patch.name !== undefined) {
     patch = { ...patch, name: normalizeTitleInput(patch.name) };
   }
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const updated = await api.updateProject(id, patch);
@@ -9550,7 +9577,7 @@ async function updateProjectRecord(id, patch) {
 }
 
 async function deleteProjectRecord(id) {
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const result = await api.deleteProject(id);
@@ -9593,7 +9620,7 @@ async function createStatusRecord(label) {
   if (!state.workspace) return null;
   const trimmed = normalizeTitleInput(label);
   if (!trimmed) return null;
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const created = await api.createStatus({ workspace_id: state.workspace.id, label: trimmed });
@@ -9638,7 +9665,7 @@ async function updateStatusRecord(id, patch) {
   if (patch.label !== undefined) {
     patch = { ...patch, label: normalizeTitleInput(patch.label) };
   }
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const updated = await api.updateStatus(id, patch);
@@ -9678,7 +9705,7 @@ async function updateStatusRecord(id, patch) {
 }
 
 async function deleteStatusRecord(id) {
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const result = await api.deleteStatus(id);
@@ -9725,7 +9752,7 @@ async function createTaskTypeRecord(name) {
   if (!trimmed) return null;
   const existing = (state.taskTypes ?? []).find(type => type.workspace_id === state.workspace.id && type.name === trimmed);
   if (existing) return existing;
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const created = await api.createTaskType({ workspace_id: state.workspace.id, name: trimmed });
@@ -9768,7 +9795,7 @@ async function updateTaskTypeRecord(id, patch) {
   if (patch.name !== undefined) {
     patch = { ...patch, name: normalizeTitleInput(patch.name) };
   }
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const updated = await api.updateTaskType(id, patch);
@@ -9816,7 +9843,7 @@ async function updateTaskTypeRecord(id, patch) {
 }
 
 async function deleteTaskTypeRecord(id) {
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const result = await api.deleteTaskType(id);
@@ -13875,7 +13902,7 @@ async function refreshTaskSearchResults() {
     return;
   }
 
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (!canUseRemote) {
     clearTaskSearchResult();
     return;
@@ -13957,8 +13984,7 @@ function getFilteredTasks() {
   if (!query && !tagFilter) return filtered;
   const queryKey = getTaskSearchResultKey(state.workspace.id, query, getTaskSearchStatusFilter(), tagFilter);
   if (
-    navigator.onLine
-    && !hasPendingLocalChanges()
+    canUseRemoteApi()
     && taskSearchResultKey !== queryKey
     && taskSearchInFlightKey !== queryKey
     && !taskSearchDebounceTimer
@@ -13974,12 +14000,12 @@ function getFilteredTasks() {
       .filter(task => taskMatchesSearchText(task, query))
       .map(task => task.id)
   );
-  const matchedIds = taskSearchResultKey === queryKey && taskSearchResultIds instanceof Set
-    ? new Set(
-        Array.from(taskSearchResultIds)
-          .filter(taskId => state.tasks?.[taskId] && !isWorkflowTaskRecord(state.tasks[taskId], null))
-      )
-    : localMatchedIds;
+  const matchedIds = new Set(localMatchedIds);
+  if (taskSearchResultKey === queryKey && taskSearchResultIds instanceof Set) {
+    Array.from(taskSearchResultIds)
+      .filter(taskId => state.tasks?.[taskId] && !isWorkflowTaskRecord(state.tasks[taskId], null))
+      .forEach(taskId => matchedIds.add(taskId));
+  }
   const expandedIds = expandTaskIdsWithAncestors(matchedIds);
   return nonWorkflowTasks.filter(task => expandedIds.has(task.id));
 }
@@ -14859,7 +14885,7 @@ async function ensureWorkspaceCreatorMembership(workspace, role = null) {
   if (!workspace?.id || !auth.authenticated || !actor?.id) return null;
   const membershipRole = role ?? (normalizeWorkspaceType(workspace.type) === 'shared' ? 'manager' : 'member');
   upsertUser({ ...actor, archived: 0 });
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       return await api.createWorkspaceMembership({
@@ -14903,7 +14929,7 @@ async function createWorkspaceRecord(name, type = 'personal') {
   if (!trimmed) return null;
   const normalizedType = normalizeWorkspaceType(type);
   let workspace = null;
-  const canUseRemote = navigator.onLine && !hasPendingLocalChanges();
+  const canUseRemote = canUseRemoteApi();
   if (canUseRemote) {
     try {
       const created = await api.createWorkspace({ name: trimmed, type: normalizedType });

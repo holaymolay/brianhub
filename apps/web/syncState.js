@@ -11,6 +11,9 @@ function normalizeData(data = {}) {
   if (!next.tasks || typeof next.tasks !== 'object') next.tasks = {};
   if (!Array.isArray(next.taskDependencies)) next.taskDependencies = [];
   if (!Array.isArray(next.templates)) next.templates = [];
+  if (!Array.isArray(next.scheduleCalendars)) next.scheduleCalendars = [];
+  if (!Array.isArray(next.scheduleEventTypes)) next.scheduleEventTypes = [];
+  if (!Array.isArray(next.scheduleEvents)) next.scheduleEvents = [];
   if (!Array.isArray(next.notices)) next.notices = [];
   if (!Array.isArray(next.noticeTypes)) next.noticeTypes = [];
   if (!Array.isArray(next.storeRules)) next.storeRules = [];
@@ -199,4 +202,98 @@ export function applyRemoteChanges(data, changes = [], context = {}) {
     if (result.needsRefresh) needsRefresh = true;
   }
   return { data: nextData, needsRefresh };
+}
+
+function overlayTaskChange(serverData, localData, change) {
+  const next = { ...serverData, tasks: { ...(serverData.tasks ?? {}) } };
+  if (change.action === 'delete') {
+    const ids = Array.isArray(change.payload?.ids) ? change.payload.ids : [change.entity_id];
+    ids.forEach((taskId) => {
+      delete next.tasks[taskId];
+    });
+    return next;
+  }
+  const localTask = localData.tasks?.[change.entity_id];
+  if (localTask) {
+    next.tasks[change.entity_id] = { ...localTask };
+  }
+  return next;
+}
+
+function overlayArrayEntity(serverData, localData, change, key) {
+  const next = { ...serverData };
+  const current = serverData[key] ?? [];
+  if (change.action === 'delete') {
+    next[key] = removeById(current, change.entity_id);
+    return next;
+  }
+  const localItem = (localData[key] ?? []).find((entry) => entry.id === change.entity_id);
+  if (!localItem) return next;
+  next[key] = upsertById(current, localItem);
+  return next;
+}
+
+function overlayMapEntity(serverData, localData, change, key) {
+  const next = { ...serverData, [key]: { ...(serverData[key] ?? {}) } };
+  if (change.action === 'delete') {
+    delete next[key][change.entity_id];
+    return next;
+  }
+  const localItem = localData[key]?.[change.entity_id];
+  if (localItem) {
+    next[key][change.entity_id] = { ...localItem };
+  }
+  return next;
+}
+
+function overlayPendingChange(serverData, localData, change) {
+  const nextData = normalizeData(serverData);
+  const normalizedLocal = normalizeData(localData);
+  if (!change || !change.entity_type) return nextData;
+
+  switch (change.entity_type) {
+    case 'task':
+      return overlayTaskChange(nextData, normalizedLocal, change);
+    case 'workspace':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'workspaces');
+    case 'project':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'projects');
+    case 'status':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'statuses');
+    case 'task_type':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'taskTypes');
+    case 'user':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'users');
+    case 'workspace_membership':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'workspaceMemberships');
+    case 'template':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'templates');
+    case 'notice':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'notices');
+    case 'notice_type':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'noticeTypes');
+    case 'store_rule':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'storeRules');
+    case 'shopping_list':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'shoppingLists');
+    case 'shopping_item':
+      return overlayMapEntity(nextData, normalizedLocal, change, 'shoppingItems');
+    case 'schedule_calendar':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'scheduleCalendars');
+    case 'schedule_event_type':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'scheduleEventTypes');
+    case 'schedule_event':
+      return overlayArrayEntity(nextData, normalizedLocal, change, 'scheduleEvents');
+    default:
+      return nextData;
+  }
+}
+
+export function reconcileServerDataWithPendingChanges(serverData, localData, pendingChanges = []) {
+  let nextData = normalizeData(serverData);
+  const normalizedLocal = normalizeData(localData);
+  for (const change of pendingChanges ?? []) {
+    nextData = overlayPendingChange(nextData, normalizedLocal, change);
+  }
+  return nextData;
 }

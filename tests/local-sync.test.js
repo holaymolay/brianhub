@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyRemoteChanges } from '../apps/web/syncState.js';
+import { applyRemoteChanges, reconcileServerDataWithPendingChanges } from '../apps/web/syncState.js';
 import { TaskStatus } from '../packages/core/taskState.js';
 
 function baseData() {
@@ -88,4 +88,52 @@ test('applyRemoteChanges flags refresh for checkin/reschedule actions', () => {
   ];
   const result = applyRemoteChanges(data, changes);
   assert.equal(result.needsRefresh, true);
+});
+
+test('reconcileServerDataWithPendingChanges preserves local queued project and task state over server snapshot', () => {
+  const serverData = baseData();
+  serverData.projects = [{ id: 'project-server', workspace_id: 'w1', name: 'Server list', kind: 'list' }];
+  serverData.tasks = {
+    'task-server': { id: 'task-server', workspace_id: 'w1', title: 'Server task', project_id: 'project-server' }
+  };
+
+  const localData = baseData();
+  localData.projects = [
+    { id: 'project-server', workspace_id: 'w1', name: 'Renamed locally', kind: 'list' },
+    { id: 'project-local', workspace_id: 'w1', name: 'Queued local list', kind: 'list' }
+  ];
+  localData.tasks = {
+    'task-server': { id: 'task-server', workspace_id: 'w1', title: 'Renamed task locally', project_id: 'project-server' },
+    'task-local': { id: 'task-local', workspace_id: 'w1', title: 'Queued local task', project_id: 'project-local' }
+  };
+
+  const result = reconcileServerDataWithPendingChanges(serverData, localData, [
+    { entity_type: 'project', entity_id: 'project-server', action: 'update' },
+    { entity_type: 'project', entity_id: 'project-local', action: 'create' },
+    { entity_type: 'task', entity_id: 'task-server', action: 'update' },
+    { entity_type: 'task', entity_id: 'task-local', action: 'create' }
+  ]);
+
+  assert.equal(result.projects.find((project) => project.id === 'project-server')?.name, 'Renamed locally');
+  assert.equal(result.projects.find((project) => project.id === 'project-local')?.name, 'Queued local list');
+  assert.equal(result.tasks['task-server']?.title, 'Renamed task locally');
+  assert.equal(result.tasks['task-local']?.title, 'Queued local task');
+});
+
+test('reconcileServerDataWithPendingChanges honors queued deletes', () => {
+  const serverData = baseData();
+  serverData.tasks = {
+    t1: { id: 't1', workspace_id: 'w1', title: 'Server task' }
+  };
+  serverData.projects = [
+    { id: 'p1', workspace_id: 'w1', name: 'Server list', kind: 'list' }
+  ];
+
+  const result = reconcileServerDataWithPendingChanges(serverData, baseData(), [
+    { entity_type: 'task', entity_id: 't1', action: 'delete' },
+    { entity_type: 'project', entity_id: 'p1', action: 'delete' }
+  ]);
+
+  assert.equal(result.tasks.t1, undefined);
+  assert.equal(result.projects.find((project) => project.id === 'p1'), undefined);
 });
