@@ -275,6 +275,7 @@ const workflowsPage = document.getElementById('workflows-page');
 const dataTransferPage = document.getElementById('data-transfer-page');
 const auditLogPage = document.getElementById('audit-log-page');
 const automationPage = document.getElementById('automation-page');
+const helpPage = document.getElementById('help-page');
 const adminPage = document.getElementById('admin-page');
 const profilePage = document.getElementById('profile-page');
 const workflowPageTitle = document.getElementById('workflow-page-title');
@@ -518,6 +519,7 @@ const settingsOpenTemplates = document.getElementById('settings-open-templates')
 const settingsOpenDataTransfer = document.getElementById('settings-open-data-transfer');
 const settingsOpenAuditLog = document.getElementById('settings-open-audit-log');
 const settingsOpenAutomation = document.getElementById('settings-open-automation');
+const settingsOpenHelp = document.getElementById('settings-open-help');
 const settingsTabButtons = Array.from(document.querySelectorAll('.settings-tab-button[data-settings-tab]'));
 const settingsTabPanels = Array.from(document.querySelectorAll('.settings-tab-panel[data-settings-panel]'));
 const templateManagerModal = document.getElementById('template-manager-modal');
@@ -525,6 +527,12 @@ const templateManagerClose = document.getElementById('template-manager-close');
 const dataTransferBack = document.getElementById('data-transfer-back');
 const auditLogBack = document.getElementById('audit-log-back');
 const automationBack = document.getElementById('automation-back');
+const helpBack = document.getElementById('help-back');
+const helpApiBase = document.getElementById('help-api-base');
+const helpWorkspaceId = document.getElementById('help-workspace-id');
+const helpTaskCreateExample = document.getElementById('help-task-create-example');
+const helpTaskUpdateExample = document.getElementById('help-task-update-example');
+const helpSyncPullExample = document.getElementById('help-sync-pull-example');
 const adminPageBack = document.getElementById('admin-page-back');
 const adminInviteEmail = document.getElementById('admin-invite-email');
 const adminInviteRole = document.getElementById('admin-invite-role');
@@ -829,6 +837,7 @@ const NAVIGABLE_VIEWS = new Set([
   'shopping',
   'notices',
   'workflows',
+  'help',
   'admin',
   'profile',
   'data-transfer',
@@ -4155,6 +4164,8 @@ function getViewLabel(view) {
       return 'Notices';
     case 'workflows':
       return 'Workflows';
+    case 'help':
+      return 'Help';
     case 'admin':
       return 'Admin';
     case 'profile':
@@ -12495,6 +12506,7 @@ function render() {
   renderNotificationStatus();
   renderTaskUiSettings();
   renderSchedulingUiSettings();
+  renderHelpPage();
   renderSettingsTabs();
   renderGlobalSearch();
   if ((settingsModal && !settingsModal.classList.contains('hidden')) || getActiveView() === 'audit-log') {
@@ -12525,6 +12537,7 @@ function renderView() {
   const showShopping = view === 'shopping';
   const showNotices = view === 'notices';
   const showWorkflows = view === 'workflows';
+  const showHelp = view === 'help';
   const showAdmin = view === 'admin';
   const showProfile = view === 'profile';
   const showDataTransfer = view === 'data-transfer';
@@ -12539,6 +12552,7 @@ function renderView() {
   shoppingPage?.classList.toggle('hidden', !showShopping);
   noticesPage?.classList.toggle('hidden', !showNotices);
   workflowsPage?.classList.toggle('hidden', !showWorkflows);
+  helpPage?.classList.toggle('hidden', !showHelp);
   adminPage?.classList.toggle('hidden', !showAdmin);
   profilePage?.classList.toggle('hidden', !showProfile);
   dataTransferPage?.classList.toggle('hidden', !showDataTransfer);
@@ -12559,6 +12573,35 @@ function getTaskContainersForWorkspace({ kind = null, includeArchived = false } 
       if (targetKind && normalizeProjectKind(project.kind) !== targetKind) return false;
       return true;
     });
+}
+
+function renderHelpPage() {
+  const publicBase = typeof window !== 'undefined' ? window.location.origin : 'https://brianhub.com';
+  const workspaceId = state.workspace?.id ?? '<workspace-id>';
+  if (helpApiBase) {
+    helpApiBase.textContent = publicBase;
+  }
+  if (helpWorkspaceId) {
+    helpWorkspaceId.textContent = workspaceId;
+  }
+  if (helpTaskCreateExample) {
+    helpTaskCreateExample.textContent = JSON.stringify({
+      workspace_id: workspaceId,
+      title: 'Buy groceries',
+      group_label: 'Errands'
+    }, null, 2);
+  }
+  if (helpTaskUpdateExample) {
+    helpTaskUpdateExample.textContent = JSON.stringify({
+      group_label: 'Today'
+    }, null, 2);
+  }
+  if (helpSyncPullExample) {
+    helpSyncPullExample.textContent = JSON.stringify({
+      workspace_id: workspaceId,
+      cursor: 0
+    }, null, 2);
+  }
 }
 
 function getProjectsForWorkspace(options = {}) {
@@ -24162,6 +24205,9 @@ settingsOpenAuditLog?.addEventListener('click', () => {
 settingsOpenAutomation?.addEventListener('click', () => {
   openSettingsLinkedPage('automation');
 });
+settingsOpenHelp?.addEventListener('click', () => {
+  openSettingsLinkedPage('help');
+});
 templateManagerClose?.addEventListener('click', () => closeTemplateManagerModal());
 templateManagerModal?.querySelector('.modal-backdrop')?.addEventListener('click', () => closeTemplateManagerModal());
 teamMemberAddBtn?.addEventListener('click', async () => {
@@ -24202,6 +24248,7 @@ teamMemberAddBtn?.addEventListener('click', async () => {
 dataTransferBack?.addEventListener('click', returnFromSettingsLinkedPage);
 auditLogBack?.addEventListener('click', returnFromSettingsLinkedPage);
 automationBack?.addEventListener('click', returnFromSettingsLinkedPage);
+helpBack?.addEventListener('click', returnFromSettingsLinkedPage);
 dataExportDownload?.addEventListener('click', exportCurrentWorkspaceData);
 dataImportApply?.addEventListener('click', async () => {
   const file = dataImportFile?.files?.[0];

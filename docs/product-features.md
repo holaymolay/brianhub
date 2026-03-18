@@ -81,6 +81,7 @@ This file captures implemented behavior in the current BrianHub app.
 - Import/export page
 - Audit log page
 - Automation console page
+- Help page in Settings for API/auth/automation guidance
 - Backup scripts (snapshot, retention, restore-check)
 
 ## 4) Mobile behavior

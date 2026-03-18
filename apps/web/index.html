@@ -512,6 +512,84 @@
               <textarea id="automation-output" class="audit-log-output" rows="8" readonly placeholder="Results will appear here"></textarea>
             </div>
           </section>
+          <section id="help-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Help</h2>
+              <button id="help-back" class="subtle-button" type="button">← Settings</button>
+            </div>
+            <div class="settings-page-grid">
+              <div class="settings-section">
+                <h3>API overview</h3>
+                <div class="sidebar-note setting-help">This draft documents the current BrianHub API as implemented today.</div>
+                <div class="setting-row">
+                  <div class="setting-label">Base URL</div>
+                  <code id="help-api-base" class="help-inline-code">https://brianhub.com</code>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">Current workspace</div>
+                  <code id="help-workspace-id" class="help-inline-code">&lt;workspace-id&gt;</code>
+                </div>
+                <div class="sidebar-note setting-help">Production uses session-cookie auth for product routes. Bearer and service-account auth are not active yet.</div>
+              </div>
+              <div class="settings-section">
+                <h3>Public routes</h3>
+                <ul class="help-route-list">
+                  <li><code class="help-inline-code">GET /health</code></li>
+                  <li><code class="help-inline-code">GET /auth/me</code></li>
+                  <li><code class="help-inline-code">POST /auth/login</code></li>
+                  <li><code class="help-inline-code">POST /auth/logout</code></li>
+                  <li><code class="help-inline-code">POST /auth/invite/accept</code></li>
+                </ul>
+                <div class="sidebar-note setting-help">All other product routes require an authenticated actor when auth is enabled.</div>
+              </div>
+              <div class="settings-section">
+                <h3>Tasks and sections</h3>
+                <div class="sidebar-note setting-help">My Tasks sections are represented by <code class="help-inline-code">group_label</code> on each task. There is no dedicated sections endpoint yet.</div>
+                <ul class="help-route-list">
+                  <li>Use <code class="help-inline-code">POST /tasks</code> to create a task.</li>
+                  <li>Use <code class="help-inline-code">PATCH /tasks/:id</code> to update task fields.</li>
+                  <li>Set <code class="help-inline-code">group_label</code> to place a task into a section.</li>
+                  <li>Set <code class="help-inline-code">group_label</code> to <code class="help-inline-code">null</code> to remove a task from a section.</li>
+                </ul>
+                <div class="sidebar-note setting-help">Do not model sections as parent tasks with subtasks. Subtasks are hierarchy, not grouping.</div>
+              </div>
+              <div class="settings-section">
+                <h3>Example payloads</h3>
+                <div class="sidebar-note setting-help">Examples below use the active workspace where possible.</div>
+                <div class="help-code-group">
+                  <div class="help-code-label">Create task</div>
+                  <pre id="help-task-create-example" class="help-code-block"></pre>
+                </div>
+                <div class="help-code-group">
+                  <div class="help-code-label">Update task section</div>
+                  <pre id="help-task-update-example" class="help-code-block"></pre>
+                </div>
+                <div class="help-code-group">
+                  <div class="help-code-label">Sync pull</div>
+                  <pre id="help-sync-pull-example" class="help-code-block"></pre>
+                </div>
+              </div>
+              <div class="settings-section">
+                <h3>Protected route groups</h3>
+                <ul class="help-route-list">
+                  <li><code class="help-inline-code">GET /workspaces</code>, <code class="help-inline-code">POST /workspaces</code></li>
+                  <li><code class="help-inline-code">GET /tasks</code>, <code class="help-inline-code">GET /tasks/tree</code>, <code class="help-inline-code">POST /tasks/search</code></li>
+                  <li><code class="help-inline-code">POST /sync/pull</code>, <code class="help-inline-code">POST /sync/push</code></li>
+                  <li><code class="help-inline-code">GET /admin/info</code>, <code class="help-inline-code">GET|POST /admin/invites</code></li>
+                </ul>
+                <div class="sidebar-note setting-help">Errors use a normalized envelope with <code class="help-inline-code">code</code>, <code class="help-inline-code">message</code>, and <code class="help-inline-code">requestId</code>.</div>
+              </div>
+              <div class="settings-section">
+                <h3>Roger / automation guardrails</h3>
+                <ul class="help-route-list">
+                  <li>Roger is approved for server operations over Tailscale + SSH.</li>
+                  <li>Do not use <code class="help-inline-code">X-Actor-Email</code> in production.</li>
+                  <li>Do not automate a personal workspace with fake parent tasks standing in for sections.</li>
+                  <li>Until machine auth exists, treat product API automation as human-session-only.</li>
+                </ul>
+              </div>
+            </div>
+          </section>
           <section id="admin-page" class="panel hidden">
             <div class="panel-header">
               <h2>Admin Console</h2>
@@ -1351,6 +1429,13 @@
                 <span class="settings-action-subtitle">Run batch JSON commands against app data.</span>
               </div>
               <button id="settings-open-automation" class="subtle-button" type="button">Open</button>
+            </div>
+            <div class="settings-section settings-action-card">
+              <div class="settings-action-copy">
+                <span class="settings-action-title">Help</span>
+                <span class="settings-action-subtitle">Review the current API model, auth behavior, and automation guardrails.</span>
+              </div>
+              <button id="settings-open-help" class="subtle-button" type="button">Open</button>
             </div>
           </section>
           <section id="settings-panel-tasks" class="settings-tab-panel" role="tabpanel" data-settings-panel="tasks">

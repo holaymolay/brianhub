@@ -1110,6 +1110,55 @@ body.mobile-create-open {
   white-space: nowrap;
 }
 
+.help-route-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text);
+}
+
+.help-inline-code {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 0.45rem;
+  padding: 0.18rem 0.42rem;
+  background: rgba(12, 18, 28, 0.7);
+  border: 1px solid rgba(95, 112, 138, 0.32);
+  color: #e5efff;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.help-code-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.help-code-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #9fb0d1;
+}
+
+.help-code-block {
+  margin: 0;
+  border-radius: 0.75rem;
+  padding: 0.85rem 0.95rem;
+  background: #0f141c;
+  border: 1px solid rgba(95, 112, 138, 0.28);
+  color: #dceaff;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
   .settings-tab-list {
     gap: 0.25rem;
@@ -2123,6 +2172,7 @@ body.mobile-create-open {
 #shopping-page:not(.hidden),
 #notices-page:not(.hidden),
 #workflows-page:not(.hidden),
+#help-page:not(.hidden),
 #data-transfer-page:not(.hidden),
 #audit-log-page:not(.hidden),
 #automation-page:not(.hidden),
