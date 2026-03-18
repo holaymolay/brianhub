@@ -461,6 +461,28 @@ body.mobile-create-open {
   gap: 0.55rem;
 }
 
+.tasks-mobile-heading {
+  display: grid;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.tasks-mobile-context {
+  font-size: 0.74rem;
+  color: var(--muted);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tasks-mobile-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
 .mobile-create-action {
   background: #0f141c;
   border: 1px solid var(--border);
@@ -534,6 +556,32 @@ body.mobile-create-open {
   display: grid;
   gap: 0.7rem;
   overflow: auto;
+}
+
+.mobile-task-tools-card {
+  max-height: min(76vh, calc(100vh - var(--mobile-nav-safe-clearance) - 2rem));
+}
+
+.mobile-task-tools-body {
+  gap: 0.8rem;
+}
+
+.mobile-task-tools-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.mobile-task-tools-field > span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mobile-task-tools-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
 }
 
 .mobile-search-input-wrap {
@@ -5676,6 +5724,7 @@ body.auth-gated #auth-cancel-invite {
     position: sticky;
     top: 0;
     z-index: 6;
+    align-items: flex-start;
     margin: -0.1rem 0 0.55rem;
     padding: 0.15rem 0 0.45rem;
     background: linear-gradient(180deg, rgba(13, 18, 25, 0.98) 0%, rgba(13, 18, 25, 0.94) 70%, rgba(13, 18, 25, 0) 100%);
@@ -5688,55 +5737,16 @@ body.auth-gated #auth-cancel-invite {
     letter-spacing: 0.02em;
   }
 
-  #tasks-panel .task-create-split {
-    width: 100%;
-    max-width: 100%;
+  #tasks-panel .tasks-mobile-heading {
+    flex: 1 1 auto;
   }
 
-  #tasks-panel .task-create-primary {
-    flex: 1 1 auto;
-    text-align: center;
+  #tasks-panel .tasks-mobile-actions {
+    margin-left: 0.65rem;
   }
 
   #tasks-panel .tasks-toolbar {
-    justify-content: flex-start;
-    align-items: center;
-    flex-wrap: wrap;
-    row-gap: 0.45rem;
-  }
-
-  #tasks-panel .task-filter {
-    display: inline-flex;
-    order: 3;
-  }
-
-  #tasks-panel .task-view-toggle {
-    display: inline-flex;
-    order: 4;
-    margin-left: 0;
-    width: 100%;
-    max-width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    flex-wrap: nowrap;
-    padding-bottom: 0.12rem;
-  }
-
-  #tasks-panel .task-group {
     display: none;
-  }
-
-  #tasks-panel .task-view-toggle::-webkit-scrollbar {
-    height: 4px;
-  }
-
-  #tasks-panel .task-view-toggle > * {
-    flex: 0 0 auto;
-  }
-
-  #tasks-panel .task-view-select {
-    min-width: 118px;
-    flex: 0 0 auto;
   }
 
   #tasks-panel .task-shopping-inbox {

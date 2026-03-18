@@ -9,6 +9,19 @@ test('tasks page exposes a dedicated mobile add button', () => {
   assert.match(html, /class="panel-header tasks-mobile-header"/);
 });
 
+test('tasks page exposes a dedicated mobile tools sheet', () => {
+  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  assert.match(html, /id="tasks-mobile-tools-btn"/);
+  assert.match(html, /id="tasks-mobile-context"/);
+  assert.match(html, /id="mobile-task-tools-modal"/);
+  assert.match(html, /id="mobile-task-tools-filter"/);
+  assert.match(html, /id="mobile-task-tools-sort"/);
+  assert.match(html, /id="mobile-task-tools-group"/);
+  assert.match(html, /id="mobile-task-tools-view"/);
+  assert.match(html, /id="mobile-task-tools-add-section"/);
+  assert.match(html, /id="mobile-task-tools-add-column"/);
+});
+
 test('mobile create sheet exposes a task quick-add form', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
   assert.match(html, /id="mobile-task-quick-add-form"/);
@@ -30,4 +43,21 @@ test('task modal keeps the action row reachable on mobile', () => {
   assert.match(css, /#task-modal \.modal-card \{[\s\S]*max-height: calc\(100dvh - 2rem\);/);
   assert.match(css, /#task-modal-form \{[\s\S]*overflow-y: auto;/);
   assert.match(css, /#task-modal-form \.modal-actions \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
+});
+
+test('mobile task tools reuse the same task state controls as desktop', () => {
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  assert.match(script, /tasksMobileToolsBtn\?\.addEventListener\('click', \(\) => \{\s*openMobileTaskToolsModal\(\);/s);
+  assert.match(script, /mobileTaskToolsFilter\?\.addEventListener\('change', \(\) => \{\s*const selected = mobileTaskToolsFilter\.value \|\| 'all';\s*setActiveTaskFilter\(selected\);/s);
+  assert.match(script, /mobileTaskToolsSort\?\.addEventListener\('change', \(\) => \{\s*const selected = mobileTaskToolsSort\.value \|\| 'default';\s*setTaskSortKey\(selected\);/s);
+  assert.match(script, /mobileTaskToolsGroup\?\.addEventListener\('change', \(\) => \{\s*setTaskGroupMode\(mobileTaskToolsGroup\.value \|\| 'none'\);/s);
+  assert.match(script, /mobileTaskToolsView\?\.addEventListener\('change', \(\) => \{\s*setTaskView\(mobileTaskToolsView\.value \|\| 'list'\);/s);
+  assert.match(script, /function syncMobileTaskToolsInputs\(\) \{\s*if \(!mobileTaskToolsModal\) return;\s*const checklistViewActive = isWorkflowChecklistViewActive\(\);\s*syncTaskFilterOptionSelect\(mobileTaskToolsFilter, \{ allowFocusPreserve: true \}\);/s);
+});
+
+test('mobile task tools replace the cramped toolbar on phones', () => {
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(css, /\.mobile-task-tools-card \{/);
+  assert.match(css, /\.mobile-task-tools-actions \{/);
+  assert.match(css, /#tasks-panel \.tasks-toolbar \{\s*display: none;/s);
 });

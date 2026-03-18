@@ -201,6 +201,8 @@ const taskFilterTagInput = document.getElementById('task-filter-tag-input');
 const taskCreatePrimary = document.getElementById('task-create-primary');
 const taskCreateMenuButton = document.getElementById('task-create-menu-button');
 const taskCreateMenu = document.getElementById('task-create-menu');
+const tasksMobileContext = document.getElementById('tasks-mobile-context');
+const tasksMobileToolsBtn = document.getElementById('tasks-mobile-tools-btn');
 const tasksMobileAddBtn = document.getElementById('tasks-mobile-add-btn');
 const taskAiButton = document.getElementById('task-ai-button');
 const taskAiMenu = document.getElementById('task-ai-menu');
@@ -393,6 +395,17 @@ const mobileCreateShopping = document.getElementById('mobile-create-shopping');
 const mobileTaskQuickAddForm = document.getElementById('mobile-task-quick-add-form');
 const mobileTaskQuickAddInput = document.getElementById('mobile-task-quick-add-input');
 const mobileTaskQuickAddCancel = document.getElementById('mobile-task-quick-add-cancel');
+const mobileTaskToolsModal = document.getElementById('mobile-task-tools-modal');
+const mobileTaskToolsBackdrop = document.getElementById('mobile-task-tools-backdrop');
+const mobileTaskToolsClose = document.getElementById('mobile-task-tools-close');
+const mobileTaskToolsSearch = document.getElementById('mobile-task-tools-search');
+const mobileTaskToolsTag = document.getElementById('mobile-task-tools-tag');
+const mobileTaskToolsFilter = document.getElementById('mobile-task-tools-filter');
+const mobileTaskToolsSort = document.getElementById('mobile-task-tools-sort');
+const mobileTaskToolsGroup = document.getElementById('mobile-task-tools-group');
+const mobileTaskToolsView = document.getElementById('mobile-task-tools-view');
+const mobileTaskToolsAddSection = document.getElementById('mobile-task-tools-add-section');
+const mobileTaskToolsAddColumn = document.getElementById('mobile-task-tools-add-column');
 const mobileSearchModal = document.getElementById('mobile-search-modal');
 const mobileSearchBackdrop = document.getElementById('mobile-search-backdrop');
 const mobileSearchClose = document.getElementById('mobile-search-close');
@@ -866,6 +879,10 @@ document.addEventListener('click', () => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (mobileTaskToolsModal && !mobileTaskToolsModal.classList.contains('hidden')) {
+    closeMobileTaskToolsModal();
+    return;
+  }
   if (mobileCreateSheet && !mobileCreateSheet.classList.contains('hidden')) {
     closeMobileCreateSheet();
     return;
@@ -1793,6 +1810,70 @@ mobileCreateSheetClose?.addEventListener('click', () => {
 
 mobileTaskQuickAddCancel?.addEventListener('click', () => {
   closeMobileCreateSheet();
+});
+
+mobileTaskToolsBackdrop?.addEventListener('click', () => {
+  closeMobileTaskToolsModal();
+});
+
+mobileTaskToolsClose?.addEventListener('click', () => {
+  closeMobileTaskToolsModal();
+});
+
+tasksMobileToolsBtn?.addEventListener('click', () => {
+  openMobileTaskToolsModal();
+});
+
+mobileTaskToolsSearch?.addEventListener('input', () => {
+  state.ui = state.ui ?? {};
+  state.ui.taskSearchText = mobileTaskToolsSearch.value;
+  scheduleTaskSearchRefresh();
+  render();
+});
+
+mobileTaskToolsTag?.addEventListener('input', () => {
+  state.ui = state.ui ?? {};
+  state.ui.taskTagFilter = mobileTaskToolsTag.value;
+  scheduleTaskSearchRefresh();
+  render();
+});
+
+mobileTaskToolsFilter?.addEventListener('change', () => {
+  const selected = mobileTaskToolsFilter.value || 'all';
+  setActiveTaskFilter(selected);
+  clearActiveWorkflowChecklistInstanceId();
+  setActiveView('tasks');
+  scheduleTaskSearchRefresh(true);
+  render();
+});
+
+mobileTaskToolsSort?.addEventListener('change', () => {
+  const selected = mobileTaskToolsSort.value || 'default';
+  setTaskSortKey(selected);
+  render();
+});
+
+mobileTaskToolsGroup?.addEventListener('change', () => {
+  setTaskGroupMode(mobileTaskToolsGroup.value || 'none');
+  render();
+});
+
+mobileTaskToolsView?.addEventListener('change', () => {
+  setTaskView(mobileTaskToolsView.value || 'list');
+  render();
+});
+
+mobileTaskToolsAddSection?.addEventListener('click', () => {
+  const name = prompt('Section name');
+  if (!name) return;
+  setTaskGroupMode('section');
+  createSectionRecord(name);
+  render();
+});
+
+mobileTaskToolsAddColumn?.addEventListener('click', () => {
+  closeMobileTaskToolsModal();
+  openKanbanColumnModal();
 });
 
 mobileSearchBackdrop?.addEventListener('click', () => {
@@ -3764,6 +3845,7 @@ function openMobileCreateSheet({ mode = 'actions' } = {}) {
   }
   closeMobileTopMenu();
   closeMobileTitleMenu();
+  closeMobileTaskToolsModal();
   setMobileCreateSheetMode(mode);
   mobileCreateSheet.classList.remove('hidden');
   document.body.classList.add('mobile-create-open');
@@ -3804,6 +3886,12 @@ function closeMobileTitleMenu() {
   if (openMenu === mobileTitleMenu) {
     openMenu = null;
   }
+}
+
+function closeMobileTaskToolsModal() {
+  if (!mobileTaskToolsModal) return;
+  mobileTaskToolsModal.classList.add('hidden');
+  mobileTaskToolsModal.setAttribute('aria-hidden', 'true');
 }
 
 function closeMobileSearchModal() {
@@ -3898,6 +3986,7 @@ function openMobileSearchModal() {
   closeMobileTopMenu();
   closeMobileTitleMenu();
   closeMobileCreateSheet();
+  closeMobileTaskToolsModal();
   closeMobileCalendarsModal();
   mobileSearchModal.classList.remove('hidden');
   mobileSearchModal.setAttribute('aria-hidden', 'false');
@@ -4141,11 +4230,59 @@ function closeMobileCalendarsModal() {
   mobileCalendarsModal.setAttribute('aria-hidden', 'true');
 }
 
+function syncMobileTaskToolsInputs() {
+  if (!mobileTaskToolsModal) return;
+  const checklistViewActive = isWorkflowChecklistViewActive();
+  syncTaskFilterOptionSelect(mobileTaskToolsFilter, { allowFocusPreserve: true });
+  if (mobileTaskToolsSearch && document.activeElement !== mobileTaskToolsSearch) {
+    mobileTaskToolsSearch.value = getTaskSearchText();
+  }
+  if (mobileTaskToolsTag && document.activeElement !== mobileTaskToolsTag) {
+    mobileTaskToolsTag.value = getTaskTagFilter();
+  }
+  if (mobileTaskToolsSort && document.activeElement !== mobileTaskToolsSort) {
+    mobileTaskToolsSort.value = getTaskSortKey();
+  }
+  if (mobileTaskToolsGroup && document.activeElement !== mobileTaskToolsGroup) {
+    mobileTaskToolsGroup.value = getTaskGroupMode();
+  }
+  if (mobileTaskToolsView && document.activeElement !== mobileTaskToolsView) {
+    mobileTaskToolsView.value = getTaskView();
+  }
+  mobileTaskToolsSearch?.toggleAttribute('disabled', checklistViewActive);
+  mobileTaskToolsTag?.toggleAttribute('disabled', checklistViewActive);
+  mobileTaskToolsFilter?.toggleAttribute('disabled', checklistViewActive);
+  if (mobileTaskToolsAddSection) {
+    mobileTaskToolsAddSection.disabled = !state.workspace;
+  }
+  if (mobileTaskToolsAddColumn) {
+    const kanbanView = getTaskView() === 'kanban';
+    mobileTaskToolsAddColumn.classList.toggle('hidden', !kanbanView);
+    mobileTaskToolsAddColumn.disabled = !state.workspace || !kanbanView;
+  }
+}
+
+function openMobileTaskToolsModal() {
+  if (!isMobileViewport() || !mobileTaskToolsModal) return;
+  closeMobileTopMenu();
+  closeMobileTitleMenu();
+  closeMobileCreateSheet();
+  closeMobileSearchModal();
+  closeMobileCalendarsModal();
+  syncMobileTaskToolsInputs();
+  mobileTaskToolsModal.classList.remove('hidden');
+  mobileTaskToolsModal.setAttribute('aria-hidden', 'false');
+  setTimeout(() => {
+    mobileTaskToolsSearch?.focus();
+  }, 0);
+}
+
 function openMobileCalendarsModal() {
   if (!mobileCalendarsModal) return;
   closeMobileTopMenu();
   closeMobileTitleMenu();
   closeMobileCreateSheet();
+  closeMobileTaskToolsModal();
   closeMobileSearchModal();
   syncMobileCalendarsModalInputs();
   mobileCalendarsModal.classList.remove('hidden');
@@ -4743,6 +4880,7 @@ function setActiveView(view) {
     closeMobileTopMenu();
     closeMobileTitleMenu();
     closeMobileCreateSheet();
+    closeMobileTaskToolsModal();
     closeMobileSearchModal();
     closeMobileCalendarsModal();
   }
@@ -12491,8 +12629,12 @@ function render() {
   renderSchedulingPage();
   renderSchedulingSidebar();
   syncMobileCalendarsModalInputs();
+  syncMobileTaskToolsInputs();
   if (!isMobileViewport() || getActiveView() !== 'scheduling') {
     closeMobileCalendarsModal();
+  }
+  if (!isMobileViewport() || getActiveView() !== 'tasks') {
+    closeMobileTaskToolsModal();
   }
   renderView();
   renderModuleNavigation();
@@ -13357,6 +13499,9 @@ function renderTaskFilter() {
   if (!taskFilterButton || !taskFilterMenu) return;
   const label = getTaskFilterLabel();
   const checklistViewActive = isWorkflowChecklistViewActive();
+  if (tasksMobileContext) {
+    tasksMobileContext.textContent = label;
+  }
   if (taskFilterSearchInput) {
     taskFilterSearchInput.value = getTaskSearchText();
     taskFilterSearchInput.disabled = checklistViewActive;
@@ -13407,6 +13552,10 @@ function getTaskFilterLabel() {
 
 function renderTaskTools() {
   const checklistViewActive = isWorkflowChecklistViewActive();
+  if (tasksMobileToolsBtn) {
+    tasksMobileToolsBtn.disabled = !state.workspace;
+    tasksMobileToolsBtn.title = checklistViewActive ? 'Task tools (filter locked for checklist)' : 'Task tools';
+  }
   if (taskAiButton) {
     const aiWrapper = taskAiButton.closest('.task-ai');
     aiWrapper?.classList.toggle('hidden', checklistViewActive);
@@ -13444,39 +13593,7 @@ function renderTaskUiSettings() {
     taskUiFutureDaysInput.value = String(getTaskFutureVisibilityDays());
   }
 
-  if (taskUiFilterSelect) {
-    const lists = getTaskListsForWorkspace()
-      .slice()
-      .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
-    const projects = getProjectsForWorkspace()
-      .slice()
-      .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
-    const options = [
-      { value: 'all', label: 'My tasks' },
-      { value: TASK_FILTER_INBOX, label: 'Inbox' },
-      { value: TASK_FILTER_UNASSIGNED, label: 'Unassigned' },
-      ...lists.map((list) => ({ value: list.id, label: `List: ${list.name}` })),
-      ...projects.map((project) => ({ value: project.id, label: `Project: ${project.name}` }))
-    ];
-    const optionsKey = options.map(option => `${option.value}:${option.label}`).join('|');
-    if (taskUiFilterSelect.dataset.optionsKey !== optionsKey) {
-      taskUiFilterSelect.innerHTML = '';
-      options.forEach(({ value, label }) => {
-        const optionEl = document.createElement('option');
-        optionEl.value = value;
-        optionEl.textContent = label;
-        taskUiFilterSelect.appendChild(optionEl);
-      });
-      taskUiFilterSelect.dataset.optionsKey = optionsKey;
-    }
-    if (document.activeElement !== taskUiFilterSelect) {
-      const currentFilter = getActiveTaskFilter() ?? 'all';
-      taskUiFilterSelect.value = currentFilter;
-      if (taskUiFilterSelect.value !== currentFilter) {
-        taskUiFilterSelect.value = 'all';
-      }
-    }
-  }
+  syncTaskFilterOptionSelect(taskUiFilterSelect, { allowFocusPreserve: true });
 
   if (taskUiSortSelect && document.activeElement !== taskUiSortSelect) {
     taskUiSortSelect.value = getTaskSortKey();
@@ -13491,6 +13608,46 @@ function renderTaskUiSettings() {
   }
 
   renderTaskHolidaySettings();
+}
+
+function getTaskFilterOptions() {
+  const lists = getTaskListsForWorkspace()
+    .slice()
+    .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+  const projects = getProjectsForWorkspace()
+    .slice()
+    .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+  return [
+    { value: 'all', label: 'My tasks' },
+    { value: TASK_FILTER_INBOX, label: 'Inbox' },
+    { value: TASK_FILTER_UNASSIGNED, label: 'Unassigned' },
+    ...lists.map((list) => ({ value: list.id, label: `List: ${list.name}` })),
+    ...projects.map((project) => ({ value: project.id, label: `Project: ${project.name}` }))
+  ];
+}
+
+function syncTaskFilterOptionSelect(selectEl, options = {}) {
+  if (!selectEl) return;
+  const allowFocusPreserve = options.allowFocusPreserve !== false;
+  const filterOptions = getTaskFilterOptions();
+  const optionsKey = filterOptions.map(option => `${option.value}:${option.label}`).join('|');
+  if (selectEl.dataset.optionsKey !== optionsKey) {
+    selectEl.innerHTML = '';
+    filterOptions.forEach(({ value, label }) => {
+      const optionEl = document.createElement('option');
+      optionEl.value = value;
+      optionEl.textContent = label;
+      selectEl.appendChild(optionEl);
+    });
+    selectEl.dataset.optionsKey = optionsKey;
+  }
+  if (!allowFocusPreserve || document.activeElement !== selectEl) {
+    const currentFilter = getActiveTaskFilter() ?? 'all';
+    selectEl.value = currentFilter;
+    if (selectEl.value !== currentFilter) {
+      selectEl.value = 'all';
+    }
+  }
 }
 
 function renderSchedulingUiSettings() {
@@ -25022,6 +25179,7 @@ if (typeof window !== 'undefined') {
     if (!isMobileViewport()) {
       closeMobileCreateSheet();
       closeMobileTopMenu();
+      closeMobileTaskToolsModal();
     }
     renderMobileNavigation();
   });

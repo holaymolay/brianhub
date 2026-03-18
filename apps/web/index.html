@@ -265,8 +265,14 @@
         <section class="panel content-panel">
           <section id="tasks-panel">
             <div class="panel-header tasks-mobile-header">
-              <h2>Tasks</h2>
-              <button id="tasks-mobile-add-btn" class="icon-button menu-icon" type="button" title="New task" aria-label="Add task">＋</button>
+              <div class="tasks-mobile-heading">
+                <h2>Tasks</h2>
+                <div id="tasks-mobile-context" class="tasks-mobile-context">My tasks</div>
+              </div>
+              <div class="tasks-mobile-actions">
+                <button id="tasks-mobile-tools-btn" class="icon-button menu-icon" type="button" title="Task tools" aria-label="Task tools">⋯</button>
+                <button id="tasks-mobile-add-btn" class="icon-button menu-icon" type="button" title="New task" aria-label="Add task">＋</button>
+              </div>
             </div>
             <div class="tasks-toolbar">
             <div class="task-create-split">
@@ -842,6 +848,60 @@
           </div>
         </form>
       </div>
+    </div>
+
+    <div id="mobile-task-tools-modal" class="mobile-overlay hidden" aria-hidden="true">
+      <div id="mobile-task-tools-backdrop" class="mobile-overlay-backdrop"></div>
+      <section class="mobile-overlay-card mobile-task-tools-card" role="dialog" aria-modal="true" aria-label="Task tools">
+        <header class="mobile-overlay-header">
+          <h3>Task tools</h3>
+          <button id="mobile-task-tools-close" class="mobile-overlay-close" type="button" aria-label="Close task tools">✕</button>
+        </header>
+        <div class="mobile-overlay-body mobile-task-tools-body">
+          <label class="mobile-task-tools-field">
+            <span>Search</span>
+            <input id="mobile-task-tools-search" class="setting-input" type="search" placeholder="Search tasks..." autocomplete="off" />
+          </label>
+          <label class="mobile-task-tools-field">
+            <span>Tag filter</span>
+            <input id="mobile-task-tools-tag" class="setting-input" type="search" placeholder="Filter by tag..." autocomplete="off" />
+          </label>
+          <label class="mobile-task-tools-field">
+            <span>Filter</span>
+            <select id="mobile-task-tools-filter" class="setting-input"></select>
+          </label>
+          <label class="mobile-task-tools-field">
+            <span>Sort</span>
+            <select id="mobile-task-tools-sort" class="setting-input">
+              <option value="default">Default</option>
+              <option value="due-asc">Due date (soonest)</option>
+              <option value="due-desc">Due date (latest)</option>
+            </select>
+          </label>
+          <label class="mobile-task-tools-field">
+            <span>Group by</span>
+            <select id="mobile-task-tools-group" class="setting-input">
+              <option value="none">None</option>
+              <option value="section">Section</option>
+              <option value="task-type">Task type</option>
+              <option value="priority">Priority</option>
+            </select>
+          </label>
+          <label class="mobile-task-tools-field">
+            <span>View</span>
+            <select id="mobile-task-tools-view" class="setting-input">
+              <option value="list">List view</option>
+              <option value="kanban">Kanban view</option>
+              <option value="calendar">Calendar view</option>
+              <option value="smart">Smart view</option>
+            </select>
+          </label>
+          <div class="mobile-task-tools-actions">
+            <button id="mobile-task-tools-add-section" class="mobile-create-action" type="button">Add section</button>
+            <button id="mobile-task-tools-add-column" class="mobile-create-action" type="button">Add kanban column</button>
+          </div>
+        </div>
+      </section>
     </div>
 
     <div id="mobile-search-modal" class="mobile-overlay hidden" aria-hidden="true">
