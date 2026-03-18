@@ -61,3 +61,9 @@ test('mobile task tools replace the cramped toolbar on phones', () => {
   assert.match(css, /\.mobile-task-tools-actions \{/);
   assert.match(css, /#tasks-panel \.tasks-toolbar \{\s*display: none;/s);
 });
+
+test('responsive tasks menus render as mobile sheets and keep the task menu button visible', () => {
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(css, /#tasks-panel \.task-menu-button \{\s*opacity: 1;\s*pointer-events: auto;/s);
+  assert.match(css, /#tasks-panel #task-filter-menu,[\s\S]*#tasks-panel \.task-menu \{\s*position: fixed;[\s\S]*bottom: calc\(var\(--mobile-nav-safe-clearance\) \+ 0\.65rem\);/s);
+});

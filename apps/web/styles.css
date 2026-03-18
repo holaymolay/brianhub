@@ -1856,7 +1856,8 @@ body.mobile-create-open {
   padding: 0.35rem;
   display: grid;
   gap: 0.25rem;
-  z-index: 5;
+  z-index: 40;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.38);
 }
 
 .account-menu-wrapper {
@@ -4655,7 +4656,8 @@ button:hover { opacity: 0.9; }
   padding: 0.35rem;
   display: grid;
   gap: 0.25rem;
-  z-index: 5;
+  z-index: 50;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.38);
 }
 
 .task-menu-item {
@@ -5747,6 +5749,31 @@ body.auth-gated #auth-cancel-invite {
 
   #tasks-panel .tasks-toolbar {
     display: none;
+  }
+
+  #tasks-panel .task-menu-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  #tasks-panel #task-create-menu,
+  #tasks-panel #task-filter-menu,
+  #tasks-panel #task-sort-menu,
+  #tasks-panel #task-group-menu,
+  #tasks-panel #task-bulk-undo-menu,
+  #tasks-panel .task-menu {
+    position: fixed;
+    left: max(0.65rem, env(safe-area-inset-left, 0px));
+    right: max(0.65rem, env(safe-area-inset-right, 0px));
+    top: auto;
+    bottom: calc(var(--mobile-nav-safe-clearance) + 0.65rem);
+    min-width: 0;
+    width: auto;
+    max-height: min(62vh, calc(100dvh - var(--mobile-nav-safe-clearance) - 1.5rem));
+    overflow-y: auto;
+    border-radius: 0.9rem;
+    padding: 0.55rem;
+    z-index: 210;
   }
 
   #tasks-panel .task-shopping-inbox {
