@@ -126,6 +126,16 @@ General authenticated routes:
 - `POST /sync/pull`
 - `POST /sync/push`
 
+There is currently no dedicated `/sections` or `/task-sections` product API route.
+
+For My Tasks list sections, the server-facing field is `group_label` on each task:
+
+- set `group_label` when creating a task to place it in a section
+- patch `group_label` to move a task into a different section
+- set `group_label` to `null` to remove the task from a section
+
+Section rename/delete flows in the current web app are client-driven and update tasks by changing their `group_label` values. Section settings and some section UI metadata are still local-web-app state, not a first-class server API resource.
+
 Admin-only routes:
 
 - `GET /admin/info`
@@ -142,7 +152,8 @@ Minimal task create:
 ```json
 {
   "workspace_id": "00000000-0000-4000-8000-000000000001",
-  "title": "New task"
+  "title": "New task",
+  "group_label": "Errands"
 }
 ```
 
@@ -150,7 +161,16 @@ Minimal task update:
 
 ```json
 {
-  "title": "Updated title"
+  "title": "Updated title",
+  "group_label": "Today"
+}
+```
+
+Minimal section removal from a task:
+
+```json
+{
+  "group_label": null
 }
 ```
 
