@@ -131,6 +131,14 @@ General authenticated routes:
 - `POST /shopping-items`
 - `PATCH /shopping-items/:id`
 - `DELETE /shopping-items/:id`
+- `GET /notice-types?workspace_id=<uuid>`
+- `POST /notice-types`
+- `PATCH /notice-types/:id`
+- `DELETE /notice-types/:id`
+- `GET /notices?workspace_id=<uuid>`
+- `POST /notices`
+- `PATCH /notices/:id`
+- `DELETE /notices/:id`
 - `POST /sync/pull`
 - `POST /sync/push`
 
@@ -223,6 +231,35 @@ Bulk shopping item create:
       "is_checked": false
     }
   ]
+}
+```
+
+Minimal notice type create:
+
+```json
+{
+  "workspace_id": "00000000-0000-4000-8000-000000000001",
+  "label": "Bill notice"
+}
+```
+
+Minimal notice create:
+
+```json
+{
+  "workspace_id": "00000000-0000-4000-8000-000000000001",
+  "title": "Pay credit card bill",
+  "notify_at": "2026-03-18T17:00:00.000Z",
+  "notice_type": "bill"
+}
+```
+
+Minimal notice update:
+
+```json
+{
+  "dismissed_at": null,
+  "notify_at": "2026-03-19T17:00:00.000Z"
 }
 ```
 

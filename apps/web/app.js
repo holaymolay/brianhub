@@ -547,6 +547,8 @@ const helpTaskCreateExample = document.getElementById('help-task-create-example'
 const helpTaskUpdateExample = document.getElementById('help-task-update-example');
 const helpShoppingListCreateExample = document.getElementById('help-shopping-list-create-example');
 const helpShoppingItemCreateExample = document.getElementById('help-shopping-item-create-example');
+const helpNoticeTypeCreateExample = document.getElementById('help-notice-type-create-example');
+const helpNoticeCreateExample = document.getElementById('help-notice-create-example');
 const helpSyncPullExample = document.getElementById('help-sync-pull-example');
 const adminPageBack = document.getElementById('admin-page-back');
 const adminInviteEmail = document.getElementById('admin-invite-email');
@@ -12723,6 +12725,7 @@ function renderHelpPage() {
   const publicBase = typeof window !== 'undefined' ? window.location.origin : 'https://brianhub.com';
   const workspaceId = state.workspace?.id ?? '<workspace-id>';
   const shoppingListId = state.ui?.activeShoppingListId ?? '<shopping-list-id>';
+  const noticeNotifyAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   if (helpApiBase) {
     helpApiBase.textContent = publicBase;
   }
@@ -12759,6 +12762,20 @@ function renderHelpPage() {
           is_checked: false
         }
       ]
+    }, null, 2);
+  }
+  if (helpNoticeTypeCreateExample) {
+    helpNoticeTypeCreateExample.textContent = JSON.stringify({
+      workspace_id: workspaceId,
+      label: 'Bill notice'
+    }, null, 2);
+  }
+  if (helpNoticeCreateExample) {
+    helpNoticeCreateExample.textContent = JSON.stringify({
+      workspace_id: workspaceId,
+      title: 'Pay credit card bill',
+      notify_at: noticeNotifyAt,
+      notice_type: 'bill'
     }, null, 2);
   }
   if (helpSyncPullExample) {
