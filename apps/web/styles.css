@@ -1214,7 +1214,154 @@ body.mobile-create-open {
   overflow-wrap: anywhere;
 }
 
+.help-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.help-doc-hub {
+  display: grid;
+  gap: 1rem;
+}
+
+.help-doc-intro h3,
+.help-doc-item h3 {
+  margin: 0;
+}
+
+.help-doc-list {
+  padding: 0;
+}
+
+.help-doc-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.help-doc-item-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.help-doc-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.api-help-doc {
+  width: 100%;
+  min-height: 28rem;
+  margin: 0;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(95, 112, 138, 0.3);
+  background: #0f141c;
+  color: #dceaff;
+  padding: 1rem 1.05rem;
+  font: 0.84rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+body.api-help-body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(78, 143, 255, 0.18), transparent 32rem),
+    linear-gradient(180deg, #09111d 0%, #0d1726 100%);
+}
+
+.api-help-shell {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.api-help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.api-help-title-block {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.api-help-eyebrow {
+  margin: 0;
+  color: #8fb1ff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.api-help-title-block h1 {
+  margin: 0;
+  color: #f5f8ff;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+}
+
+.api-help-subtitle {
+  margin: 0;
+  max-width: 44rem;
+  color: #b8c8e6;
+  line-height: 1.5;
+}
+
+.api-help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.api-help-note {
+  margin-bottom: 1rem;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(95, 112, 138, 0.24);
+  background: rgba(10, 16, 27, 0.78);
+  padding: 0.95rem 1rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.api-help-note p {
+  margin: 0;
+}
+
 @media (max-width: 760px) {
+  .help-panel-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .api-help-doc {
+    min-height: 20rem;
+  }
+
+  .api-help-shell {
+    padding: 1rem 0.85rem 2rem;
+  }
+
+  .api-help-header {
+    flex-direction: column;
+  }
+
+  .api-help-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .settings-tab-list {
     gap: 0.25rem;
     padding-bottom: 0.45rem;
@@ -1232,6 +1379,15 @@ body.mobile-create-open {
 
   .settings-action-card .subtle-button {
     align-self: flex-end;
+  }
+
+  .help-doc-item {
+    flex-direction: column;
+  }
+
+  .help-doc-item-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .settings-holiday-options {
@@ -1868,6 +2024,11 @@ body.mobile-create-open {
 .workspace-row.is-drop-target {
   border-color: rgba(63, 166, 255, 0.8);
   box-shadow: 0 0 0 1px rgba(63, 166, 255, 0.35);
+  transform: translateX(4px) scale(1.01);
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .workspace-select {
@@ -3493,6 +3654,13 @@ body.mobile-create-open {
   opacity: 0.6;
 }
 
+.task-item.dragging,
+.kanban-card.dragging {
+  opacity: 0.82;
+  transform: scale(0.985);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.24);
+}
+
 .drag-over {
   outline: 2px dashed rgba(79, 174, 255, 0.45);
   outline-offset: 4px;
@@ -3502,12 +3670,18 @@ body.mobile-create-open {
   min-height: 18px;
   margin: 0.35rem 0;
   border-radius: 0.6rem;
+  transition:
+    outline-color 0.12s ease,
+    outline-offset 0.12s ease,
+    background 0.12s ease,
+    transform 0.12s ease;
 }
 
 .task-root-dropzone.drag-over {
   outline: 2px dashed rgba(79, 174, 255, 0.65);
   outline-offset: 2px;
   background: rgba(79, 174, 255, 0.08);
+  transform: scaleY(1.02);
 }
 
 .kanban-card-title {
@@ -3616,12 +3790,65 @@ button:hover { opacity: 0.9; }
   border-radius: 0.75rem;
   border: 1px solid var(--border);
   background: #121723;
+  position: relative;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.task-item:hover {
+  border-color: rgba(111, 137, 177, 0.72);
+  background: #172031;
+  box-shadow: 0 0 0 1px rgba(111, 137, 177, 0.14);
+}
+
+.task-item.is-subtask {
+  border-color: rgba(91, 112, 145, 0.7);
+  background:
+    linear-gradient(90deg, rgba(125, 152, 197, 0.2) 0, rgba(125, 152, 197, 0.2) 0.32rem, rgba(20, 27, 40, 0.96) 0.32rem, rgba(20, 27, 40, 0.96) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(134, 156, 197, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.task-item.is-subtask:hover {
+  border-color: rgba(126, 151, 193, 0.84);
+  background:
+    linear-gradient(90deg, rgba(142, 168, 210, 0.28) 0, rgba(142, 168, 210, 0.28) 0.32rem, rgba(23, 31, 46, 0.98) 0.32rem, rgba(23, 31, 46, 0.98) 100%);
+  box-shadow:
+    0 0 0 1px rgba(126, 151, 193, 0.18),
+    inset 0 0 0 1px rgba(134, 156, 197, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.task-item.is-subtask .task-title {
+  color: #e6eefc;
+}
+
+.task-item.is-subtask .task-meta {
+  color: #a8b7cf;
+}
+
+.task-item.is-subtask .task-row-meta-item {
+  border-color: rgba(95, 112, 138, 0.44);
+  background: rgba(15, 21, 32, 0.94);
 }
 
 .task-item.drop-subtask {
   border-color: rgba(79, 174, 255, 0.6);
   background: rgba(79, 174, 255, 0.12);
   box-shadow: 0 0 0 2px rgba(79, 174, 255, 0.15);
+  transform: translateX(8px) scale(1.01);
+}
+
+.task-item.drop-reorder {
+  border-color: rgba(79, 174, 255, 0.74);
+  background: rgba(79, 174, 255, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(79, 174, 255, 0.22),
+    0 8px 18px rgba(4, 10, 20, 0.16);
+  transform: scale(1.01);
 }
 
 #projects-page {
@@ -3706,6 +3933,36 @@ button:hover { opacity: 0.9; }
   font-size: 0.75rem;
   padding: 0.35rem 0.6rem;
   border-radius: 0.45rem;
+}
+
+.workspace-switch-row {
+  padding: 0;
+}
+
+.workspace-switch-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 0.9rem 1rem;
+  text-align: left;
+}
+
+.workspace-switch-button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.workspace-switch-button:hover:not(:disabled),
+.workspace-switch-button:focus-visible {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.07);
+  outline: none;
 }
 
 .shopping-header-left {
@@ -5296,8 +5553,32 @@ button:hover { opacity: 0.9; }
   background: rgba(79, 174, 255, 0.12);
 }
 
+.task-item.is-subtask.is-selected {
+  background:
+    linear-gradient(90deg, rgba(125, 152, 197, 0.24) 0, rgba(125, 152, 197, 0.24) 0.32rem, rgba(79, 174, 255, 0.12) 0.32rem, rgba(79, 174, 255, 0.12) 100%);
+}
+
 .task-item.is-selected .task-row {
   background: rgba(79, 174, 255, 0.08);
+}
+
+.task-select-button {
+  color: rgba(233, 237, 245, 0.56);
+  font-size: 0.95rem;
+  line-height: 1;
+  transition: color 140ms ease, transform 140ms ease;
+}
+
+.task-select-button:hover {
+  color: rgba(255, 217, 102, 0.9);
+}
+
+.task-select-button.is-active {
+  color: #ffd966;
+}
+
+.task-item.is-selected .task-select-button {
+  color: #ffd966;
 }
 
 #task-tree.task-selection-active .task-item,
@@ -6356,6 +6637,11 @@ body.auth-gated #auth-cancel-invite {
   .workspace-manage-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .workspace-switch-button {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .header-left h1 {

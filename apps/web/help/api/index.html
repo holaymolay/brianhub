@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BrianHub API Help</title>
+    <link rel="icon" type="image/svg+xml" href="/apps/web/favicon.svg?v=3" />
+    <link rel="shortcut icon" type="image/svg+xml" href="/apps/web/favicon.svg?v=3" />
+    <link rel="stylesheet" href="/apps/web/styles.css" />
+  </head>
+  <body class="api-help-body">
+    <main class="api-help-shell">
+      <header class="api-help-header">
+        <div class="api-help-title-block">
+          <p class="api-help-eyebrow">BrianHub documentation</p>
+          <h1>API documentation</h1>
+          <p class="api-help-subtitle">Single-column markdown reference for implementing the BrianHub product API.</p>
+        </div>
+        <div class="api-help-actions">
+          <a class="subtle-button" href="/apps/web/">Open BrianHub</a>
+          <button id="api-help-copy" class="subtle-button" type="button" title="Copy BrianHub API docs">📋 Copy</button>
+        </div>
+      </header>
+
+      <section class="api-help-note">
+        <p><strong>Base URL:</strong> <code id="api-help-base" class="help-inline-code">https://brianhub.com</code></p>
+        <p><strong>Current workspace:</strong> <code id="api-help-workspace" class="help-inline-code">&lt;workspace-id&gt;</code></p>
+        <p><strong>Help URL:</strong> <code id="api-help-url" class="help-inline-code">/apps/web/help/api/</code></p>
+        <p class="setting-help">Use the copy button to grab the full BrianHub API brief as plain markdown.</p>
+      </section>
+
+      <pre id="api-help-doc" class="api-help-doc" tabindex="0"></pre>
+    </main>
+
+    <script type="module">
+      import { buildBrianhubApiHelpMarkdown, buildBrianhubApiHelpUrl } from '/apps/web/help/api-docs.js';
+
+      const baseEl = document.getElementById('api-help-base');
+      const workspaceEl = document.getElementById('api-help-workspace');
+      const urlEl = document.getElementById('api-help-url');
+      const docEl = document.getElementById('api-help-doc');
+      const copyBtn = document.getElementById('api-help-copy');
+
+      async function copyText(value) {
+        const text = String(value ?? '');
+        if (!text) return false;
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+        const helper = document.createElement('textarea');
+        helper.value = text;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.focus();
+        helper.select();
+        document.execCommand('copy');
+        helper.remove();
+        return true;
+      }
+
+      async function loadWorkspaceId() {
+        try {
+          const response = await fetch('/auth/me', { credentials: 'same-origin' });
+          if (!response.ok) return '<workspace-id>';
+          const payload = await response.json();
+          return String(payload?.workspaces?.[0]?.id ?? '').trim() || '<workspace-id>';
+        } catch {
+          return '<workspace-id>';
+        }
+      }
+
+      async function renderApiHelp() {
+        const origin = window.location.origin;
+        const workspaceId = await loadWorkspaceId();
+        const helpUrl = buildBrianhubApiHelpUrl(origin);
+        const markdown = buildBrianhubApiHelpMarkdown({ origin, workspaceId });
+        if (baseEl) baseEl.textContent = origin;
+        if (workspaceEl) workspaceEl.textContent = workspaceId;
+        if (urlEl) urlEl.textContent = helpUrl;
+        if (docEl) docEl.textContent = markdown;
+      }
+
+      copyBtn?.addEventListener('click', async () => {
+        const ok = await copyText(docEl?.textContent ?? '');
+        copyBtn.textContent = ok ? '✅ Copied' : '⚠️ Copy failed';
+        window.setTimeout(() => {
+          copyBtn.textContent = '📋 Copy';
+        }, 1800);
+      });
+
+      void renderApiHelp();
+    </script>
+  </body>
+</html>

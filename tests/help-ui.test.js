@@ -3,58 +3,55 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-test('settings expose a help launcher and a dedicated help page', () => {
-  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+function readRepoFile(relativePath) {
+  return readFileSync(resolve(process.cwd(), relativePath), 'utf8');
+}
+
+test('settings expose a Help launcher', () => {
+  const html = readRepoFile('apps/web/index.html');
   assert.match(html, /id="settings-open-help"/);
+  assert.match(html, />Help</);
+  assert.match(html, /Browse BrianHub documentation, including the API reference/i);
+});
+
+test('in-app help page is a documentation hub with API navigation', () => {
+  const html = readRepoFile('apps/web/index.html');
   assert.match(html, /id="help-page"/);
-  assert.match(html, /<h2>Help<\/h2>/);
+  assert.match(html, /<h2>Help &amp; Documentation<\/h2>/);
+  assert.match(html, /Documentation home/);
+  assert.match(html, /API documentation/);
+  assert.match(html, /id="help-open-url"/);
+  assert.match(html, /id="help-api-url"/);
 });
 
-test('help page documents sections through group labels instead of parent tasks', () => {
-  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
-  assert.match(html, /group_label/);
-  assert.match(html, /Do not model sections as parent tasks with subtasks\./);
+test('dedicated API help page exists at its own URL path and is plain-text oriented', () => {
+  const html = readRepoFile('apps/web/help/api/index.html');
+  assert.match(html, /<title>BrianHub API Help<\/title>/);
+  assert.match(html, /id="api-help-copy"/);
+  assert.match(html, /<pre id="api-help-doc" class="api-help-doc"/);
+  assert.match(html, /\/apps\/web\/help\/api\//);
+  assert.match(html, /Single-column markdown reference for implementing the BrianHub product API/i);
+  assert.doesNotMatch(html, /api-help-meta/);
 });
 
-test('help page documents shopping list and shopping item endpoints', () => {
-  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
-  assert.match(html, /GET \/shopping-lists\?workspace_id=&lt;uuid&gt;/);
-  assert.match(html, /POST \/shopping-lists/);
-  assert.match(html, /GET \/shopping-items\?workspace_id=&lt;uuid&gt;/);
-  assert.match(html, /POST \/shopping-items/);
-  assert.match(html, /id="help-shopping-list-create-example"/);
-  assert.match(html, /id="help-shopping-item-create-example"/);
+test('shared BrianHub API docs module documents the current resource model', () => {
+  const script = readRepoFile('apps/web/help/api-docs.js');
+  assert.match(script, /export const BRIANHUB_API_HELP_PATH = '\/apps\/web\/help\/api\/';/);
+  assert.match(script, /group_label/);
+  assert.match(script, /Do not model sections as parent tasks or subtasks/);
+  assert.match(script, /GET \/shopping-lists\?workspace_id=<uuid>/);
+  assert.match(script, /GET \/projects\?workspace_id=<uuid>/);
+  assert.match(script, /GET \/notice-types\?workspace_id=<uuid>/);
+  assert.match(script, /POST \/sync\/pull/);
+  assert.match(script, /GET \/admin\/info/);
 });
 
-test('help page documents project endpoints', () => {
-  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
-  assert.match(html, /GET \/projects\?workspace_id=&lt;uuid&gt;/);
-  assert.match(html, /POST \/projects/);
-  assert.match(html, /PATCH \/projects\/:id/);
-  assert.match(html, /DELETE \/projects\/:id/);
-  assert.match(html, /id="help-project-create-example"/);
-  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
-  assert.match(script, /const helpProjectCreateExample = document\.getElementById\('help-project-create-example'\);/);
-  assert.match(script, /helpProjectCreateExample\.textContent = JSON\.stringify\(\{\s*workspace_id: workspaceId,\s*name: 'Launch website',\s*kind: 'project',\s*archived: false\s*\}, null, 2\);/s);
-});
-
-test('help page documents notice and notice type endpoints', () => {
-  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
-  assert.match(html, /GET \/notice-types\?workspace_id=&lt;uuid&gt;/);
-  assert.match(html, /POST \/notice-types/);
-  assert.match(html, /GET \/notices\?workspace_id=&lt;uuid&gt;/);
-  assert.match(html, /POST \/notices/);
-  assert.match(html, /id="help-notice-type-create-example"/);
-  assert.match(html, /id="help-notice-create-example"/);
-});
-
-test('help page is wired into settings linked-page navigation', () => {
-  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
-  assert.match(script, /const helpPage = document\.getElementById\('help-page'\);/);
-  assert.match(script, /const settingsOpenHelp = document\.getElementById\('settings-open-help'\);/);
-  assert.match(script, /settingsOpenHelp\?\.addEventListener\('click', \(\) => \{\s*openSettingsLinkedPage\('help'\);/s);
-  assert.match(script, /helpBack\?\.addEventListener\('click', returnFromSettingsLinkedPage\);/);
-  assert.match(script, /const NAVIGABLE_VIEWS = new Set\(\[[\s\S]*'help'/s);
-  assert.match(script, /const showHelp = view === 'help';/);
-  assert.match(script, /helpPage\?\.classList\.toggle\('hidden', !showHelp\);/);
+test('app wiring opens the in-app help hub and the dedicated API help url', () => {
+  const script = readRepoFile('apps/web/app.js');
+  assert.match(script, /import \{ buildBrianhubApiHelpUrl \} from '\.\/help\/api-docs\.js';/);
+  assert.match(script, /function openBrianhubApiHelpPage\(\)/);
+  assert.match(script, /window\.location\.assign\(buildBrianhubApiHelpUrl\(window\.location\.origin\)\);/);
+  assert.match(script, /settingsOpenHelp\?\.addEventListener\('click', \(\) => \{\s*openSettingsLinkedPage\('help'\);/);
+  assert.match(script, /helpOpenUrl\?\.addEventListener\('click', openBrianhubApiHelpPage\);/);
+  assert.match(script, /helpApiUrl\.textContent = helpUrl;/);
 });

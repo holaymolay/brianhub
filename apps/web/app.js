@@ -12,6 +12,7 @@ import { getClientId } from './clientId.js';
 import { suppressQuickAddPointerEvents } from './quickAdd.js';
 import { showToast } from './ui/toast.js';
 import * as api from './api.js';
+import { buildBrianhubApiHelpUrl } from './help/api-docs.js';
 import { compareTasksByPriority } from '../../packages/core/priority.js';
 import { reparent as reparentTasks } from '../../packages/core/tree.js';
 import { applyCheckIn, applyWaitingFollowup, TaskStatus } from '../../packages/core/taskState.js';
@@ -335,6 +336,8 @@ const workspaceManageList = document.getElementById('workspace-manage-list');
 const workspaceArchivedList = document.getElementById('workspace-archived-list');
 const workspaceManageBack = document.getElementById('workspace-manage-back');
 const workspaceArchivedBack = document.getElementById('workspace-archived-back');
+const workspaceManageTitle = document.getElementById('workspace-manage-title');
+const workspaceManageSubtitle = document.getElementById('workspace-manage-subtitle');
 const shoppingListTitle = document.getElementById('shopping-list-title');
 const shoppingListSubtitle = document.getElementById('shopping-list-subtitle');
 const shoppingListItemsEl = document.getElementById('shopping-list-items');
@@ -554,16 +557,8 @@ const dataTransferBack = document.getElementById('data-transfer-back');
 const auditLogBack = document.getElementById('audit-log-back');
 const automationBack = document.getElementById('automation-back');
 const helpBack = document.getElementById('help-back');
-const helpApiBase = document.getElementById('help-api-base');
-const helpWorkspaceId = document.getElementById('help-workspace-id');
-const helpTaskCreateExample = document.getElementById('help-task-create-example');
-const helpTaskUpdateExample = document.getElementById('help-task-update-example');
-const helpShoppingListCreateExample = document.getElementById('help-shopping-list-create-example');
-const helpProjectCreateExample = document.getElementById('help-project-create-example');
-const helpShoppingItemCreateExample = document.getElementById('help-shopping-item-create-example');
-const helpNoticeTypeCreateExample = document.getElementById('help-notice-type-create-example');
-const helpNoticeCreateExample = document.getElementById('help-notice-create-example');
-const helpSyncPullExample = document.getElementById('help-sync-pull-example');
+const helpOpenUrl = document.getElementById('help-open-url');
+const helpApiUrl = document.getElementById('help-api-url');
 const adminPageBack = document.getElementById('admin-page-back');
 const adminInviteEmail = document.getElementById('admin-invite-email');
 const adminInviteRole = document.getElementById('admin-invite-role');
@@ -849,6 +844,7 @@ let taskEditorScrollbarDragStart = 0;
 let taskEditorScrollbarScrollStart = 0;
 let undoToastTimer = null;
 let undoToastEl = null;
+let lastTaskDragUndo = null;
 let taskSearchDebounceTimer = null;
 let taskSearchRequestSeq = 0;
 let taskSearchResultIds = null;
@@ -863,6 +859,15 @@ const SYNC_BACKOFF_STEPS_MS = [30000, 60000, 120000, 300000];
 const ADMIN_INVITES_AUTO_REFRESH_MS = 15000;
 const ADMIN_USERS_AUTO_REFRESH_MS = 20000;
 const USER_SETTINGS_SAVE_DEBOUNCE_MS = 350;
+const TASK_DRAG_UNDO_FIELDS = [
+  'sort_order',
+  'parent_id',
+  'status',
+  'group_label',
+  'type_label',
+  'priority',
+  'project_id'
+];
 const AUDIT_LOG_MAX_ENTRIES = 2000;
 const AUDIT_LOG_ALLOWED_CATEGORIES = new Set(['crud', 'notification', 'export', 'import', 'error']);
 const NAVIGABLE_VIEWS = new Set([
@@ -899,7 +904,21 @@ document.addEventListener('click', () => {
   }
 });
 
+function isEditableShortcutTarget(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest('input, textarea, select, [contenteditable="true"], .ProseMirror'));
+}
+
 document.addEventListener('keydown', (event) => {
+  const isUndoShortcut = (event.ctrlKey || event.metaKey)
+    && !event.altKey
+    && !event.shiftKey
+    && String(event.key ?? '').toLowerCase() === 'z';
+  if (isUndoShortcut && lastTaskDragUndo && !isEditableShortcutTarget(event.target)) {
+    event.preventDefault();
+    void undoLastTaskDrag();
+    return;
+  }
   if (event.key !== 'Escape') return;
   if (mobileTaskToolsModal && !mobileTaskToolsModal.classList.contains('hidden')) {
     closeMobileTaskToolsModal();
@@ -5090,8 +5109,54 @@ function getActiveTaskSectionScopeProjectId() {
   return normalizeSectionScopeProjectId(getProjectIdFromTaskFilter());
 }
 
+function getTaskAncestorIds(taskOrId, { includeSelf = false } = {}) {
+  const ids = [];
+  let current = typeof taskOrId === 'string'
+    ? (state.tasks?.[taskOrId] ?? null)
+    : (taskOrId ?? null);
+  let guard = 0;
+  if (includeSelf && current?.id) ids.push(current.id);
+  while (current?.parent_id && guard < 200) {
+    const parent = state.tasks?.[current.parent_id] ?? null;
+    if (!parent) break;
+    ids.push(parent.id);
+    current = parent;
+    guard += 1;
+  }
+  return ids;
+}
+
+function getTaskEffectiveProjectId(taskOrId) {
+  let current = typeof taskOrId === 'string'
+    ? (state.tasks?.[taskOrId] ?? null)
+    : (taskOrId ?? null);
+  let guard = 0;
+  while (current && guard < 200) {
+    const projectId = normalizeSectionScopeProjectId(current.project_id);
+    if (projectId) return projectId;
+    if (!current.parent_id) break;
+    current = state.tasks?.[current.parent_id] ?? null;
+    guard += 1;
+  }
+  return null;
+}
+
+function taskMatchesActiveProjectFilter(task, activeFilter = getActiveTaskFilter()) {
+  const effectiveProjectId = getTaskEffectiveProjectId(task);
+  if (activeFilter === TASK_FILTER_UNASSIGNED) {
+    return !effectiveProjectId;
+  }
+  if (activeFilter === TASK_FILTER_INBOX) {
+    return !effectiveProjectId && isInboxStatusKey(normalizeTaskStatusValue(task?.status));
+  }
+  if (activeFilter) {
+    return effectiveProjectId === activeFilter;
+  }
+  return !effectiveProjectId;
+}
+
 function taskMatchesSectionScope(task, projectId) {
-  return normalizeSectionScopeProjectId(task?.project_id) === normalizeSectionScopeProjectId(projectId);
+  return getTaskEffectiveProjectId(task) === normalizeSectionScopeProjectId(projectId);
 }
 
 function getSectionsForWorkspace() {
@@ -10785,6 +10850,21 @@ function getBulkUndoStack() {
   return Array.isArray(state.ui?.bulkUndoStack) ? state.ui.bulkUndoStack : [];
 }
 
+async function restoreTaskSnapshotPatches(snapshots) {
+  for (const snapshot of snapshots) {
+    if (!state.tasks[snapshot.id]) continue;
+    const before = { ...(snapshot.before ?? {}) };
+    if (Object.prototype.hasOwnProperty.call(before, 'parent_id')) {
+      const previousParentId = before.parent_id ?? null;
+      delete before.parent_id;
+      await reparentTaskRecord(snapshot.id, previousParentId);
+    }
+    if (Object.keys(before).length) {
+      await updateTaskRecord(snapshot.id, before);
+    }
+  }
+}
+
 function pushBulkUndo(entry) {
   state.ui = state.ui ?? {};
   const stack = getBulkUndoStack();
@@ -10835,18 +10915,7 @@ async function undoBulkAction(entryId) {
   const entry = stack.find(item => item.id === entryId);
   if (!entry) return;
   if (entry.kind === 'edit') {
-    for (const snapshot of entry.tasks) {
-      if (!state.tasks[snapshot.id]) continue;
-      const before = { ...(snapshot.before ?? {}) };
-      if (Object.prototype.hasOwnProperty.call(before, 'parent_id')) {
-        const previousParentId = before.parent_id ?? null;
-        delete before.parent_id;
-        await reparentTaskRecord(snapshot.id, previousParentId);
-      }
-      if (Object.keys(before).length) {
-        await updateTaskRecord(snapshot.id, before);
-      }
-    }
+    await restoreTaskSnapshotPatches(entry.tasks);
   } else if (entry.kind === 'delete') {
     await restoreTasksFromSnapshots(entry.tasks);
   }
@@ -11456,6 +11525,7 @@ function endTaskDrag(event) {
 
 function clearTaskDragIndicators() {
   document.querySelectorAll('.task-item.drop-subtask').forEach(item => item.classList.remove('drop-subtask'));
+  document.querySelectorAll('.task-item.drop-reorder').forEach(item => item.classList.remove('drop-reorder'));
   document.querySelectorAll('.task-root-dropzone.drag-over, .task-list.drag-over, .task-group-list.drag-over').forEach((container) => {
     container.classList.remove('drag-over');
   });
@@ -11504,6 +11574,7 @@ async function handleSubtaskDrop(targetId) {
   if (!draggingTaskId) return;
   if (!canReparentTask(targetId)) return;
   const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
+  const undoSnapshots = collectTaskDragUndoSnapshots({ taskIds: selectedIds });
   let nextSort = getNextTaskSortOrder(targetId);
   try {
     for (const taskId of selectedIds) {
@@ -11520,6 +11591,10 @@ async function handleSubtaskDrop(targetId) {
     alert(err?.message ?? 'Unable to move task.');
     return;
   }
+  registerTaskDragUndo(
+    selectedIds.length === 1 ? 'Task move undone.' : `${selectedIds.length} task moves undone.`,
+    undoSnapshots
+  );
   render();
 }
 
@@ -11568,6 +11643,58 @@ function getTaskElementsByIds(taskIds) {
   return taskIds
     .map(id => document.querySelector(`.task-item[data-task-id="${id}"], .kanban-card[data-task-id="${id}"]`))
     .filter(Boolean);
+}
+
+function getTaskIdsForDragUndoContainer(container) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll(':scope > .task-item, :scope > .kanban-card'))
+    .map((element) => element.dataset.taskId)
+    .filter(Boolean);
+}
+
+function collectTaskPatchSnapshotsByIds(taskIds, fields = TASK_DRAG_UNDO_FIELDS) {
+  const seen = new Set();
+  const snapshots = [];
+  taskIds.forEach((taskId) => {
+    if (!taskId || seen.has(taskId)) return;
+    const task = state.tasks?.[taskId];
+    if (!task) return;
+    seen.add(taskId);
+    snapshots.push(buildBulkUndoSnapshot(task, fields));
+  });
+  return snapshots;
+}
+
+function collectTaskDragUndoSnapshots({ taskIds = [], includeDescendantsFor = [], containers = [] } = {}) {
+  const ids = new Set(taskIds.filter(Boolean));
+  includeDescendantsFor.forEach((taskId) => {
+    if (!taskId) return;
+    ids.add(taskId);
+    getDescendants(taskId).forEach((task) => ids.add(task.id));
+  });
+  containers.forEach((container) => {
+    getTaskIdsForDragUndoContainer(container).forEach((taskId) => ids.add(taskId));
+  });
+  return collectTaskPatchSnapshotsByIds(Array.from(ids), TASK_DRAG_UNDO_FIELDS);
+}
+
+function registerTaskDragUndo(message, snapshots) {
+  if (!Array.isArray(snapshots) || !snapshots.length) return;
+  const changed = snapshots.some((snapshot) => {
+    const task = state.tasks?.[snapshot.id];
+    if (!task) return false;
+    return Object.entries(snapshot.before ?? {}).some(([field, value]) => (task[field] ?? null) !== (value ?? null));
+  });
+  if (!changed) return;
+  const entry = {
+    id: createId(),
+    message,
+    tasks: snapshots
+  };
+  lastTaskDragUndo = entry;
+  showUndoToast(message, async () => {
+    await undoLastTaskDrag(entry.id);
+  });
 }
 
 function getRootTaskIdsForSection(sectionInfo) {
@@ -11691,7 +11818,17 @@ function moveTaskSectionRecordToSidebarList(sectionInfo, targetListId) {
 async function moveDraggedTasksToSidebarList(targetListId) {
   if (!draggingTaskId) return { moved: false, count: 0 };
   const rootIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
+  const undoSnapshots = collectTaskDragUndoSnapshots({
+    taskIds: rootIds,
+    includeDescendantsFor: rootIds
+  });
   const movedCount = await moveTaskRootsToSidebarList(rootIds, targetListId);
+  if (movedCount > 0) {
+    registerTaskDragUndo(
+      movedCount === 1 ? 'Task move undone.' : `${movedCount} task moves undone.`,
+      undoSnapshots
+    );
+  }
   return { moved: movedCount > 0, count: movedCount };
 }
 
@@ -11807,6 +11944,10 @@ async function dropTaskIntoContainer(container) {
   const originContainer = draggingEl?.parentElement ?? null;
   const originParent = draggingTaskOrigin?.parentId ?? null;
   const selectedIds = getSelectedDragTaskIds(originParent);
+  const undoSnapshots = collectTaskDragUndoSnapshots({
+    taskIds: selectedIds,
+    containers: [originContainer, targetContainer].filter(Boolean)
+  });
   const movingToRoot = parentId === null && originParent !== null;
   const movingBetweenRoots = parentId === null && originParent === null && draggingEl && draggingEl.parentElement !== targetContainer;
   if (movingToRoot) {
@@ -11852,6 +11993,10 @@ async function dropTaskIntoContainer(container) {
       );
     }
   }
+  registerTaskDragUndo(
+    selectedIds.length === 1 ? 'Task move undone.' : `${selectedIds.length} task moves undone.`,
+    undoSnapshots
+  );
 }
 
 async function dropTaskOnItem(item, clientY) {
@@ -11860,7 +12005,6 @@ async function dropTaskOnItem(item, clientY) {
   if (!taskId) return;
   const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
   if (canReparentTask(taskId) && isSubtaskDropZone({ clientY }, item)) {
-    if (selectedIds.length > 1) return;
     item.classList.remove('drop-subtask');
     await handleSubtaskDrop(taskId);
     return;
@@ -11878,6 +12022,10 @@ async function dropTaskOnItem(item, clientY) {
   const draggingEl = document.querySelector(`.task-item[data-task-id="${draggingTaskId}"]`);
   if (!draggingEl || draggingEl === item) return;
   const originContainer = draggingEl.parentElement;
+  const undoSnapshots = collectTaskDragUndoSnapshots({
+    taskIds: selectedIds,
+    containers: [originContainer, container].filter(Boolean)
+  });
   const originParent = draggingTaskOrigin?.parentId ?? null;
   const movingToRoot = parentId === null && originParent !== null;
   const movingBetweenRoots = parentId === null && originParent === null && draggingEl.parentElement !== container;
@@ -11915,6 +12063,10 @@ async function dropTaskOnItem(item, clientY) {
       originMeta
     );
   }
+  registerTaskDragUndo(
+    selectedIds.length === 1 ? 'Task move undone.' : `${selectedIds.length} task moves undone.`,
+    undoSnapshots
+  );
 }
 
 function getTaskDropTargetAtPoint(clientX, clientY) {
@@ -11940,6 +12092,8 @@ function updateTaskPointerDragTarget(clientX, clientY) {
   const target = getTaskDropTargetAtPoint(clientX, clientY);
   if (target?.type === 'subtask') {
     target.item.classList.add('drop-subtask');
+  } else if (target?.type === 'item') {
+    target.item.classList.add('drop-reorder');
   } else if (target?.type === 'container') {
     const { parentId, statusKey } = getTaskContainerContext(target.container);
     if (canDropTaskInContainer(parentId, statusKey)) {
@@ -12067,6 +12221,7 @@ function attachTaskDragHandlers(item, task) {
     if (canReparentTask(task.id) && isSubtaskDropZone(event, item)) {
       event.preventDefault();
       item.classList.add('drop-subtask');
+      item.classList.remove('drop-reorder');
       return;
     }
     item.classList.remove('drop-subtask');
@@ -12076,9 +12231,11 @@ function attachTaskDragHandlers(item, task) {
     const allowed = canDropTaskInContainer(parentId ? parentId : null, statusKey ?? null);
     if (!allowed) return;
     event.preventDefault();
+    item.classList.add('drop-reorder');
   });
   item.addEventListener('dragleave', () => {
     item.classList.remove('drop-subtask');
+    item.classList.remove('drop-reorder');
   });
   item.addEventListener('drop', async (event) => {
     if (!draggingTaskId || draggingColumnKey) return;
@@ -12089,6 +12246,7 @@ function attachTaskDragHandlers(item, task) {
       return;
     }
     event.preventDefault();
+    item.classList.remove('drop-reorder');
     await dropTaskOnItem(item, event.clientY);
   });
 }
@@ -12108,9 +12266,17 @@ function attachKanbanDropzone(container, statusKey) {
     event.preventDefault();
     container.classList.remove('drag-over');
     const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
+    const undoSnapshots = collectTaskDragUndoSnapshots({
+      taskIds: selectedIds,
+      containers: [container]
+    });
     const elements = getTaskElementsByIds(selectedIds);
     elements.forEach((element) => container.appendChild(element));
     await persistKanbanOrder(container, statusKey);
+    registerTaskDragUndo(
+      selectedIds.length === 1 ? 'Task move undone.' : `${selectedIds.length} task moves undone.`,
+      undoSnapshots
+    );
   });
 }
 
@@ -12134,6 +12300,10 @@ function attachKanbanDragHandlers(card, task) {
       return;
     }
     const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
+    const undoSnapshots = collectTaskDragUndoSnapshots({
+      taskIds: selectedIds,
+      containers: [container]
+    });
     const rect = card.getBoundingClientRect();
     const insertAfter = event.clientY > rect.top + rect.height / 2;
     const referenceNode = insertAfter ? card.nextSibling : card;
@@ -12144,6 +12314,10 @@ function attachKanbanDragHandlers(card, task) {
       container.insertBefore(draggingEl, referenceNode);
     }
     await persistKanbanOrder(container, statusKey);
+    registerTaskDragUndo(
+      selectedIds.length === 1 ? 'Task move undone.' : `${selectedIds.length} task moves undone.`,
+      undoSnapshots
+    );
   });
 }
 
@@ -12873,7 +13047,12 @@ function renderAiSuggestionsMenu(tasks) {
 
 function render() {
   syncAuthGatePage();
-  const mobileSchedulingView = isMobileViewport() && getActiveView() === 'scheduling';
+  const mobileViewport = isMobileViewport();
+  const currentView = getActiveView();
+  if (mobileViewport && currentView === 'workspaces-archived') {
+    setActiveView('workspaces-manage');
+  }
+  const mobileSchedulingView = mobileViewport && getActiveView() === 'scheduling';
   document.body.classList.toggle('mobile-scheduling-view', mobileSchedulingView);
   const currentSelected = getSelectedTaskIds();
   const validSelected = currentSelected.filter(id => state.tasks?.[id]);
@@ -13045,74 +13224,9 @@ function getTaskContainersForWorkspace({ kind = null, includeArchived = false } 
 
 function renderHelpPage() {
   const publicBase = typeof window !== 'undefined' ? window.location.origin : 'https://brianhub.com';
-  const workspaceId = state.workspace?.id ?? '<workspace-id>';
-  const shoppingListId = state.ui?.activeShoppingListId ?? '<shopping-list-id>';
-  const noticeNotifyAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  if (helpApiBase) {
-    helpApiBase.textContent = publicBase;
-  }
-  if (helpWorkspaceId) {
-    helpWorkspaceId.textContent = workspaceId;
-  }
-  if (helpTaskCreateExample) {
-    helpTaskCreateExample.textContent = JSON.stringify({
-      workspace_id: workspaceId,
-      title: 'Buy groceries',
-      group_label: 'Errands'
-    }, null, 2);
-  }
-  if (helpTaskUpdateExample) {
-    helpTaskUpdateExample.textContent = JSON.stringify({
-      group_label: 'Today'
-    }, null, 2);
-  }
-  if (helpShoppingListCreateExample) {
-    helpShoppingListCreateExample.textContent = JSON.stringify({
-      workspace_id: workspaceId,
-      name: 'Safeway run',
-      archived: false
-    }, null, 2);
-  }
-  if (helpProjectCreateExample) {
-    helpProjectCreateExample.textContent = JSON.stringify({
-      workspace_id: workspaceId,
-      name: 'Launch website',
-      kind: 'project',
-      archived: false
-    }, null, 2);
-  }
-  if (helpShoppingItemCreateExample) {
-    helpShoppingItemCreateExample.textContent = JSON.stringify({
-      list_id: shoppingListId,
-      items: [
-        'Milk',
-        'Eggs',
-        {
-          name: 'Bread',
-          is_checked: false
-        }
-      ]
-    }, null, 2);
-  }
-  if (helpNoticeTypeCreateExample) {
-    helpNoticeTypeCreateExample.textContent = JSON.stringify({
-      workspace_id: workspaceId,
-      label: 'Bill notice'
-    }, null, 2);
-  }
-  if (helpNoticeCreateExample) {
-    helpNoticeCreateExample.textContent = JSON.stringify({
-      workspace_id: workspaceId,
-      title: 'Pay credit card bill',
-      notify_at: noticeNotifyAt,
-      notice_type: 'bill'
-    }, null, 2);
-  }
-  if (helpSyncPullExample) {
-    helpSyncPullExample.textContent = JSON.stringify({
-      workspace_id: workspaceId,
-      cursor: 0
-    }, null, 2);
+  const helpUrl = buildBrianhubApiHelpUrl(publicBase);
+  if (helpApiUrl) {
+    helpApiUrl.textContent = helpUrl;
   }
 }
 
@@ -13707,6 +13821,10 @@ function getTaskSearchStatusFilter() {
   return getStatusKeyByKind(TaskStatus.INBOX) ?? TaskStatus.INBOX;
 }
 
+function isTaskSearchActive() {
+  return Boolean(getTaskSearchText() || getTaskTagFilter());
+}
+
 function taskMatchesSearchText(task, query) {
   const needle = String(query ?? '').trim().toLowerCase();
   if (!needle) return true;
@@ -13718,6 +13836,21 @@ function taskMatchesTag(task, query) {
   const needle = String(query ?? '').trim().toLowerCase();
   if (!needle) return true;
   return normalizeTagList(task?.tags ?? []).some(tag => tag.toLowerCase().includes(needle));
+}
+
+function taskMatchesSearchStatus(task, status) {
+  if (!status) return true;
+  return normalizeTaskStatusValue(task?.status) === status;
+}
+
+function expandTaskIdsWithAncestors(taskIds) {
+  const expanded = new Set();
+  (taskIds ?? []).forEach((taskId) => {
+    if (!taskId) return;
+    expanded.add(taskId);
+    getTaskAncestorIds(taskId).forEach((ancestorId) => expanded.add(ancestorId));
+  });
+  return expanded;
 }
 
 function getTaskSearchResultKey(workspaceId, text, status, tag) {
@@ -13815,24 +13948,11 @@ function getFilteredTasks() {
   }
   const nonWorkflowTasks = tasks.filter(task => !isWorkflowTaskRecord(task, null));
   const filter = getActiveTaskFilter();
-  let filtered = nonWorkflowTasks;
-  if (filter === TASK_FILTER_UNASSIGNED) {
-    filtered = filtered.filter(task => !task.project_id);
-  } else if (filter === TASK_FILTER_INBOX) {
-    filtered = filtered.filter(task => !task.project_id && isInboxStatusKey(normalizeTaskStatusValue(task.status)));
-  } else if (filter) {
-    filtered = filtered.filter(task => task.project_id === filter);
-  } else {
-    // "My Tasks" view excludes project-scoped tasks.
-    filtered = filtered.filter(task => !task.project_id);
-  }
+  let filtered = nonWorkflowTasks.filter(task => taskMatchesActiveProjectFilter(task, filter));
 
   const tagFilter = getTaskTagFilter();
-  if (tagFilter) {
-    filtered = filtered.filter(task => taskMatchesTag(task, tagFilter));
-  }
-
   const query = getTaskSearchText();
+  const statusFilter = getTaskSearchStatusFilter();
   if (!query && !tagFilter) return filtered;
   const queryKey = getTaskSearchResultKey(state.workspace.id, query, getTaskSearchStatusFilter(), tagFilter);
   if (
@@ -13844,11 +13964,23 @@ function getFilteredTasks() {
   ) {
     scheduleTaskSearchRefresh();
   }
-  const localFiltered = filtered.filter(task => taskMatchesSearchText(task, query));
-  if (taskSearchResultKey === queryKey && taskSearchResultIds instanceof Set) {
-    return localFiltered.filter(task => taskSearchResultIds.has(task.id));
-  }
-  return localFiltered;
+  const workspaceSearchBase = nonWorkflowTasks.filter(task =>
+    taskMatchesSearchStatus(task, statusFilter)
+    && taskMatchesTag(task, tagFilter)
+  );
+  const localMatchedIds = new Set(
+    workspaceSearchBase
+      .filter(task => taskMatchesSearchText(task, query))
+      .map(task => task.id)
+  );
+  const matchedIds = taskSearchResultKey === queryKey && taskSearchResultIds instanceof Set
+    ? new Set(
+        Array.from(taskSearchResultIds)
+          .filter(taskId => state.tasks?.[taskId] && !isWorkflowTaskRecord(state.tasks[taskId], null))
+      )
+    : localMatchedIds;
+  const expandedIds = expandTaskIdsWithAncestors(matchedIds);
+  return nonWorkflowTasks.filter(task => expandedIds.has(task.id));
 }
 
 function getChecklistLinkForTask(taskId, checklistInstanceId) {
@@ -18088,6 +18220,25 @@ function showUndoToast(message, onUndo) {
   }, 5000);
 }
 
+function hideUndoToast() {
+  if (undoToastTimer) {
+    clearTimeout(undoToastTimer);
+    undoToastTimer = null;
+  }
+  undoToastEl?.classList.add('hidden');
+}
+
+async function undoLastTaskDrag(entryId = null) {
+  const entry = lastTaskDragUndo;
+  if (!entry) return false;
+  if (entryId && entry.id !== entryId) return false;
+  lastTaskDragUndo = null;
+  hideUndoToast();
+  await restoreTaskSnapshotPatches(entry.tasks);
+  render();
+  return true;
+}
+
 function clearShoppingListDropTargets() {
   if (!shoppingListListEl) return;
   shoppingListListEl.querySelectorAll('.workspace-row.is-drop-target')
@@ -21298,12 +21449,26 @@ function renderWorkspaceList() {
 function renderWorkspaceManageList() {
   if (!workspaceManageList) return;
   workspaceManageList.innerHTML = '';
+  if (workspaceManageTitle) {
+    workspaceManageTitle.textContent = isMobileViewport() ? 'Switch Workspace' : 'Manage Workspaces';
+  }
+  if (workspaceManageSubtitle) {
+    workspaceManageSubtitle.textContent = isMobileViewport()
+      ? 'Choose the workspace you want to work in.'
+      : 'Rename, convert between personal and shared, archive, or delete active workspaces.';
+  }
   const workspaces = (state.workspaces ?? []).filter(ws => !ws.archived);
   if (!workspaces.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
     empty.textContent = 'No active workspaces.';
     workspaceManageList.appendChild(empty);
+    return;
+  }
+  if (isMobileViewport()) {
+    workspaces.forEach(workspace => {
+      workspaceManageList.appendChild(createWorkspaceMobileSwitchRow(workspace));
+    });
     return;
   }
   workspaces.forEach(workspace => {
@@ -21430,6 +21595,48 @@ function createWorkspaceManageRow(workspace, isArchivedView) {
   return row;
 }
 
+function createWorkspaceMobileSwitchRow(workspace) {
+  const row = document.createElement('div');
+  row.className = 'workspace-row workspace-manage-row workspace-switch-row' + (workspace.id === state.workspace?.id ? ' active' : '');
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'workspace-switch-button';
+  button.disabled = workspace.id === state.workspace?.id;
+
+  const copy = document.createElement('div');
+  copy.className = 'workspace-manage-copy';
+
+  const name = document.createElement('div');
+  name.className = 'workspace-manage-name';
+  name.textContent = workspace.name;
+  copy.appendChild(name);
+
+  const meta = document.createElement('div');
+  meta.className = 'workspace-manage-meta';
+  const memberCount = getWorkspaceMemberCount(workspace.id);
+  meta.textContent = [
+    getWorkspaceTypeLabelForWorkspace(workspace),
+    `${memberCount} member${memberCount === 1 ? '' : 's'}`
+  ].join(' • ');
+  copy.appendChild(meta);
+
+  const badge = document.createElement('span');
+  badge.className = 'workspace-badge';
+  badge.textContent = workspace.id === state.workspace?.id ? 'Current' : 'Open';
+
+  button.appendChild(copy);
+  button.appendChild(badge);
+  button.addEventListener('click', async () => {
+    if (workspace.id === state.workspace?.id) return;
+    await selectWorkspace(workspace);
+    render();
+  });
+
+  row.appendChild(button);
+  return row;
+}
+
 function renderTask(task, options = {}) {
   const completedVisibility = normalizeTaskCompletedVisibility(
     options.completedVisibility ?? getTaskCompletedVisibility()
@@ -21437,6 +21644,7 @@ function renderTask(task, options = {}) {
   const futureVisibilityDays = normalizeTaskFutureVisibilityDays(
     options.futureVisibilityDays ?? getTaskFutureVisibilityDays()
   );
+  const depth = Number.isFinite(options.depth) ? options.depth : 0;
   const statusKey = normalizeTaskStatusValue(task.status);
   if (isTaskCompletedAndHidden(task, completedVisibility)) {
     return null;
@@ -21457,6 +21665,7 @@ function renderTask(task, options = {}) {
   const rowMetaAssignee = node.querySelector('.task-row-meta-assignee');
   const rowMetaStatus = node.querySelector('.task-row-meta-status');
   const toggleBtn = node.querySelector('.task-toggle');
+  const selectButton = node.querySelector('.task-select-button');
   const completeButton = node.querySelector('.task-complete-button');
   const menuButton = node.querySelector('.task-menu-button');
   const menu = node.querySelector('.task-menu');
@@ -21466,7 +21675,7 @@ function renderTask(task, options = {}) {
   const childrenEl = node.querySelector('.task-children');
   const hasChildren = task.children && task.children.length > 0;
   const collapsedMap = state.ui?.collapsedTasks ?? {};
-  const isCollapsed = Boolean(collapsedMap[task.id]);
+  const isCollapsed = isTaskSearchActive() ? false : Boolean(collapsedMap[task.id]);
   const checklistViewActive = isWorkflowChecklistViewActive();
   const checklistInstanceId = checklistViewActive ? getActiveWorkflowChecklistInstanceId() : null;
   const workflowLink = checklistViewActive ? getChecklistLinkForTask(task.id, checklistInstanceId) : null;
@@ -21485,13 +21694,35 @@ function renderTask(task, options = {}) {
     beginInlineTaskEdit(task, item, titleEl);
   });
   item.dataset.status = statusKey;
+  item.dataset.depth = String(depth);
   if (!isChecklistRowDisabled) {
     attachTaskDragHandlers(item, task);
   }
+  item.classList.toggle('is-subtask', depth > 0);
   item.classList.toggle('is-selected', isTaskSelected(task.id));
   item.classList.toggle('workflow-ia-muted', isChecklistRowDisabled);
   item.style.borderLeft = `3px solid ${getStatusColor(statusKey)}`;
   item.setAttribute('aria-disabled', isChecklistRowDisabled ? 'true' : 'false');
+  if (selectButton) {
+    const selected = isTaskSelected(task.id);
+    selectButton.textContent = selected ? '★' : '☆';
+    selectButton.classList.toggle('is-active', selected);
+    selectButton.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    selectButton.setAttribute('aria-label', selected ? `Unselect "${task.title}"` : `Select "${task.title}"`);
+    selectButton.title = selected ? 'Unselect task' : 'Select task';
+    selectButton.disabled = isChecklistRowDisabled;
+    selectButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isChecklistRowDisabled) return;
+      const selectedIds = getSelectedTaskIds();
+      if (selectedIds.includes(task.id)) {
+        setSelectedTaskIds(selectedIds.filter(id => id !== task.id));
+      } else {
+        setSelectedTaskIds([...selectedIds, task.id]);
+      }
+    });
+  }
   if (statusTag) {
     if (statusKey) {
       statusTag.hidden = false;
@@ -21789,7 +22020,11 @@ function renderTask(task, options = {}) {
   }
 
   task.children.forEach(child => {
-    const childNode = renderTask(child, { completedVisibility, futureVisibilityDays });
+    const childNode = renderTask(child, {
+      completedVisibility,
+      futureVisibilityDays,
+      depth: depth + 1
+    });
     if (childNode) childrenEl.appendChild(childNode);
   });
 
@@ -22215,6 +22450,11 @@ function returnFromSettingsLinkedPage() {
   setActiveView(returnView);
   openSettings(returnTab);
   render();
+}
+
+function openBrianhubApiHelpPage() {
+  if (typeof window === 'undefined') return;
+  window.location.assign(buildBrianhubApiHelpUrl(window.location.origin));
 }
 
 function openProfile() {
@@ -25156,6 +25396,7 @@ dataTransferBack?.addEventListener('click', returnFromSettingsLinkedPage);
 auditLogBack?.addEventListener('click', returnFromSettingsLinkedPage);
 automationBack?.addEventListener('click', returnFromSettingsLinkedPage);
 helpBack?.addEventListener('click', returnFromSettingsLinkedPage);
+helpOpenUrl?.addEventListener('click', openBrianhubApiHelpPage);
 dataExportDownload?.addEventListener('click', exportCurrentWorkspaceData);
 dataImportApply?.addEventListener('click', async () => {
   const file = dataImportFile?.files?.[0];

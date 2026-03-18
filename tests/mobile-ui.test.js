@@ -98,3 +98,20 @@ test('responsive tasks menus render as mobile sheets and keep the task menu butt
   assert.match(css, /#tasks-panel \.task-menu-button \{\s*opacity: 1;\s*pointer-events: auto;/s);
   assert.match(css, /#tasks-panel #task-filter-menu,[\s\S]*#tasks-panel \.task-menu \{\s*position: fixed;[\s\S]*bottom: calc\(var\(--mobile-nav-safe-clearance\) \+ 0\.65rem\);/s);
 });
+
+test('mobile workspace management is a simple workspace switcher', () => {
+  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  assert.match(html, /id="workspace-manage-title"/);
+  assert.match(html, /id="workspace-manage-subtitle"/);
+
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  assert.match(script, /if \(mobileViewport && currentView === 'workspaces-archived'\) \{\s*setActiveView\('workspaces-manage'\);/s);
+  assert.match(script, /workspaceManageTitle\.textContent = isMobileViewport\(\) \? 'Switch Workspace' : 'Manage Workspaces';/);
+  assert.match(script, /workspaceManageSubtitle\.textContent = isMobileViewport\(\)[\s\S]*'Choose the workspace you want to work in\.'/s);
+  assert.match(script, /if \(isMobileViewport\(\)\) \{\s*workspaces\.forEach\(workspace => \{\s*workspaceManageList\.appendChild\(createWorkspaceMobileSwitchRow\(workspace\)\);/s);
+  assert.match(script, /function createWorkspaceMobileSwitchRow\(workspace\)/);
+  assert.match(script, /await selectWorkspace\(workspace\);/);
+
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(css, /\.workspace-switch-button \{/);
+});

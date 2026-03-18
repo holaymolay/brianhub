@@ -523,143 +523,28 @@
           </section>
           <section id="help-page" class="panel hidden">
             <div class="panel-header">
-              <h2>Help</h2>
-              <button id="help-back" class="subtle-button" type="button">← Settings</button>
+              <h2>Help &amp; Documentation</h2>
+              <div class="help-panel-actions">
+                <button id="help-back" class="subtle-button" type="button">← Settings</button>
+              </div>
             </div>
-            <div class="settings-page-grid">
-              <div class="settings-section">
-                <h3>API overview</h3>
-                <div class="sidebar-note setting-help">This draft documents the current BrianHub API as implemented today.</div>
-                <div class="setting-row">
-                  <div class="setting-label">Base URL</div>
-                  <code id="help-api-base" class="help-inline-code">https://brianhub.com</code>
+            <div class="help-doc-hub">
+              <section class="settings-section help-doc-intro">
+                <h3>Documentation home</h3>
+                <p class="setting-help">Start here for BrianHub documentation. Open a focused reference from this page when you need implementation details, API behavior, or copyable instructions.</p>
+              </section>
+              <section class="settings-section help-doc-list">
+                <div class="help-doc-item">
+                  <div class="help-doc-item-copy">
+                    <h3>API documentation</h3>
+                    <p class="setting-help">Plain markdown reference for the BrianHub product API. Use this when a human or an AI system needs concrete endpoints, payloads, auth rules, and modeling guidance.</p>
+                    <code id="help-api-url" class="help-inline-code">/apps/web/help/api/</code>
+                  </div>
+                  <div class="help-doc-item-actions">
+                    <button id="help-open-url" class="subtle-button" type="button">Open</button>
+                  </div>
                 </div>
-                <div class="setting-row">
-                  <div class="setting-label">Current workspace</div>
-                  <code id="help-workspace-id" class="help-inline-code">&lt;workspace-id&gt;</code>
-                </div>
-                <div class="sidebar-note setting-help">Production uses session-cookie auth for product routes. Bearer and service-account auth are not active yet.</div>
-              </div>
-              <div class="settings-section">
-                <h3>Public routes</h3>
-                <ul class="help-route-list">
-                  <li><code class="help-inline-code">GET /health</code></li>
-                  <li><code class="help-inline-code">GET /auth/me</code></li>
-                  <li><code class="help-inline-code">POST /auth/login</code></li>
-                  <li><code class="help-inline-code">POST /auth/logout</code></li>
-                  <li><code class="help-inline-code">POST /auth/invite/accept</code></li>
-                </ul>
-                <div class="sidebar-note setting-help">All other product routes require an authenticated actor when auth is enabled.</div>
-              </div>
-              <div class="settings-section">
-                <h3>Tasks and sections</h3>
-                <div class="sidebar-note setting-help">My Tasks sections are represented by <code class="help-inline-code">group_label</code> on each task. There is no dedicated sections endpoint yet.</div>
-                <ul class="help-route-list">
-                  <li>Use <code class="help-inline-code">POST /tasks</code> to create a task.</li>
-                  <li>Use <code class="help-inline-code">PATCH /tasks/:id</code> to update task fields.</li>
-                  <li>Set <code class="help-inline-code">group_label</code> to place a task into a section.</li>
-                  <li>Set <code class="help-inline-code">group_label</code> to <code class="help-inline-code">null</code> to remove a task from a section.</li>
-                </ul>
-                <div class="sidebar-note setting-help">Do not model sections as parent tasks with subtasks. Subtasks are hierarchy, not grouping.</div>
-              </div>
-              <div class="settings-section">
-                <h3>Shopping lists</h3>
-                <div class="sidebar-note setting-help">Shopping lists and shopping items are first-class API resources. Use these routes instead of trying to encode shopping state into tasks.</div>
-                <ul class="help-route-list">
-                  <li><code class="help-inline-code">GET /shopping-lists?workspace_id=&lt;uuid&gt;</code> lists shopping lists for a workspace.</li>
-                  <li><code class="help-inline-code">POST /shopping-lists</code> creates a shopping list.</li>
-                  <li><code class="help-inline-code">PATCH /shopping-lists/:id</code> updates a list name or archive state.</li>
-                  <li><code class="help-inline-code">DELETE /shopping-lists/:id</code> deletes a list.</li>
-                  <li><code class="help-inline-code">GET /shopping-items?workspace_id=&lt;uuid&gt;</code> or <code class="help-inline-code">GET /shopping-items?list_id=&lt;uuid&gt;</code> lists items.</li>
-                  <li><code class="help-inline-code">POST /shopping-items</code> adds either one item with <code class="help-inline-code">name</code> or many items with <code class="help-inline-code">items</code>.</li>
-                  <li><code class="help-inline-code">PATCH /shopping-items/:id</code> updates <code class="help-inline-code">name</code>, <code class="help-inline-code">is_checked</code>, or <code class="help-inline-code">sort_order</code>.</li>
-                  <li><code class="help-inline-code">DELETE /shopping-items/:id</code> deletes an item.</li>
-                </ul>
-              </div>
-              <div class="settings-section">
-                <h3>Projects</h3>
-                <div class="sidebar-note setting-help">Projects are first-class API resources. Use <code class="help-inline-code">kind</code> to distinguish standard projects from task lists when needed.</div>
-                <ul class="help-route-list">
-                  <li><code class="help-inline-code">GET /projects?workspace_id=&lt;uuid&gt;</code> lists projects for a workspace.</li>
-                  <li><code class="help-inline-code">POST /projects</code> creates a project or list.</li>
-                  <li><code class="help-inline-code">PATCH /projects/:id</code> updates fields like <code class="help-inline-code">name</code>, <code class="help-inline-code">kind</code>, and <code class="help-inline-code">archived</code>.</li>
-                  <li><code class="help-inline-code">DELETE /projects/:id</code> deletes a project.</li>
-                </ul>
-              </div>
-              <div class="settings-section">
-                <h3>Notices</h3>
-                <div class="sidebar-note setting-help">Notices and notice types are first-class API resources. Notice types define reusable categories, and notices carry scheduling and recurrence fields.</div>
-                <ul class="help-route-list">
-                  <li><code class="help-inline-code">GET /notice-types?workspace_id=&lt;uuid&gt;</code> lists notice types for a workspace.</li>
-                  <li><code class="help-inline-code">POST /notice-types</code> creates a notice type.</li>
-                  <li><code class="help-inline-code">PATCH /notice-types/:id</code> renames a notice type.</li>
-                  <li><code class="help-inline-code">DELETE /notice-types/:id</code> deletes a notice type.</li>
-                  <li><code class="help-inline-code">GET /notices?workspace_id=&lt;uuid&gt;</code> lists notices for a workspace.</li>
-                  <li><code class="help-inline-code">POST /notices</code> creates a notice.</li>
-                  <li><code class="help-inline-code">PATCH /notices/:id</code> updates notice fields like <code class="help-inline-code">notify_at</code>, <code class="help-inline-code">notice_type</code>, and <code class="help-inline-code">dismissed_at</code>.</li>
-                  <li><code class="help-inline-code">DELETE /notices/:id</code> deletes a notice.</li>
-                </ul>
-              </div>
-              <div class="settings-section">
-                <h3>Example payloads</h3>
-                <div class="sidebar-note setting-help">Examples below use the active workspace where possible.</div>
-                <div class="help-code-group">
-                  <div class="help-code-label">Create task</div>
-                  <pre id="help-task-create-example" class="help-code-block"></pre>
-                </div>
-                <div class="help-code-group">
-                  <div class="help-code-label">Update task section</div>
-                  <pre id="help-task-update-example" class="help-code-block"></pre>
-                </div>
-                <div class="help-code-group">
-                  <div class="help-code-label">Create shopping list</div>
-                  <pre id="help-shopping-list-create-example" class="help-code-block"></pre>
-                </div>
-                <div class="help-code-group">
-                  <div class="help-code-label">Create project</div>
-                  <pre id="help-project-create-example" class="help-code-block"></pre>
-                </div>
-                <div class="help-code-group">
-                  <div class="help-code-label">Add shopping items</div>
-                  <pre id="help-shopping-item-create-example" class="help-code-block"></pre>
-                </div>
-                <div class="help-code-group">
-                  <div class="help-code-label">Create notice type</div>
-                  <pre id="help-notice-type-create-example" class="help-code-block"></pre>
-                </div>
-                <div class="help-code-group">
-                  <div class="help-code-label">Create notice</div>
-                  <pre id="help-notice-create-example" class="help-code-block"></pre>
-                </div>
-                <div class="help-code-group">
-                  <div class="help-code-label">Sync pull</div>
-                  <pre id="help-sync-pull-example" class="help-code-block"></pre>
-                </div>
-              </div>
-              <div class="settings-section">
-                <h3>Protected route groups</h3>
-                <ul class="help-route-list">
-                  <li><code class="help-inline-code">GET /workspaces</code>, <code class="help-inline-code">POST /workspaces</code></li>
-                  <li><code class="help-inline-code">GET /tasks</code>, <code class="help-inline-code">GET /tasks/tree</code>, <code class="help-inline-code">POST /tasks/search</code></li>
-                  <li><code class="help-inline-code">GET /projects</code>, <code class="help-inline-code">POST /projects</code>, <code class="help-inline-code">PATCH|DELETE /projects/:id</code></li>
-                  <li><code class="help-inline-code">GET /shopping-lists</code>, <code class="help-inline-code">POST /shopping-lists</code>, <code class="help-inline-code">PATCH|DELETE /shopping-lists/:id</code></li>
-                  <li><code class="help-inline-code">GET /shopping-items</code>, <code class="help-inline-code">POST /shopping-items</code>, <code class="help-inline-code">PATCH|DELETE /shopping-items/:id</code></li>
-                  <li><code class="help-inline-code">GET /notice-types</code>, <code class="help-inline-code">POST /notice-types</code>, <code class="help-inline-code">PATCH|DELETE /notice-types/:id</code></li>
-                  <li><code class="help-inline-code">GET /notices</code>, <code class="help-inline-code">POST /notices</code>, <code class="help-inline-code">PATCH|DELETE /notices/:id</code></li>
-                  <li><code class="help-inline-code">POST /sync/pull</code>, <code class="help-inline-code">POST /sync/push</code></li>
-                  <li><code class="help-inline-code">GET /admin/info</code>, <code class="help-inline-code">GET|POST /admin/invites</code></li>
-                </ul>
-                <div class="sidebar-note setting-help">Errors use a normalized envelope with <code class="help-inline-code">code</code>, <code class="help-inline-code">message</code>, and <code class="help-inline-code">requestId</code>.</div>
-              </div>
-              <div class="settings-section">
-                <h3>Roger / automation guardrails</h3>
-                <ul class="help-route-list">
-                  <li>Roger is approved for server operations over Tailscale + SSH.</li>
-                  <li>Do not use <code class="help-inline-code">X-Actor-Email</code> in production.</li>
-                  <li>Do not automate a personal workspace with fake parent tasks standing in for sections.</li>
-                  <li>Until machine auth exists, treat product API automation as human-session-only.</li>
-                </ul>
-              </div>
+              </section>
             </div>
           </section>
           <section id="admin-page" class="panel hidden">
@@ -809,8 +694,8 @@
               <div class="shopping-header-left">
                 <button id="workspace-manage-back" class="subtle-button" type="button">← Tasks</button>
                 <div>
-                  <h2>Manage Workspaces</h2>
-                  <div class="sidebar-note">Rename, convert between personal and shared, archive, or delete active workspaces.</div>
+                  <h2 id="workspace-manage-title">Manage Workspaces</h2>
+                  <div id="workspace-manage-subtitle" class="sidebar-note">Rename, convert between personal and shared, archive, or delete active workspaces.</div>
                 </div>
               </div>
             </div>
@@ -1047,6 +932,7 @@
         <div class="task-row">
           <div class="task-main">
             <div class="task-title-row">
+              <button class="task-select-button icon-button" type="button" title="Select task" aria-label="Select task" aria-pressed="false">☆</button>
               <span class="task-drag-handle" aria-label="Drag task" title="Drag task"></span>
               <button class="task-complete-button icon-button" type="button" title="Mark complete">✓</button>
               <button class="task-toggle icon-button" type="button" title="Toggle subtasks">▾</button>
@@ -1582,7 +1468,7 @@
             <div class="settings-section settings-action-card">
               <div class="settings-action-copy">
                 <span class="settings-action-title">Help</span>
-                <span class="settings-action-subtitle">Review the current API model, auth behavior, and automation guardrails.</span>
+                <span class="settings-action-subtitle">Browse BrianHub documentation, including the API reference.</span>
               </div>
               <button id="settings-open-help" class="subtle-button" type="button">Open</button>
             </div>
