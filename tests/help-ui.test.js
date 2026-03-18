@@ -16,6 +16,16 @@ test('help page documents sections through group labels instead of parent tasks'
   assert.match(html, /Do not model sections as parent tasks with subtasks\./);
 });
 
+test('help page documents shopping list and shopping item endpoints', () => {
+  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  assert.match(html, /GET \/shopping-lists\?workspace_id=&lt;uuid&gt;/);
+  assert.match(html, /POST \/shopping-lists/);
+  assert.match(html, /GET \/shopping-items\?workspace_id=&lt;uuid&gt;/);
+  assert.match(html, /POST \/shopping-items/);
+  assert.match(html, /id="help-shopping-list-create-example"/);
+  assert.match(html, /id="help-shopping-item-create-example"/);
+});
+
 test('help page is wired into settings linked-page navigation', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /const helpPage = document\.getElementById\('help-page'\);/);

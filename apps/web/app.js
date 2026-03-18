@@ -545,6 +545,8 @@ const helpApiBase = document.getElementById('help-api-base');
 const helpWorkspaceId = document.getElementById('help-workspace-id');
 const helpTaskCreateExample = document.getElementById('help-task-create-example');
 const helpTaskUpdateExample = document.getElementById('help-task-update-example');
+const helpShoppingListCreateExample = document.getElementById('help-shopping-list-create-example');
+const helpShoppingItemCreateExample = document.getElementById('help-shopping-item-create-example');
 const helpSyncPullExample = document.getElementById('help-sync-pull-example');
 const adminPageBack = document.getElementById('admin-page-back');
 const adminInviteEmail = document.getElementById('admin-invite-email');
@@ -12720,6 +12722,7 @@ function getTaskContainersForWorkspace({ kind = null, includeArchived = false } 
 function renderHelpPage() {
   const publicBase = typeof window !== 'undefined' ? window.location.origin : 'https://brianhub.com';
   const workspaceId = state.workspace?.id ?? '<workspace-id>';
+  const shoppingListId = state.ui?.activeShoppingListId ?? '<shopping-list-id>';
   if (helpApiBase) {
     helpApiBase.textContent = publicBase;
   }
@@ -12736,6 +12739,26 @@ function renderHelpPage() {
   if (helpTaskUpdateExample) {
     helpTaskUpdateExample.textContent = JSON.stringify({
       group_label: 'Today'
+    }, null, 2);
+  }
+  if (helpShoppingListCreateExample) {
+    helpShoppingListCreateExample.textContent = JSON.stringify({
+      workspace_id: workspaceId,
+      name: 'Safeway run',
+      archived: false
+    }, null, 2);
+  }
+  if (helpShoppingItemCreateExample) {
+    helpShoppingItemCreateExample.textContent = JSON.stringify({
+      list_id: shoppingListId,
+      items: [
+        'Milk',
+        'Eggs',
+        {
+          name: 'Bread',
+          is_checked: false
+        }
+      ]
     }, null, 2);
   }
   if (helpSyncPullExample) {

@@ -123,6 +123,14 @@ General authenticated routes:
 - `POST /tasks/:id/checkin`
 - `POST /tasks/:id/reschedule`
 - `POST /tasks/:id/reparent`
+- `GET /shopping-lists?workspace_id=<uuid>`
+- `POST /shopping-lists`
+- `PATCH /shopping-lists/:id`
+- `DELETE /shopping-lists/:id`
+- `GET /shopping-items?workspace_id=<uuid>` or `GET /shopping-items?list_id=<uuid>`
+- `POST /shopping-items`
+- `PATCH /shopping-items/:id`
+- `DELETE /shopping-items/:id`
 - `POST /sync/pull`
 - `POST /sync/push`
 
@@ -180,6 +188,41 @@ Minimal sync pull:
 {
   "workspace_id": "00000000-0000-4000-8000-000000000001",
   "cursor": 0
+}
+```
+
+Minimal shopping list create:
+
+```json
+{
+  "workspace_id": "00000000-0000-4000-8000-000000000001",
+  "name": "Safeway run",
+  "archived": false
+}
+```
+
+Minimal shopping item create:
+
+```json
+{
+  "list_id": "00000000-0000-4000-8000-000000000002",
+  "name": "Milk"
+}
+```
+
+Bulk shopping item create:
+
+```json
+{
+  "list_id": "00000000-0000-4000-8000-000000000002",
+  "items": [
+    "Milk",
+    "Eggs",
+    {
+      "name": "Bread",
+      "is_checked": false
+    }
+  ]
 }
 ```
 

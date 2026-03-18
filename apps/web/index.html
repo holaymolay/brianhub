@@ -560,6 +560,20 @@
                 <div class="sidebar-note setting-help">Do not model sections as parent tasks with subtasks. Subtasks are hierarchy, not grouping.</div>
               </div>
               <div class="settings-section">
+                <h3>Shopping lists</h3>
+                <div class="sidebar-note setting-help">Shopping lists and shopping items are first-class API resources. Use these routes instead of trying to encode shopping state into tasks.</div>
+                <ul class="help-route-list">
+                  <li><code class="help-inline-code">GET /shopping-lists?workspace_id=&lt;uuid&gt;</code> lists shopping lists for a workspace.</li>
+                  <li><code class="help-inline-code">POST /shopping-lists</code> creates a shopping list.</li>
+                  <li><code class="help-inline-code">PATCH /shopping-lists/:id</code> updates a list name or archive state.</li>
+                  <li><code class="help-inline-code">DELETE /shopping-lists/:id</code> deletes a list.</li>
+                  <li><code class="help-inline-code">GET /shopping-items?workspace_id=&lt;uuid&gt;</code> or <code class="help-inline-code">GET /shopping-items?list_id=&lt;uuid&gt;</code> lists items.</li>
+                  <li><code class="help-inline-code">POST /shopping-items</code> adds either one item with <code class="help-inline-code">name</code> or many items with <code class="help-inline-code">items</code>.</li>
+                  <li><code class="help-inline-code">PATCH /shopping-items/:id</code> updates <code class="help-inline-code">name</code>, <code class="help-inline-code">is_checked</code>, or <code class="help-inline-code">sort_order</code>.</li>
+                  <li><code class="help-inline-code">DELETE /shopping-items/:id</code> deletes an item.</li>
+                </ul>
+              </div>
+              <div class="settings-section">
                 <h3>Example payloads</h3>
                 <div class="sidebar-note setting-help">Examples below use the active workspace where possible.</div>
                 <div class="help-code-group">
@@ -571,6 +585,14 @@
                   <pre id="help-task-update-example" class="help-code-block"></pre>
                 </div>
                 <div class="help-code-group">
+                  <div class="help-code-label">Create shopping list</div>
+                  <pre id="help-shopping-list-create-example" class="help-code-block"></pre>
+                </div>
+                <div class="help-code-group">
+                  <div class="help-code-label">Add shopping items</div>
+                  <pre id="help-shopping-item-create-example" class="help-code-block"></pre>
+                </div>
+                <div class="help-code-group">
                   <div class="help-code-label">Sync pull</div>
                   <pre id="help-sync-pull-example" class="help-code-block"></pre>
                 </div>
@@ -580,6 +602,8 @@
                 <ul class="help-route-list">
                   <li><code class="help-inline-code">GET /workspaces</code>, <code class="help-inline-code">POST /workspaces</code></li>
                   <li><code class="help-inline-code">GET /tasks</code>, <code class="help-inline-code">GET /tasks/tree</code>, <code class="help-inline-code">POST /tasks/search</code></li>
+                  <li><code class="help-inline-code">GET /shopping-lists</code>, <code class="help-inline-code">POST /shopping-lists</code>, <code class="help-inline-code">PATCH|DELETE /shopping-lists/:id</code></li>
+                  <li><code class="help-inline-code">GET /shopping-items</code>, <code class="help-inline-code">POST /shopping-items</code>, <code class="help-inline-code">PATCH|DELETE /shopping-items/:id</code></li>
                   <li><code class="help-inline-code">POST /sync/pull</code>, <code class="help-inline-code">POST /sync/push</code></li>
                   <li><code class="help-inline-code">GET /admin/info</code>, <code class="help-inline-code">GET|POST /admin/invites</code></li>
                 </ul>
