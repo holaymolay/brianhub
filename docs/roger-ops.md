@@ -65,6 +65,10 @@ Example remote command from Roger's VPS:
 ssh roger-admin@<brianhub-tailnet-hostname> sudo /usr/local/bin/brianhub-admin deploy
 ```
 
+## Optional GitHub write path
+
+If Roger should also edit and push the BrianHub repo directly, set up a dedicated GitHub deploy key on Roger's VPS and a writable clone there. See `docs/roger-github-write-access.md`.
+
 ## Why this is the default
 
 - Roger gets private-network access only.

@@ -6,6 +6,7 @@ This folder tracks current implementation behavior, rollout plans, and hardening
 - `docs/deployment.md`: dedicated VPS deployment, upgrades, rollback, and backup flow
 - `docs/roger-ops.md`: private Roger access to the BrianHub VPS over Tailscale
 - `docs/roger-api-brief.md`: Roger handoff for BrianHub server ops and current product API constraints
+- `docs/roger-github-write-access.md`: optional GitHub write path so Roger can edit, push, and deploy BrianHub independently
 - `docs/product-features.md`: current user-facing behavior by module
 - `docs/security.md`: security scanning and hardening references
 - `docs/pre-deploy-hardening.md`: pre-deploy hardening plan and acceptance criteria
