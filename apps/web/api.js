@@ -199,6 +199,7 @@ export function updateAuthSettings(data) {
   return request('/auth/settings', {
     method: 'PATCH',
     body: JSON.stringify(data),
+    keepalive: true,
     quietStatusCodes: [404]
   }).catch((error) => {
     if (error?.status === 404) {

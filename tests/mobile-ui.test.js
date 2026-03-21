@@ -58,12 +58,12 @@ test('mobile task tools reuse the same task state controls as desktop', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /tasksMobileToolsBtn\?\.addEventListener\('click', \(\) => \{\s*openMobileTaskToolsModal\(\);/s);
   assert.match(script, /taskSortSelect\?\.addEventListener\('change', \(\) => \{\s*setTaskSortKey\(taskSortSelect\.value\);/s);
-  assert.match(script, /taskGroupSelect\?\.addEventListener\('change', \(\) => \{\s*setTaskGroupMode\(taskGroupSelect\.value\);\s*queueUserSettingsSave\(\);/s);
-  assert.match(script, /taskViewSelect\?\.addEventListener\('change', \(\) => \{\s*setTaskView\(taskViewSelect\.value\);\s*queueUserSettingsSave\(\);/s);
+  assert.match(script, /taskGroupSelect\?\.addEventListener\('change', \(\) => \{\s*setTaskGroupMode\(taskGroupSelect\.value\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
+  assert.match(script, /taskViewSelect\?\.addEventListener\('change', \(\) => \{\s*setTaskView\(taskViewSelect\.value\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
   assert.match(script, /mobileTaskToolsFilter\?\.addEventListener\('change', \(\) => \{\s*const selected = mobileTaskToolsFilter\.value \|\| 'all';\s*setActiveTaskFilter\(selected\);/s);
   assert.match(script, /mobileTaskToolsSort\?\.addEventListener\('change', \(\) => \{\s*const selected = mobileTaskToolsSort\.value \|\| 'default';\s*setTaskSortKey\(selected\);/s);
-  assert.match(script, /mobileTaskToolsGroup\?\.addEventListener\('change', \(\) => \{\s*setTaskGroupMode\(mobileTaskToolsGroup\.value \|\| 'none'\);\s*queueUserSettingsSave\(\);/s);
-  assert.match(script, /mobileTaskToolsView\?\.addEventListener\('change', \(\) => \{\s*setTaskView\(mobileTaskToolsView\.value \|\| 'list'\);\s*queueUserSettingsSave\(\);/s);
+  assert.match(script, /mobileTaskToolsGroup\?\.addEventListener\('change', \(\) => \{\s*setTaskGroupMode\(mobileTaskToolsGroup\.value \|\| 'none'\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
+  assert.match(script, /mobileTaskToolsView\?\.addEventListener\('change', \(\) => \{\s*setTaskView\(mobileTaskToolsView\.value \|\| 'list'\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
   assert.match(script, /function syncMobileTaskToolsInputs\(\) \{\s*if \(!mobileTaskToolsModal\) return;\s*const checklistViewActive = isWorkflowChecklistViewActive\(\);\s*syncTaskFilterOptionSelect\(mobileTaskToolsFilter, \{ allowFocusPreserve: true \}\);/s);
 });
 
@@ -71,6 +71,14 @@ test('task list selection does not override the saved grouping preference', () =
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.doesNotMatch(script, /selectBtn\.addEventListener\('click', \(\) => \{\s*setActiveTaskFilter\(list\.id\);\s*setTaskGroupMode\('section'\);/s);
   assert.doesNotMatch(script, /newTaskListBtn\?\.addEventListener\('click', async \(\) => \{[\s\S]*setActiveTaskFilter\(created\.id\);\s*setTaskGroupMode\('section'\);/s);
+});
+
+test('view and group changes flush auth settings immediately so refresh keeps them', () => {
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const apiScript = readFileSync(resolve(process.cwd(), 'apps/web/api.js'), 'utf8');
+  assert.match(script, /if \(action === 'section'\) \{\s*const name = prompt\('Section name'\);\s*if \(!name\) return;\s*setTaskGroupMode\('section'\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
+  assert.match(script, /mobileTaskToolsAddSection\?\.addEventListener\('click', \(\) => \{\s*const name = prompt\('Section name'\);\s*if \(!name\) return;\s*setTaskGroupMode\('section'\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
+  assert.match(apiScript, /export function updateAuthSettings\(data\) \{[\s\S]*return request\('\/auth\/settings', \{[\s\S]*keepalive: true,[\s\S]*\}\)\.catch\(\(error\) => \{/s);
 });
 
 test('mobile task tools replace the cramped toolbar on phones', () => {

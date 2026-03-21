@@ -1180,7 +1180,7 @@ taskCreateMenu?.addEventListener('click', async (event) => {
     const name = prompt('Section name');
     if (!name) return;
     setTaskGroupMode('section');
-    queueUserSettingsSave();
+    queueUserSettingsSave({ immediate: true });
     createSectionRecord(name);
     render();
   }
@@ -1356,7 +1356,7 @@ taskSortSelect?.addEventListener('change', () => {
 
 taskGroupSelect?.addEventListener('change', () => {
   setTaskGroupMode(taskGroupSelect.value);
-  queueUserSettingsSave();
+  queueUserSettingsSave({ immediate: true });
   render();
 });
 
@@ -1466,7 +1466,7 @@ shoppingFilterMenu?.addEventListener('click', (event) => {
 
 taskViewSelect?.addEventListener('change', () => {
   setTaskView(taskViewSelect.value);
-  queueUserSettingsSave();
+  queueUserSettingsSave({ immediate: true });
   render();
 });
 
@@ -1882,13 +1882,13 @@ mobileTaskToolsSort?.addEventListener('change', () => {
 
 mobileTaskToolsGroup?.addEventListener('change', () => {
   setTaskGroupMode(mobileTaskToolsGroup.value || 'none');
-  queueUserSettingsSave();
+  queueUserSettingsSave({ immediate: true });
   render();
 });
 
 mobileTaskToolsView?.addEventListener('change', () => {
   setTaskView(mobileTaskToolsView.value || 'list');
-  queueUserSettingsSave();
+  queueUserSettingsSave({ immediate: true });
   render();
 });
 
@@ -1896,7 +1896,7 @@ mobileTaskToolsAddSection?.addEventListener('click', () => {
   const name = prompt('Section name');
   if (!name) return;
   setTaskGroupMode('section');
-  queueUserSettingsSave();
+  queueUserSettingsSave({ immediate: true });
   createSectionRecord(name);
   render();
 });
