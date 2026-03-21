@@ -110,6 +110,7 @@ const PROJECT_KIND_PROJECT = 'project';
 const PROJECT_KIND_LIST = 'list';
 const TASK_TYPE_WORKFLOW = 'workflow';
 const SHOPPING_INBOX_NAME = 'Shopping Inbox';
+const SHOPPING_LIST_EDITOR_INBOX = '__shopping_inbox__';
 const SHOPPING_KEYWORD_STOPWORDS = new Set([
   'and', 'the', 'with', 'for', 'from', 'into', 'onto', 'your', 'our',
   'of', 'to', 'in', 'on', 'at', 'a', 'an', 'oz', 'lb', 'lbs', 'pkg', 'pack'
@@ -355,6 +356,7 @@ const shoppingListRename = document.getElementById('shopping-list-rename');
 const shoppingListDelete = document.getElementById('shopping-list-delete');
 const shoppingListModal = document.getElementById('shopping-list-modal');
 const shoppingListForm = document.getElementById('shopping-list-form');
+const shoppingListName = document.getElementById('shopping-list-name');
 const shoppingListStoreSelect = document.getElementById('shopping-list-store-select');
 const shoppingStoreModal = document.getElementById('shopping-store-modal');
 const shoppingStoreForm = document.getElementById('shopping-store-form');
@@ -517,6 +519,7 @@ const workflowApplicabilityList = document.getElementById('workflow-applicabilit
 const workflowApplicabilityCancel = document.getElementById('workflow-applicability-cancel');
 const accountButton = document.getElementById('account-button');
 const accountMenu = document.getElementById('account-menu');
+const accountMenuWrapper = document.querySelector('.account-menu-wrapper');
 const accountAvatar = document.getElementById('account-avatar');
 const accountListAvatar = document.getElementById('account-list-avatar');
 const accountListName = document.getElementById('account-list-name');
@@ -732,7 +735,11 @@ const editorProject = document.getElementById('editor-project');
 const editorAssignee = document.getElementById('editor-assignee');
 const editorAssigneeLabelRow = document.getElementById('editor-assignee-label-row');
 const editorAssigneeLabel = document.getElementById('editor-assignee-label');
+const editorSection = document.getElementById('editor-section');
 const editorParent = document.getElementById('editor-parent');
+const editorShoppingList = document.getElementById('editor-shopping-list');
+const editorConvertShopping = document.getElementById('editor-convert-shopping');
+const editorConvertShoppingNote = document.getElementById('editor-convert-shopping-note');
 const templatePrompt = document.getElementById('template-prompt');
 const templatePromptTitle = document.getElementById('template-prompt-title');
 const templatePromptText = document.getElementById('template-prompt-text');
@@ -748,6 +755,8 @@ const bulkEditApplyPriority = document.getElementById('bulk-edit-apply-priority'
 const bulkEditPriority = document.getElementById('bulk-edit-priority');
 const bulkEditApplyProject = document.getElementById('bulk-edit-apply-project');
 const bulkEditProject = document.getElementById('bulk-edit-project');
+const bulkEditApplySection = document.getElementById('bulk-edit-apply-section');
+const bulkEditSection = document.getElementById('bulk-edit-section');
 const bulkEditApplyParent = document.getElementById('bulk-edit-apply-parent');
 const bulkEditParent = document.getElementById('bulk-edit-parent');
 const bulkEditApplyType = document.getElementById('bulk-edit-apply-type');
@@ -903,6 +912,15 @@ document.addEventListener('click', () => {
     document.querySelectorAll('.task-item.menu-open').forEach(item => item.classList.remove('menu-open'));
   }
 });
+
+function closeAccountMenu() {
+  accountMenu?.classList.add('hidden');
+  workspaceListEl?.classList.add('hidden');
+  workspaceMenu?.classList.add('hidden');
+  if (openMenu === accountMenu || openMenu === workspaceListEl || openMenu === workspaceMenu) {
+    openMenu = null;
+  }
+}
 
 function isEditableShortcutTarget(target) {
   if (!(target instanceof Element)) return false;
@@ -1062,6 +1080,14 @@ accountButton?.addEventListener('click', (event) => {
 
 accountMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
+});
+
+document.addEventListener('pointerdown', (event) => {
+  if (!accountMenuWrapper || !accountMenu || accountMenu.classList.contains('hidden')) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest('.account-menu-wrapper')) return;
+  closeAccountMenu();
 });
 
 noticeBell?.addEventListener('click', (event) => {
@@ -5160,26 +5186,26 @@ function taskMatchesSectionScope(task, projectId) {
   return getTaskEffectiveProjectId(task) === normalizeSectionScopeProjectId(projectId);
 }
 
-function getSectionsForWorkspace() {
+function getSectionsForProjectScope(projectId = getActiveTaskSectionScopeProjectId()) {
   if (!state.workspace) return [];
   const workspaceId = state.workspace.id;
-  const projectId = getActiveTaskSectionScopeProjectId();
+  const normalizedProjectId = normalizeSectionScopeProjectId(projectId);
   const sections = (state.taskSections ?? [])
     .map(normalizeTaskSection)
     .filter(section =>
       section.workspace_id === workspaceId
-      && normalizeSectionScopeProjectId(section.project_id) === projectId
+      && normalizeSectionScopeProjectId(section.project_id) === normalizedProjectId
     );
   const byLabel = new Map(sections.map(section => [section.label, section]));
   Object.values(state.tasks ?? {})
-    .filter(task => task.workspace_id === workspaceId && taskMatchesSectionScope(task, projectId))
+    .filter(task => task.workspace_id === workspaceId && taskMatchesSectionScope(task, normalizedProjectId))
     .forEach(task => {
       const label = (task.group_label ?? '').trim();
       if (!label || byLabel.has(label)) return;
       byLabel.set(label, {
         id: `derived-${label}`,
         workspace_id: workspaceId,
-        project_id: projectId,
+        project_id: normalizedProjectId,
         label,
         sort_order: null,
         completed_visibility: null,
@@ -5194,6 +5220,10 @@ function getSectionsForWorkspace() {
     if (aOrder !== bOrder) return aOrder - bOrder;
     return a.label.localeCompare(b.label);
   });
+}
+
+function getSectionsForWorkspace() {
+  return getSectionsForProjectScope(getActiveTaskSectionScopeProjectId());
 }
 
 function isPersistedSection(section) {
@@ -8659,7 +8689,12 @@ function normalizeNoticeType(type) {
 }
 
 function normalizeShoppingList(list) {
-  return { ...list, archived: Boolean(list.archived) };
+  return {
+    ...list,
+    archived: Boolean(list.archived),
+    store_name: normalizeTitleInput(list?.store_name ?? '') || null,
+    scheduled_for: normalizeShoppingListDateValue(list?.scheduled_for ?? null)
+  };
 }
 
 function normalizeShoppingItem(item) {
@@ -10346,7 +10381,17 @@ async function deleteStoreRuleRecord(id) {
 async function createShoppingListRecord(payload) {
   if (!state.workspace) return null;
   const name = payload?.name !== undefined ? normalizeTitleInput(payload.name) : payload?.name;
-  const created = await api.createShoppingList({ ...payload, name, workspace_id: state.workspace.id });
+  const storeName = payload?.store_name !== undefined ? normalizeTitleInput(payload.store_name) : payload?.store_name;
+  const scheduledFor = payload?.scheduled_for !== undefined
+    ? normalizeShoppingListDateValue(payload.scheduled_for)
+    : payload?.scheduled_for;
+  const created = await api.createShoppingList({
+    ...payload,
+    name,
+    store_name: storeName,
+    scheduled_for: scheduledFor,
+    workspace_id: state.workspace.id
+  });
   if (created) {
     upsertShoppingList(created);
     appendCrudEvent({
@@ -10363,6 +10408,12 @@ async function updateShoppingListRecord(id, patch) {
   if (patch.name !== undefined) {
     patch = { ...patch, name: normalizeTitleInput(patch.name) };
   }
+  if (patch.store_name !== undefined) {
+    patch = { ...patch, store_name: normalizeTitleInput(patch.store_name) };
+  }
+  if (patch.scheduled_for !== undefined) {
+    patch = { ...patch, scheduled_for: normalizeShoppingListDateValue(patch.scheduled_for) };
+  }
   const updated = await api.updateShoppingList(id, patch);
   if (updated) {
     upsertShoppingList(updated);
@@ -10375,6 +10426,34 @@ async function updateShoppingListRecord(id, patch) {
     });
   }
   return updated;
+}
+
+async function convertTaskToShoppingItemRecord(taskId, listId) {
+  if (!taskId || !listId) return null;
+  if (!canUseRemoteApi()) {
+    throw new Error('Task conversion to shopping requires the server connection.');
+  }
+  const result = await api.convertTaskToShoppingItem(taskId, { list_id: listId });
+  if (result?.shopping_item) {
+    upsertShoppingItem(result.shopping_item);
+  }
+  const deletedIds = Array.isArray(result?.deleted_task?.ids) ? result.deleted_task.ids : [];
+  deletedIds.forEach((id) => delete state.tasks[id]);
+  if (deletedIds.length) {
+    state.ui = state.ui ?? {};
+    state.ui.selectedTaskIds = getSelectedTaskIds().filter((id) => !deletedIds.includes(id));
+    appendCrudEvent({
+      source: 'app',
+      event: 'task_converted_to_shopping_item',
+      entity_type: 'task',
+      entity_id: taskId,
+      data: {
+        list_id: listId,
+        shopping_item_id: result?.shopping_item?.id ?? null
+      }
+    });
+  }
+  return result;
 }
 
 async function deleteShoppingListRecord(id) {
@@ -10550,6 +10629,39 @@ function formatShortDateFromInput(value) {
   return formatShortDate(date);
 }
 
+function normalizeShoppingListDateValue(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+function getShoppingListScheduledFor(list) {
+  const explicit = normalizeShoppingListDateValue(list?.scheduled_for ?? null);
+  if (explicit) return explicit;
+  const parsed = parseStoreAndDateFromTitle(String(list?.name ?? ''));
+  return normalizeShoppingListDateValue(parsed.date);
+}
+
+function formatShoppingListScheduledForLabel(list) {
+  const dateValue = getShoppingListScheduledFor(list);
+  if (!dateValue) return '';
+  const parsed = parseDateOnlyValue(dateValue);
+  if (!parsed) return '';
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function buildShoppingListNameSuggestion({ currentName = '', parsedTitle = null, store = '', dateValue = '' } = {}) {
+  const existingName = normalizeTitleInput(currentName);
+  if (existingName) return existingName;
+  const parsedMeta = parsedTitle ? parseStoreAndDateFromTitle(parsedTitle) : { store: null };
+  const parsedName = normalizeTitleInput(parsedMeta.store ?? parsedTitle);
+  if (parsedName) return parsedName;
+  const normalizedStore = normalizeTitleInput(store);
+  const dateLabel = formatShortDateFromInput(dateValue);
+  if (normalizedStore) return `${normalizedStore} ${dateLabel}`;
+  return `Shopping ${dateLabel}`;
+}
+
 function formatFollowupMeta(task) {
   const followup = task?.waiting_followup_at ?? task?.next_checkin_at ?? null;
   if (!followup) return 'follow-up unscheduled';
@@ -10687,6 +10799,7 @@ function buildTaskEditorPatch(task) {
   const title = titleInput || task.title;
   const nextStatus = normalizeTaskStatusValue(editorStatus?.value ?? task.status ?? '');
   const nextParentId = editorParent?.value || null;
+  const nextGroupLabel = editorSection?.value ? normalizeTitleInput(editorSection.value) : null;
   const description = getNotesContent();
   const typeLabel = editorType?.value ? editorType.value.trim() : null;
   const tags = normalizeTagList(editorTags?.value ?? '');
@@ -10712,6 +10825,7 @@ function buildTaskEditorPatch(task) {
   if (!areTagListsEqual(tags, task.tags ?? [])) patch.tags = tags;
   if (priority !== (task.priority ?? 'medium')) patch.priority = priority;
   if (canEditProject && (projectId ?? null) !== (task.project_id ?? null)) patch.project_id = projectId;
+  if (editorSection && (nextGroupLabel ?? null) !== (task.group_label ?? null)) patch.group_label = nextGroupLabel;
   if ((nextAssigneeUserId ?? null) !== (task.assignee_user_id ?? null)) {
     patch.assignee_user_id = nextAssigneeUserId;
   }
@@ -11379,6 +11493,8 @@ function detectStoreFromItems(items) {
 function getStoreNameFromShoppingList(list) {
   if (!list) return null;
   if (isShoppingInboxList(list)) return null;
+  const explicitStore = normalizeTitleInput(list.store_name ?? '');
+  if (explicitStore) return explicitStore;
   const parsed = parseStoreAndDateFromTitle(String(list.name ?? ''));
   const storeName = parsed.store ?? list.name ?? null;
   const normalized = normalizeTitleInput(storeName);
@@ -15927,108 +16043,20 @@ function renderProjectList() {
       state.ui.activeProjectId = null;
     }
   }
+  const note = document.createElement('div');
+  note.className = 'sidebar-note';
+  note.textContent = 'Projects live in the Projects page.';
+  projectListEl.appendChild(note);
 
-  getProjectsForWorkspace().forEach(project => {
-    const row = document.createElement('div');
-    row.className = 'workspace-row project-row' + (project.id === active ? ' active' : '');
-
-    const selectBtn = document.createElement('button');
-    selectBtn.type = 'button';
-    selectBtn.className = 'workspace-select';
-    selectBtn.textContent = project.name;
-    selectBtn.addEventListener('click', () => {
-      setActiveTaskFilter(project.id);
-      clearActiveWorkflowChecklistInstanceId();
-      setActiveView('tasks');
-      render();
-    });
-
-    const menuWrapper = document.createElement('div');
-    menuWrapper.className = 'workspace-menu-wrapper';
-    const menuButton = document.createElement('button');
-    menuButton.type = 'button';
-    menuButton.className = 'workspace-menu-button icon-button menu-icon';
-    menuButton.textContent = '⋯';
-
-    const menu = document.createElement('div');
-    menu.className = 'workspace-menu hidden';
-
-    const renameItem = document.createElement('button');
-    renameItem.type = 'button';
-    renameItem.className = 'workspace-menu-item';
-    renameItem.textContent = 'Rename';
-    renameItem.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      const nextName = prompt('Project name', project.name);
-      if (!nextName) return;
-      const updatedName = nextName.trim() || project.name;
-      await updateProjectRecord(project.id, { name: updatedName });
-      menu.classList.add('hidden');
-      openMenu = null;
-      render();
-    });
-
-    const archiveItem = document.createElement('button');
-    archiveItem.type = 'button';
-    archiveItem.className = 'workspace-menu-item';
-    archiveItem.textContent = 'Archive';
-    archiveItem.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      await updateProjectRecord(project.id, { archived: 1 });
-      if (state.ui?.activeProjectId === project.id) {
-        state.ui.activeProjectId = null;
-      }
-      menu.classList.add('hidden');
-      openMenu = null;
-      render();
-    });
-
-    const deleteItem = document.createElement('button');
-    deleteItem.type = 'button';
-    deleteItem.className = 'workspace-menu-item';
-    deleteItem.textContent = 'Delete';
-    deleteItem.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      const confirmed = confirm(`Delete project \"${project.name}\"? Tasks will become unassigned.`);
-      if (!confirmed) return;
-      await deleteProjectRecord(project.id);
-      await refreshWorkspace();
-      menu.classList.add('hidden');
-      openMenu = null;
-      render();
-    });
-
-    menu.appendChild(renameItem);
-    menu.appendChild(archiveItem);
-    menu.appendChild(deleteItem);
-    menuWrapper.appendChild(menuButton);
-    menuWrapper.appendChild(menu);
-
-    menuButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      if (openMenu && openMenu !== menu) {
-        openMenu.classList.add('hidden');
-      }
-      if (menu.classList.contains('hidden')) {
-        menu.classList.remove('hidden');
-        openMenu = menu;
-      } else {
-        menu.classList.add('hidden');
-        openMenu = null;
-      }
-    });
-
-    menu.addEventListener('click', (event) => event.stopPropagation());
-
-    const badge = document.createElement('span');
-    badge.className = 'project-badge';
-    badge.textContent = 'Project';
-
-    row.appendChild(selectBtn);
-    row.appendChild(badge);
-    row.appendChild(menuWrapper);
-    projectListEl.appendChild(row);
+  const openButton = document.createElement('button');
+  openButton.type = 'button';
+  openButton.className = 'subtle-button';
+  openButton.textContent = 'Open Projects';
+  openButton.addEventListener('click', () => {
+    setActiveView('projects');
+    render();
   });
+  projectListEl.appendChild(openButton);
 }
 
 function renderProjectsPage() {
@@ -16112,6 +16140,44 @@ function populateProjectSelect(selectEl, selectedId = null, includeNone = true) 
   selectEl.value = selectedId ?? '';
 }
 
+function populateSectionSelect(
+  selectEl,
+  {
+    projectId = getActiveTaskSectionScopeProjectId(),
+    selectedLabel = null,
+    includeNone = true,
+    noneText = 'No section'
+  } = {}
+) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+  if (includeNone) {
+    const noneOption = document.createElement('option');
+    noneOption.value = '';
+    noneOption.textContent = noneText;
+    selectEl.appendChild(noneOption);
+  }
+  const sections = getSectionsForProjectScope(projectId);
+  sections.forEach((section) => {
+    const option = document.createElement('option');
+    option.value = section.label;
+    option.textContent = section.label;
+    selectEl.appendChild(option);
+  });
+  const normalizedSelectedLabel = normalizeTitleInput(selectedLabel);
+  if (
+    normalizedSelectedLabel
+    && !sections.some((section) => section.label === normalizedSelectedLabel)
+  ) {
+    const option = document.createElement('option');
+    option.value = normalizedSelectedLabel;
+    option.textContent = `${normalizedSelectedLabel} (current)`;
+    selectEl.appendChild(option);
+  }
+  selectEl.disabled = false;
+  selectEl.value = normalizedSelectedLabel ?? '';
+}
+
 function populateParentSelect(selectEl, taskId = null, selectedParentId = null) {
   if (!selectEl) return;
   selectEl.innerHTML = '';
@@ -16150,6 +16216,30 @@ function populateParentSelect(selectEl, taskId = null, selectedParentId = null) 
     selectEl.appendChild(option);
   }
   selectEl.value = selectedParentId ?? '';
+}
+
+function populateShoppingListSelect(selectEl, selectedListId = null) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+  const inboxOption = document.createElement('option');
+  inboxOption.value = SHOPPING_LIST_EDITOR_INBOX;
+  inboxOption.textContent = 'Shopping Inbox';
+  selectEl.appendChild(inboxOption);
+  const lists = getShoppingTargetLists()
+    .slice()
+    .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+  lists.forEach((list) => {
+    const option = document.createElement('option');
+    option.value = list.id;
+    option.textContent = list.name;
+    selectEl.appendChild(option);
+  });
+  const requested = String(selectedListId ?? '').trim();
+  if (requested && lists.some((list) => list.id === requested)) {
+    selectEl.value = requested;
+    return;
+  }
+  selectEl.value = SHOPPING_LIST_EDITOR_INBOX;
 }
 
 function populateBulkEditParentSelect(selectEl, selectedTaskIds = getSelectedTaskIds(), selectedParentId = null) {
@@ -16204,6 +16294,37 @@ function populateBulkEditParentSelect(selectEl, selectedTaskIds = getSelectedTas
   selectEl.disabled = false;
   selectEl.value = selectedParentId ?? '';
   return { mixedScope: false, rootIds };
+}
+
+function populateBulkEditSectionSelect(selectEl, selectedTaskIds = getSelectedTaskIds(), selectedLabel = null) {
+  if (!selectEl) return { mixedScope: false, taskIds: [] };
+  const tasks = selectedTaskIds
+    .map((id) => state.tasks?.[id] ?? null)
+    .filter(Boolean);
+  if (!state.workspace || !tasks.length) {
+    populateSectionSelect(selectEl, { selectedLabel, noneText: 'No section' });
+    selectEl.disabled = true;
+    return { mixedScope: false, taskIds: [] };
+  }
+  const scopeProjectIds = new Set(tasks.map((task) => getTaskEffectiveProjectId(task)));
+  const mixedScope = scopeProjectIds.size > 1;
+  if (mixedScope) {
+    selectEl.innerHTML = '';
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Unavailable for mixed projects/lists';
+    selectEl.appendChild(option);
+    selectEl.disabled = true;
+    selectEl.value = '';
+    return { mixedScope: true, taskIds: tasks.map((task) => task.id) };
+  }
+  const scopeProjectId = scopeProjectIds.values().next().value ?? null;
+  populateSectionSelect(selectEl, {
+    projectId: scopeProjectId,
+    selectedLabel,
+    noneText: 'No section'
+  });
+  return { mixedScope: false, taskIds: tasks.map((task) => task.id), scopeProjectId };
 }
 
 function populateStatusSelect(selectEl, selectedKey = null) {
@@ -18422,7 +18543,8 @@ function renderShoppingPanel() {
       meta.className = 'shopping-mobile-row-meta';
       const itemCount = getShoppingItemsForList(list.id).length;
       const closed = isShoppingListClosed(list);
-      meta.textContent = `${itemCount} item${itemCount === 1 ? '' : 's'}${closed ? ' · complete' : ''}`;
+      const scheduledLabel = formatShoppingListScheduledForLabel(list);
+      meta.textContent = `${itemCount} item${itemCount === 1 ? '' : 's'}${scheduledLabel ? ` · ${scheduledLabel}` : ''}${closed ? ' · complete' : ''}`;
       row.appendChild(name);
       row.appendChild(meta);
       row.addEventListener('click', () => {
@@ -18466,13 +18588,14 @@ function renderShoppingPanel() {
   const inboxTargetLists = activeIsInbox
     ? getShoppingTargetLists().sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')))
     : [];
+  const scheduledLabel = formatShoppingListScheduledForLabel(activeList);
   shoppingListTitle.textContent = activeIsInbox ? 'Shopping Inbox' : activeList.name;
   const items = getShoppingItemsForList(activeList.id)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const complete = isShoppingListComplete(activeList.id);
   shoppingListSubtitle.textContent = activeIsInbox
     ? `${items.length} item${items.length === 1 ? '' : 's'} waiting assignment`
-    : `${items.length} items${complete ? ' · complete' : ''}${activeList.archived ? ' · completed' : ''}`;
+    : `${items.length} items${scheduledLabel ? ` · ${scheduledLabel}` : ''}${complete ? ' · complete' : ''}${activeList.archived ? ' · completed' : ''}`;
   shoppingListMenuButton?.classList.remove('hidden');
   shoppingCompleteBtn?.classList.toggle('hidden', activeIsInbox);
   shoppingAddBtn?.classList.toggle('hidden', activeIsInbox);
@@ -21692,7 +21815,8 @@ function renderTask(task, options = {}) {
   const rowMetaAssignee = node.querySelector('.task-row-meta-assignee');
   const rowMetaStatus = node.querySelector('.task-row-meta-status');
   const toggleBtn = node.querySelector('.task-toggle');
-  const selectButton = node.querySelector('.task-select-button');
+  const selectToggle = node.querySelector('.task-select-toggle');
+  const starButton = node.querySelector('.task-star-button');
   const completeButton = node.querySelector('.task-complete-button');
   const menuButton = node.querySelector('.task-menu-button');
   const menu = node.querySelector('.task-menu');
@@ -21728,17 +21852,18 @@ function renderTask(task, options = {}) {
   item.classList.toggle('is-subtask', depth > 0);
   item.classList.toggle('is-selected', isTaskSelected(task.id));
   item.classList.toggle('workflow-ia-muted', isChecklistRowDisabled);
+  item.classList.toggle('is-important', task.priority === 'high' || task.priority === 'critical');
   item.style.borderLeft = `3px solid ${getStatusColor(statusKey)}`;
   item.setAttribute('aria-disabled', isChecklistRowDisabled ? 'true' : 'false');
-  if (selectButton) {
+  if (selectToggle) {
     const selected = isTaskSelected(task.id);
-    selectButton.textContent = selected ? '★' : '☆';
-    selectButton.classList.toggle('is-active', selected);
-    selectButton.setAttribute('aria-pressed', selected ? 'true' : 'false');
-    selectButton.setAttribute('aria-label', selected ? `Unselect "${task.title}"` : `Select "${task.title}"`);
-    selectButton.title = selected ? 'Unselect task' : 'Select task';
-    selectButton.disabled = isChecklistRowDisabled;
-    selectButton.addEventListener('click', (event) => {
+    selectToggle.textContent = selected ? '☑' : '☐';
+    selectToggle.classList.toggle('is-active', selected);
+    selectToggle.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    selectToggle.setAttribute('aria-label', selected ? `Unselect "${task.title}"` : `Select "${task.title}"`);
+    selectToggle.title = selected ? 'Unselect task' : 'Select task';
+    selectToggle.disabled = isChecklistRowDisabled;
+    selectToggle.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (isChecklistRowDisabled) return;
@@ -21748,6 +21873,23 @@ function renderTask(task, options = {}) {
       } else {
         setSelectedTaskIds([...selectedIds, task.id]);
       }
+    });
+  }
+  if (starButton) {
+    const isImportant = task.priority === 'high' || task.priority === 'critical';
+    starButton.textContent = isImportant ? '★' : '☆';
+    starButton.classList.toggle('is-active', isImportant);
+    starButton.setAttribute('aria-pressed', isImportant ? 'true' : 'false');
+    starButton.setAttribute('aria-label', isImportant ? `Unmark "${task.title}" as important` : `Mark "${task.title}" important`);
+    starButton.title = isImportant ? 'Marked important' : 'Mark important';
+    starButton.disabled = isChecklistRowDisabled;
+    starButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isChecklistRowDisabled) return;
+      const nextPriority = isImportant ? 'medium' : 'high';
+      await updateTaskRecord(task.id, { priority: nextPriority });
+      render();
     });
   }
   if (statusTag) {
@@ -22540,6 +22682,11 @@ function openBulkEditModal() {
   if (bulkEditApplyStatus) bulkEditApplyStatus.checked = false;
   if (bulkEditApplyPriority) bulkEditApplyPriority.checked = false;
   if (bulkEditApplyProject) bulkEditApplyProject.checked = false;
+  if (bulkEditApplySection) {
+    bulkEditApplySection.checked = false;
+    bulkEditApplySection.disabled = false;
+    bulkEditApplySection.title = '';
+  }
   if (bulkEditApplyParent) {
     bulkEditApplyParent.checked = false;
     bulkEditApplyParent.disabled = false;
@@ -22551,6 +22698,11 @@ function openBulkEditModal() {
   if (bulkEditApplyReminder) bulkEditApplyReminder.checked = false;
   populateStatusSelect(bulkEditStatus, getDefaultStatusKey());
   populateProjectSelect(bulkEditProject, '', true);
+  const bulkSectionInfo = populateBulkEditSectionSelect(bulkEditSection, selected);
+  if (bulkEditApplySection && bulkSectionInfo.mixedScope) {
+    bulkEditApplySection.disabled = true;
+    bulkEditApplySection.title = 'Bulk section assignment only works within one project or list at a time.';
+  }
   const bulkParentInfo = populateBulkEditParentSelect(bulkEditParent, selected);
   if (bulkEditApplyParent && bulkParentInfo.mixedScope) {
     bulkEditApplyParent.disabled = true;
@@ -22636,6 +22788,10 @@ function buildBulkEditTemplate() {
   if (bulkEditApplyProject?.checked) {
     template.project_id = bulkEditProject?.value || null;
     fields.add('project_id');
+  }
+  if (bulkEditApplySection?.checked && bulkEditSection && !bulkEditSection.disabled) {
+    template.group_label = bulkEditSection.value ? normalizeTitleInput(bulkEditSection.value) : null;
+    fields.add('group_label');
   }
   if (bulkEditApplyType?.checked) {
     template.type_label = bulkEditType?.value || null;
@@ -23111,12 +23267,15 @@ function openShoppingListModal() {
   if (shoppingListStoreSelect) renderShoppingStoreSelect('');
   shoppingStorePreviousSelection = '';
   closeShoppingStoreModal({ restoreSelection: false });
+  if (shoppingListName) {
+    shoppingListName.value = '';
+  }
   if (shoppingListDate) {
     shoppingListDate.value = new Date().toISOString().slice(0, 10);
   }
   shoppingListItemsInput.value = '';
   shoppingListModal.classList.remove('hidden');
-  shoppingListStoreSelect?.focus();
+  shoppingListName?.focus();
 }
 
 function closeShoppingListModal() {
@@ -23136,6 +23295,22 @@ function closeShoppingItemModal() {
   shoppingItemModal.classList.add('hidden');
 }
 
+function syncTaskEditorShoppingConversion(task) {
+  if (!editorShoppingList || !editorConvertShopping || !editorConvertShoppingNote) return;
+  const activeList = getActiveShoppingList();
+  const preferredListId = activeList && !isShoppingInboxList(activeList) ? activeList.id : null;
+  populateShoppingListSelect(editorShoppingList, preferredListId);
+  const hasSubtasks = Boolean(task && getDescendants(task.id).length);
+  const remoteAvailable = canUseRemoteApi();
+  editorShoppingList.disabled = !task || !remoteAvailable;
+  editorConvertShopping.disabled = !task || hasSubtasks || !remoteAvailable;
+  editorConvertShoppingNote.textContent = !remoteAvailable
+    ? 'Task conversion to shopping requires the server connection.'
+    : hasSubtasks
+    ? 'Only tasks without subtasks can be converted into shopping items.'
+    : 'Converts the task title into a shopping item and removes the task.';
+}
+
 function populateTaskEditor(task) {
   if (!task) return;
   isPopulatingTaskEditor = true;
@@ -23147,7 +23322,15 @@ function populateTaskEditor(task) {
     if (editorProject) {
       populateProjectSelect(editorProject, task.project_id ?? '', true);
     }
+    if (editorSection) {
+      populateSectionSelect(editorSection, {
+        projectId: getTaskEffectiveProjectId(task),
+        selectedLabel: task.group_label ?? null,
+        noneText: 'No section'
+      });
+    }
     populateParentSelect(editorParent, task.id, task.parent_id ?? null);
+    syncTaskEditorShoppingConversion(task);
     if (editorAssigneeLabel) editorAssigneeLabel.value = task.assignee_label ?? '';
     populateAssigneeSelect(
       editorAssignee,
@@ -25121,6 +25304,21 @@ shoppingListStoreSelect?.addEventListener('change', () => {
     return;
   }
   shoppingStorePreviousSelection = shoppingListStoreSelect.value || '';
+  if (shoppingListName && !normalizeTitleInput(shoppingListName.value)) {
+    shoppingListName.value = buildShoppingListNameSuggestion({
+      store: shoppingListStoreSelect.value,
+      dateValue: shoppingListDate?.value ?? ''
+    });
+  }
+});
+
+shoppingListDate?.addEventListener('change', () => {
+  if (shoppingListName && !normalizeTitleInput(shoppingListName.value)) {
+    shoppingListName.value = buildShoppingListNameSuggestion({
+      store: shoppingListStoreSelect?.value ?? '',
+      dateValue: shoppingListDate?.value ?? ''
+    });
+  }
 });
 
 shoppingListParse?.addEventListener('click', () => {
@@ -25130,15 +25328,26 @@ shoppingListParse?.addEventListener('click', () => {
     ? items.join('\n')
     : normalizeShoppingItems(shoppingListItemsInput.value);
   const currentStore = shoppingListStoreSelect?.value ?? '';
+  let resolvedStore = currentStore;
+  let resolvedDate = shoppingListDate?.value ?? '';
   if (!currentStore && parsed.title) {
     const parsedMeta = parseStoreAndDateFromTitle(parsed.title);
     if (parsedMeta.store) {
       renderShoppingStoreSelect(parsedMeta.store);
       shoppingStorePreviousSelection = shoppingListStoreSelect?.value || '';
+      resolvedStore = shoppingListStoreSelect?.value || parsedMeta.store;
     }
     if (parsedMeta.date && shoppingListDate) {
       shoppingListDate.value = parsedMeta.date;
+      resolvedDate = shoppingListDate.value;
     }
+  }
+  if (shoppingListName && !normalizeTitleInput(shoppingListName.value)) {
+    shoppingListName.value = buildShoppingListNameSuggestion({
+      parsedTitle: parsed.title,
+      store: resolvedStore,
+      dateValue: resolvedDate
+    });
   }
 });
 
@@ -25166,6 +25375,7 @@ shoppingListForm?.addEventListener('submit', async (event) => {
   const items = parsed.items ?? [];
   let store = shoppingListStoreSelect?.value?.trim() ?? '';
   let dateValue = shoppingListDate?.value ?? '';
+  const enteredName = normalizeTitleInput(shoppingListName?.value ?? '');
   if ((!store || !dateValue) && parsed.title) {
     const parsedMeta = parseStoreAndDateFromTitle(parsed.title);
     if (!store && parsedMeta.store) store = parsedMeta.store;
@@ -25184,10 +25394,18 @@ shoppingListForm?.addEventListener('submit', async (event) => {
   if (store) {
     store = normalizeTitleInput(store);
   }
-  const dateLabel = formatShortDateFromInput(dateValue);
-  const name = store ? `${store} ${dateLabel}` : dateLabel;
+  const name = buildShoppingListNameSuggestion({
+    currentName: enteredName,
+    parsedTitle: parsed.title,
+    store,
+    dateValue
+  });
   if (!name) return;
-  const created = await createShoppingListRecord({ name });
+  const created = await createShoppingListRecord({
+    name,
+    store_name: store || null,
+    scheduled_for: dateValue || null
+  });
   if (!created) return;
   if (items.length) {
     await createShoppingItemsRecord(created.id, items.map(item => ({ name: item })));
@@ -25278,8 +25496,7 @@ shoppingCompleteBtn?.addEventListener('click', async () => {
 });
 
 settingsOpen?.addEventListener('click', () => {
-  accountMenu?.classList.add('hidden');
-  openMenu = null;
+  closeAccountMenu();
   openSettings();
 });
 settingsTabButtons.forEach((button) => {
@@ -25489,20 +25706,17 @@ automationCopyGuide?.addEventListener('click', async () => {
   }
 });
 profileOpen?.addEventListener('click', () => {
-  accountMenu?.classList.add('hidden');
-  openMenu = null;
+  closeAccountMenu();
   openProfile();
 });
 profilePageBack?.addEventListener('click', closeProfile);
 profilePageSave?.addEventListener('click', saveProfilePage);
 accountLogout?.addEventListener('click', () => {
-  accountMenu?.classList.add('hidden');
-  openMenu = null;
+  closeAccountMenu();
   handleAccountAuthAction();
 });
 accountAdmin?.addEventListener('click', () => {
-  accountMenu?.classList.add('hidden');
-  openMenu = null;
+  closeAccountMenu();
   openAdminConsole();
 });
 adminPageBack?.addEventListener('click', closeAdminConsole);
@@ -25562,6 +25776,7 @@ editorTags?.addEventListener('keydown', (event) => {
 });
 editorPriority?.addEventListener('change', () => scheduleTaskEditorAutosave('priority', 300));
 editorProject?.addEventListener('change', () => scheduleTaskEditorAutosave('project', 300));
+editorSection?.addEventListener('change', () => scheduleTaskEditorAutosave('section', 300));
 editorAssignee?.addEventListener('change', () => {
   setAssigneeLabelInputVisibility(editorAssignee, editorAssigneeLabelRow, editorAssigneeLabel);
   scheduleTaskEditorAutosave('assignee', 300);
@@ -25689,6 +25904,46 @@ editorAddDependencyBtn?.addEventListener('click', async () => {
   }
 });
 
+editorConvertShopping?.addEventListener('click', async () => {
+  if (!activeTaskId) return;
+  const task = state.tasks[activeTaskId];
+  if (!task) return;
+  if (getDescendants(task.id).length) {
+    alert('Only tasks without subtasks can be converted into shopping items.');
+    return;
+  }
+  let targetListId = editorShoppingList?.value || SHOPPING_LIST_EDITOR_INBOX;
+  if (!targetListId || targetListId === SHOPPING_LIST_EDITOR_INBOX) {
+    const inbox = await ensureShoppingInboxListRecord();
+    targetListId = inbox?.id ?? null;
+  }
+  if (!targetListId) {
+    alert('Choose a shopping list first.');
+    return;
+  }
+  const confirmed = confirm(`Convert "${task.title}" into a shopping item? This removes it from the task list.`);
+  if (!confirmed) return;
+  try {
+    const converted = await convertTaskToShoppingItemRecord(task.id, targetListId);
+    if (!converted?.shopping_item) {
+      throw new Error('Unable to convert task right now.');
+    }
+    state.ui = state.ui ?? {};
+    state.ui.activeShoppingListId = targetListId;
+    setActiveView('shopping');
+    if (isMobileViewport()) {
+      setMobileShoppingPanelMode('details');
+    } else {
+      setShoppingPageMode('details');
+    }
+    closeTaskEditor();
+    render();
+    showToast({ type: 'success', message: 'Task converted to shopping item.' });
+  } catch (err) {
+    alert(err?.message ?? 'Unable to convert task right now.');
+  }
+});
+
 taskEditorForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!activeTaskId) return;
@@ -25706,6 +25961,7 @@ taskEditorForm?.addEventListener('submit', async (event) => {
     if (!confirmed) return;
   }
   const nextParentId = editorParent?.value || null;
+  const nextGroupLabel = editorSection?.value ? normalizeTitleInput(editorSection.value) : null;
   const parentChanged = (task.parent_id ?? null) !== (nextParentId ?? null);
   const description = getNotesContent();
   const typeLabel = editorType.value ? editorType.value.trim() : null;
@@ -25723,6 +25979,7 @@ taskEditorForm?.addEventListener('submit', async (event) => {
     type_label: typeLabel,
     tags,
     title,
+    group_label: nextGroupLabel,
     description_md: description,
     priority: editorPriority.value,
     assignee_user_id: assigneeUserId,
@@ -26043,6 +26300,7 @@ newProjectBtn?.addEventListener('click', async () => {
   if (!project) return;
   setActiveTaskFilter(project.id);
   clearActiveWorkflowChecklistInstanceId();
+  setActiveView('projects');
   render();
 });
 

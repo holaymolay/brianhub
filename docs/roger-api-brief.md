@@ -135,6 +135,7 @@ General authenticated routes:
 - `POST /shopping-items`
 - `PATCH /shopping-items/:id`
 - `DELETE /shopping-items/:id`
+- `POST /tasks/:id/convert-to-shopping-item`
 - `GET /notice-types?workspace_id=<uuid>`
 - `POST /notice-types`
 - `PATCH /notice-types/:id`
@@ -209,7 +210,17 @@ Minimal shopping list create:
 {
   "workspace_id": "00000000-0000-4000-8000-000000000001",
   "name": "Safeway run",
+  "store_name": "Safeway",
+  "scheduled_for": "2026-03-21",
   "archived": false
+}
+```
+
+Convert a leaf task into a shopping item:
+
+```json
+{
+  "list_id": "<shopping-list-id>"
 }
 ```
 

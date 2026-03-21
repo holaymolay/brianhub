@@ -40,6 +40,8 @@ test('shared BrianHub API docs module documents the current resource model', () 
   assert.match(script, /group_label/);
   assert.match(script, /Do not model sections as parent tasks or subtasks/);
   assert.match(script, /GET \/shopping-lists\?workspace_id=<uuid>/);
+  assert.match(script, /scheduled_for/);
+  assert.match(script, /POST \/tasks\/:id\/convert-to-shopping-item/);
   assert.match(script, /GET \/projects\?workspace_id=<uuid>/);
   assert.match(script, /GET \/notice-types\?workspace_id=<uuid>/);
   assert.match(script, /POST \/sync\/pull/);

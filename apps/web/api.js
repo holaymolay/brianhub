@@ -503,6 +503,13 @@ export function deleteShoppingItem(id) {
   return request(`/shopping-items/${id}`, { method: 'DELETE' });
 }
 
+export function convertTaskToShoppingItem(id, payload) {
+  return request(`/tasks/${id}/convert-to-shopping-item`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
 export function listTasks(workspaceId) {
   return request(`/tasks?workspace_id=${encodeURIComponent(workspaceId)}`);
 }

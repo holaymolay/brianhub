@@ -932,7 +932,8 @@
         <div class="task-row">
           <div class="task-main">
             <div class="task-title-row">
-              <button class="task-select-button icon-button" type="button" title="Select task" aria-label="Select task" aria-pressed="false">☆</button>
+              <button class="task-select-toggle" type="button" title="Select task" aria-label="Select task" aria-pressed="false">☐</button>
+              <button class="task-star-button" type="button" title="Mark important" aria-label="Mark important" aria-pressed="false">☆</button>
               <span class="task-drag-handle" aria-label="Drag task" title="Drag task"></span>
               <button class="task-complete-button icon-button" type="button" title="Mark complete">✓</button>
               <button class="task-toggle icon-button" type="button" title="Toggle subtasks">▾</button>
@@ -2004,6 +2005,10 @@
             </summary>
             <div class="task-editor-accordion-content">
               <label>
+                Section
+                <select id="editor-section"></select>
+              </label>
+              <label>
                 Subtask of
                 <select id="editor-parent"></select>
               </label>
@@ -2027,6 +2032,19 @@
                 </div>
                 <div id="editor-dependency-list" class="task-editor-deps-list"></div>
               </div>
+              <div class="task-editor-convert">
+                <div class="task-editor-deps-header">
+                  <span>Convert</span>
+                </div>
+                <label>
+                  Shopping list
+                  <select id="editor-shopping-list"></select>
+                </label>
+                <div class="task-editor-convert-actions">
+                  <button id="editor-convert-shopping" type="button" class="subtle-button">Convert to shopping item</button>
+                  <span id="editor-convert-shopping-note" class="sidebar-note">Moves this task into shopping and removes it from the task list.</span>
+                </div>
+              </div>
             </div>
           </details>
           <div class="task-editor-actions span-2">
@@ -2046,6 +2064,10 @@
       <div class="modal-card">
         <h2>New Shopping List</h2>
         <form id="shopping-list-form">
+          <label>
+            Title
+            <input id="shopping-list-name" type="text" placeholder="Weekend Costco run" />
+          </label>
           <label>
             Store
             <select id="shopping-list-store-select">
@@ -2140,6 +2162,10 @@
           <label class="bulk-edit-field">
             <span><input id="bulk-edit-apply-project" type="checkbox" /> Project</span>
             <select id="bulk-edit-project"></select>
+          </label>
+          <label class="bulk-edit-field">
+            <span><input id="bulk-edit-apply-section" type="checkbox" /> Section</span>
+            <select id="bulk-edit-section"></select>
           </label>
           <label class="bulk-edit-field">
             <span><input id="bulk-edit-apply-parent" type="checkbox" /> Parent task</span>

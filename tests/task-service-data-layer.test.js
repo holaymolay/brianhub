@@ -8,14 +8,17 @@ import {
   createUser,
   createWorkspaceMembership,
   createProject,
+  createShoppingList,
   createStatus,
   createTaskType,
+  listShoppingItems,
   listTasks,
   getTask,
   updateTask,
   searchTasks,
   reparentTask,
-  applyTaskCheckIn
+  applyTaskCheckIn,
+  convertTaskToShoppingItem
 } from '../services/api/src/taskService.js';
 import { TaskStatus } from '../packages/core/taskState.js';
 
@@ -147,6 +150,44 @@ test('task assignment enforces workspace membership', async () => {
       }),
       /Assignee user must be a member of this workspace/
     );
+  });
+});
+
+test('shopping lists persist scheduled dates', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Shopping workspace', type: 'personal' });
+    const created = await createShoppingList(db, {
+      workspace_id: workspace.id,
+      name: 'Weekend Costco run',
+      scheduled_for: '2026-03-21'
+    });
+    assert.equal(created.name, 'Weekend Costco run');
+    assert.equal(created.scheduled_for, '2026-03-21');
+  });
+});
+
+test('task conversion moves a leaf task into shopping items and deletes the task', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Convert workspace', type: 'personal' });
+    const list = await createShoppingList(db, {
+      workspace_id: workspace.id,
+      name: 'Errands',
+      scheduled_for: '2026-03-22'
+    });
+    const task = await createTask(db, {
+      workspace_id: workspace.id,
+      title: 'Buy hand wipes'
+    });
+
+    const converted = await convertTaskToShoppingItem(db, task.id, { list_id: list.id });
+    assert.equal(converted.shopping_item.name, 'Buy hand wipes');
+    assert.deepEqual(converted.deleted_task.ids, [task.id]);
+
+    const fetchedTask = await getTask(db, task.id);
+    assert.equal(fetchedTask, null);
+
+    const items = await listShoppingItems(db, workspace.id);
+    assert.equal(items.some((item) => item.name === 'Buy hand wipes' && item.list_id === list.id), true);
   });
 });
 

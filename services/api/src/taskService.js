@@ -66,6 +66,26 @@ function normalizeAssigneeLabel(value) {
   return text || null;
 }
 
+function normalizeDateOnly(value, fieldName = 'date') {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  const date = new Date(`${text}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return text;
+}
+
+function normalizeShoppingStoreName(value) {
+  if (value === undefined) return undefined;
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
 function normalizeSettingsObject(value) {
   if (value === undefined) return undefined;
   if (value === null) return {};
@@ -1250,14 +1270,16 @@ export async function createShoppingList(db, data, clientId = null) {
     id,
     workspace_id: workspaceId,
     name: data.name,
+    store_name: normalizeShoppingStoreName(data.store_name) ?? null,
+    scheduled_for: normalizeDateOnly(data.scheduled_for, 'scheduled_for') ?? null,
     archived: data.archived ? 1 : 0,
     created_at: timestamp,
     updated_at: timestamp
   };
   await run(
     db,
-    'INSERT INTO shopping_lists (id, workspace_id, name, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [list.id, list.workspace_id, list.name, list.archived, list.created_at, list.updated_at]
+    'INSERT INTO shopping_lists (id, workspace_id, name, store_name, scheduled_for, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [list.id, list.workspace_id, list.name, list.store_name, list.scheduled_for, list.archived, list.created_at, list.updated_at]
   );
   await recordChange(db, list.workspace_id, 'shopping_list', id, 'create', list, clientId);
   return getShoppingList(db, id);
@@ -1270,13 +1292,19 @@ export async function updateShoppingList(db, id, patch, clientId = null) {
   const next = {
     ...existing,
     name: patch.name ?? existing.name,
+    store_name: patch.store_name !== undefined
+      ? normalizeShoppingStoreName(patch.store_name)
+      : existing.store_name ?? null,
+    scheduled_for: patch.scheduled_for !== undefined
+      ? normalizeDateOnly(patch.scheduled_for, 'scheduled_for')
+      : existing.scheduled_for ?? null,
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived ?? 0,
     updated_at: nowIso()
   };
   await run(
     db,
-    'UPDATE shopping_lists SET name = ?, archived = ?, updated_at = ? WHERE id = ?',
-    [next.name, next.archived, next.updated_at, listId]
+    'UPDATE shopping_lists SET name = ?, store_name = ?, scheduled_for = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.name, next.store_name, next.scheduled_for, next.archived, next.updated_at, listId]
   );
   await recordChange(db, existing.workspace_id, 'shopping_list', listId, 'update', patch, clientId);
   return getShoppingList(db, listId);
@@ -1432,6 +1460,75 @@ export async function deleteShoppingItem(db, id, clientId = null) {
     await recordChange(db, list.workspace_id, 'shopping_item', itemId, 'delete', {}, clientId);
   }
   return { deleted: 1 };
+}
+
+export async function convertTaskToShoppingItem(db, id, data = {}, clientId = null) {
+  const taskId = assertUuid(id, 'task id');
+  const task = await getTask(db, taskId);
+  if (!task) return null;
+
+  const listId = assertUuid(data?.list_id, 'list_id');
+  const list = await getShoppingList(db, listId);
+  if (!list) {
+    throw new Error('Shopping list not found');
+  }
+  if (list.workspace_id !== task.workspace_id) {
+    throw new Error('Task and shopping list must belong to the same workspace');
+  }
+
+  const childRow = await getRow(
+    db,
+    'SELECT COUNT(*) AS child_count FROM tasks WHERE parent_id = ?',
+    [taskId]
+  );
+  if (Number(childRow?.child_count ?? 0) > 0) {
+    throw new Error('Only tasks without subtasks can be converted to shopping items');
+  }
+
+  const timestamp = nowIso();
+  const maxRow = await getRow(
+    db,
+    'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
+    [listId]
+  );
+  const nextSort = Number(maxRow?.max_sort ?? 0) + 1;
+  const itemId = ensureUuid(data?.shopping_item_id, 'shopping_item id');
+  const shoppingItem = {
+    id: itemId,
+    list_id: listId,
+    name: task.title,
+    is_checked: 0,
+    sort_order: nextSort,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      'INSERT INTO shopping_list_items (id, list_id, name, is_checked, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        shoppingItem.id,
+        shoppingItem.list_id,
+        shoppingItem.name,
+        shoppingItem.is_checked,
+        shoppingItem.sort_order,
+        shoppingItem.created_at,
+        shoppingItem.updated_at
+      ]
+    );
+    await recordChange(tx, list.workspace_id, 'shopping_item', shoppingItem.id, 'create', shoppingItem, clientId);
+    await run(tx, 'DELETE FROM tasks WHERE id = ?', [taskId]);
+    await recordChange(tx, task.workspace_id, 'task', taskId, 'delete', { ids: [taskId] }, clientId);
+  });
+
+  return {
+    shopping_item: await getShoppingItem(db, shoppingItem.id),
+    deleted_task: {
+      id: taskId,
+      ids: [taskId]
+    }
+  };
 }
 
 export async function listNotices(db, workspaceId) {

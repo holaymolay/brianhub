@@ -271,6 +271,69 @@ test('sync push returns 409 conflict with server version for stale task mutation
   assert.equal(conflictBody.error.conflict.server_version.updated_at, createdTask.updated_at);
 });
 
+test('shopping lists persist scheduled_for and tasks can convert into shopping items', async () => {
+  const workspaceRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    payload: {
+      name: 'Shopping convert workspace',
+      type: 'personal',
+      org_id: '00000000-0000-4000-8000-000000000001'
+    }
+  });
+  assert.equal(workspaceRes.statusCode, 200);
+  const workspaceId = workspaceRes.json().id;
+
+  const listRes = await server.inject({
+    method: 'POST',
+    url: '/shopping-lists',
+    payload: {
+      workspace_id: workspaceId,
+      name: 'Weekend run',
+      scheduled_for: '2026-03-21'
+    }
+  });
+  assert.equal(listRes.statusCode, 200);
+  const list = listRes.json();
+  assert.equal(list.scheduled_for, '2026-03-21');
+
+  const taskRes = await server.inject({
+    method: 'POST',
+    url: '/tasks',
+    payload: {
+      workspace_id: workspaceId,
+      title: 'Buy hand wipes'
+    }
+  });
+  assert.equal(taskRes.statusCode, 200);
+  const task = taskRes.json();
+
+  const convertRes = await server.inject({
+    method: 'POST',
+    url: `/tasks/${task.id}/convert-to-shopping-item`,
+    payload: {
+      list_id: list.id
+    }
+  });
+  assert.equal(convertRes.statusCode, 200);
+  const converted = convertRes.json();
+  assert.equal(converted.shopping_item.name, 'Buy hand wipes');
+  assert.deepEqual(converted.deleted_task.ids, [task.id]);
+
+  const fetchedTaskRes = await server.inject({
+    method: 'GET',
+    url: `/tasks/${task.id}`
+  });
+  assert.equal(fetchedTaskRes.statusCode, 404);
+
+  const itemsRes = await server.inject({
+    method: 'GET',
+    url: `/shopping-items?workspace_id=${workspaceId}`
+  });
+  assert.equal(itemsRes.statusCode, 200);
+  assert.equal(itemsRes.json().some((item) => item.name === 'Buy hand wipes' && item.list_id === list.id), true);
+});
+
 test('invite accept creates credentials and session, then login/logout cycle works', async () => {
   const inviteeEmail = 'new.user@example.com';
   const inviteeName = 'New User';

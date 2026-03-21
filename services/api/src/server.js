@@ -45,6 +45,7 @@ import {
   listShoppingItems,
   updateShoppingItem,
   deleteShoppingItem,
+  convertTaskToShoppingItem,
   listStatuses,
   createStatus,
   updateStatus,
@@ -1560,11 +1561,15 @@ server.get('/shopping-lists', async (request) => {
 });
 
 server.post('/shopping-lists', async (request, reply) => {
-  const { workspace_id, name } = request.body ?? {};
+  const { workspace_id, name, store_name, scheduled_for } = request.body ?? {};
   if (!workspace_id || !name) {
     return reply.code(400).send({ error: 'workspace_id and name required' });
   }
-  return await createShoppingList(db, { workspace_id, name, archived: request.body?.archived }, request.headers['x-client-id'] ?? null);
+  return await createShoppingList(
+    db,
+    { workspace_id, name, store_name, scheduled_for, archived: request.body?.archived },
+    request.headers['x-client-id'] ?? null
+  );
 });
 
 server.patch('/shopping-lists/:id', async (request, reply) => {
@@ -1612,6 +1617,29 @@ server.delete('/shopping-items/:id', async (request, reply) => {
   return result;
 });
 
+server.post('/tasks/:id/convert-to-shopping-item', async (request, reply) => {
+  try {
+    const converted = await convertTaskToShoppingItem(
+      db,
+      request.params.id,
+      request.body ?? {},
+      request.headers['x-client-id'] ?? null
+    );
+    if (!converted) {
+      return reply.code(404).send({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'not found',
+          requestId: request.id
+        }
+      });
+    }
+    return converted;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
 server.post('/tasks', async (request, reply) => {
   const data = request.body ?? {};
   if (!data.workspace_id || !data.title) {
@@ -1637,7 +1665,15 @@ server.post('/tasks', async (request, reply) => {
 
 server.get('/tasks/:id', async (request, reply) => {
   const task = await getTask(db, request.params.id);
-  if (!task) return reply.code(404).send({ error: 'not found' });
+  if (!task) {
+    return reply.code(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'not found',
+        requestId: request.id
+      }
+    });
+  }
   return task;
 });
 

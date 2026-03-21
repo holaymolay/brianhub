@@ -13,6 +13,8 @@ const integerSchema = { type: 'integer' };
 const nullableIntegerSchema = { anyOf: [integerSchema, { type: 'null' }] };
 const dateTimeSchema = { type: 'string', format: 'date-time' };
 const nullableDateTimeSchema = { anyOf: [dateTimeSchema, { type: 'null' }] };
+const dateOnlySchema = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
+const nullableDateOnlySchema = { anyOf: [dateOnlySchema, { type: 'null' }] };
 
 function nonEmptyString(maxLength = 512) {
   return { type: 'string', minLength: 1, maxLength };
@@ -1024,6 +1026,8 @@ const routeSchemas = new Map([
         id: uuidSchema,
         workspace_id: uuidSchema,
         name: nonEmptyString(256),
+        store_name: nullableString(256),
+        scheduled_for: nullableDateOnlySchema,
         archived: boolishSchema
       }
     }
@@ -1040,6 +1044,8 @@ const routeSchemas = new Map([
       additionalProperties: false,
       properties: {
         name: nullableString(256),
+        store_name: nullableString(256),
+        scheduled_for: nullableDateOnlySchema,
         archived: boolishSchema
       }
     }
@@ -1118,6 +1124,22 @@ const routeSchemas = new Map([
       additionalProperties: false,
       required: ['id'],
       properties: { id: uuidSchema }
+    }
+  }],
+  ['POST /tasks/:id/convert-to-shopping-item', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['list_id'],
+      properties: {
+        list_id: uuidSchema
+      }
     }
   }],
   ['POST /tasks', {

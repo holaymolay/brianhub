@@ -128,6 +128,8 @@ export function buildBrianhubApiHelpMarkdown({ origin = 'https://brianhub.com', 
     formatJsonBlock({
       workspace_id: currentWorkspaceId,
       name: 'Safeway run',
+      store_name: 'Safeway',
+      scheduled_for: '2026-03-21',
       archived: false
     }),
     '',
@@ -149,6 +151,12 @@ export function buildBrianhubApiHelpMarkdown({ origin = 'https://brianhub.com', 
           is_checked: false
         }
       ]
+    }),
+    '',
+    'Convert a leaf task into a shopping item:',
+    '- `POST /tasks/:id/convert-to-shopping-item`',
+    formatJsonBlock({
+      list_id: '<shopping-list-id>'
     }),
     '',
     '## Notice types',

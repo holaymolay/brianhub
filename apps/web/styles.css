@@ -2370,6 +2370,27 @@ body.api-help-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #31445f #0f141c;
+}
+
+#task-tree::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+#task-tree::-webkit-scrollbar-track {
+  background: #0f141c;
+}
+
+#task-tree::-webkit-scrollbar-thumb {
+  background: #31445f;
+  border-radius: 999px;
+  border: 2px solid #0f141c;
+}
+
+#task-tree::-webkit-scrollbar-thumb:hover {
+  background: #3f587c;
 }
 
 #task-tree.task-tree-calendar-view {
@@ -5278,6 +5299,15 @@ button:hover { opacity: 0.9; }
   background: #0f141c;
 }
 
+.task-editor-convert {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: #0f141c;
+}
+
 .task-editor-deps-header {
   display: flex;
   align-items: center;
@@ -5292,6 +5322,11 @@ button:hover { opacity: 0.9; }
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.5rem;
+}
+
+.task-editor-convert-actions {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .task-editor-followup {
@@ -5562,23 +5597,54 @@ button:hover { opacity: 0.9; }
   background: rgba(79, 174, 255, 0.08);
 }
 
-.task-select-button {
-  color: rgba(233, 237, 245, 0.56);
-  font-size: 0.95rem;
+.task-select-toggle,
+.task-star-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
   line-height: 1;
-  transition: color 140ms ease, transform 140ms ease;
+  cursor: pointer;
+  transition: color 140ms ease, transform 140ms ease, opacity 140ms ease;
 }
 
-.task-select-button:hover {
-  color: rgba(255, 217, 102, 0.9);
+.task-select-toggle:disabled,
+.task-star-button:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 
-.task-select-button.is-active {
+.task-select-toggle {
+  color: rgba(210, 221, 239, 0.62);
+  font-size: 0.88rem;
+}
+
+.task-select-toggle:hover,
+.task-select-toggle.is-active {
+  color: #9ec6ff;
+}
+
+.task-item.is-selected .task-select-toggle {
+  color: #9ec6ff;
+}
+
+.task-star-button {
+  color: rgba(255, 217, 102, 0.42);
+  font-size: 1rem;
+}
+
+.task-star-button:hover,
+.task-star-button.is-active,
+.task-item.is-important .task-star-button {
   color: #ffd966;
 }
 
-.task-item.is-selected .task-select-button {
-  color: #ffd966;
+.task-star-button:hover {
+  transform: translateY(-1px);
 }
 
 #task-tree.task-selection-active .task-item,

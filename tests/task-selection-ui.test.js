@@ -7,25 +7,34 @@ function readRepoFile(relativePath) {
   return readFileSync(resolve(process.cwd(), relativePath), 'utf8');
 }
 
-test('task row template includes a dedicated selection star button', () => {
+test('task row template includes separate bulk-select and importance controls', () => {
   const html = readRepoFile('apps/web/index.html');
-  assert.match(html, /class="task-select-button icon-button"/);
+  assert.match(html, /class="task-select-toggle"/);
+  assert.match(html, /class="task-star-button"/);
   assert.match(html, /aria-label="Select task"/);
+  assert.match(html, /aria-label="Mark important"/);
+  assert.match(html, />☐<\/button>/);
   assert.match(html, />☆<\/button>/);
 });
 
-test('task renderer wires the selection star to bulk task selection state', () => {
+test('task renderer wires checkbox selection separately from the importance star', () => {
   const script = readRepoFile('apps/web/app.js');
-  assert.match(script, /const selectButton = node\.querySelector\('\.task-select-button'\);/);
-  assert.match(script, /selectButton\.textContent = selected \? '★' : '☆';/);
-  assert.match(script, /selectButton\.classList\.toggle\('is-active', selected\);/);
+  assert.match(script, /const selectToggle = node\.querySelector\('\.task-select-toggle'\);/);
+  assert.match(script, /const starButton = node\.querySelector\('\.task-star-button'\);/);
+  assert.match(script, /selectToggle\.textContent = selected \? '☑' : '☐';/);
+  assert.match(script, /selectToggle\.classList\.toggle\('is-active', selected\);/);
   assert.match(script, /setSelectedTaskIds\(\[\.\.\.selectedIds, task\.id\]\);/);
   assert.match(script, /setSelectedTaskIds\(selectedIds\.filter\(id => id !== task\.id\)\);/);
+  assert.match(script, /const isImportant = task\.priority === 'high' \|\| task\.priority === 'critical';/);
+  assert.match(script, /const nextPriority = isImportant \? 'medium' : 'high';/);
+  assert.match(script, /await updateTaskRecord\(task\.id, \{ priority: nextPriority \}\);/);
 });
 
-test('task selection star has dedicated visual styling', () => {
+test('task selection checkbox and importance star have distinct visual styling', () => {
   const css = readRepoFile('apps/web/styles.css');
-  assert.match(css, /\.task-select-button \{/);
-  assert.match(css, /\.task-select-button\.is-active \{/);
-  assert.match(css, /\.task-item\.is-selected \.task-select-button \{/);
+  assert.match(css, /\.task-select-toggle,/);
+  assert.match(css, /\.task-select-toggle:hover,/);
+  assert.match(css, /\.task-star-button \{/);
+  assert.match(css, /\.task-star-button:hover,/);
+  assert.match(css, /\.task-item\.is-important \.task-star-button \{/);
 });
