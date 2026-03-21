@@ -1180,6 +1180,7 @@ taskCreateMenu?.addEventListener('click', async (event) => {
     const name = prompt('Section name');
     if (!name) return;
     setTaskGroupMode('section');
+    queueUserSettingsSave();
     createSectionRecord(name);
     render();
   }
@@ -1355,6 +1356,7 @@ taskSortSelect?.addEventListener('change', () => {
 
 taskGroupSelect?.addEventListener('change', () => {
   setTaskGroupMode(taskGroupSelect.value);
+  queueUserSettingsSave();
   render();
 });
 
@@ -1464,6 +1466,7 @@ shoppingFilterMenu?.addEventListener('click', (event) => {
 
 taskViewSelect?.addEventListener('change', () => {
   setTaskView(taskViewSelect.value);
+  queueUserSettingsSave();
   render();
 });
 
@@ -1569,7 +1572,6 @@ newTaskListBtn?.addEventListener('click', async () => {
   const created = await createProjectRecord(nextName, { kind: PROJECT_KIND_LIST });
   if (!created?.id) return;
   setActiveTaskFilter(created.id);
-  setTaskGroupMode('section');
   clearActiveWorkflowChecklistInstanceId();
   setActiveView('tasks');
   render();
@@ -1880,11 +1882,13 @@ mobileTaskToolsSort?.addEventListener('change', () => {
 
 mobileTaskToolsGroup?.addEventListener('change', () => {
   setTaskGroupMode(mobileTaskToolsGroup.value || 'none');
+  queueUserSettingsSave();
   render();
 });
 
 mobileTaskToolsView?.addEventListener('change', () => {
   setTaskView(mobileTaskToolsView.value || 'list');
+  queueUserSettingsSave();
   render();
 });
 
@@ -1892,6 +1896,7 @@ mobileTaskToolsAddSection?.addEventListener('click', () => {
   const name = prompt('Section name');
   if (!name) return;
   setTaskGroupMode('section');
+  queueUserSettingsSave();
   createSectionRecord(name);
   render();
 });
@@ -15900,7 +15905,6 @@ function renderTaskSidebarList() {
     selectBtn.textContent = list.name;
     selectBtn.addEventListener('click', () => {
       setActiveTaskFilter(list.id);
-      setTaskGroupMode('section');
       clearActiveWorkflowChecklistInstanceId();
       setActiveView('tasks');
       render();
