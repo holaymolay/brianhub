@@ -115,3 +115,8 @@ test('mobile workspace management is a simple workspace switcher', () => {
   const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
   assert.match(css, /\.workspace-switch-button \{/);
 });
+
+test('mobile task title taps open the task editor instead of inline rename', () => {
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  assert.match(script, /titleEl\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) \{\s*openTaskEditor\(task\.id\);\s*return;\s*\}[\s\S]*beginInlineTaskEdit\(task, item, titleEl\);/s);
+});

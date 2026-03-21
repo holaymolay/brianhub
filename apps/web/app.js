@@ -21842,6 +21842,10 @@ function renderTask(task, options = {}) {
     const selected = getSelectedTaskIds();
     if (selected.length) return;
     event.stopPropagation();
+    if (isMobileViewport()) {
+      openTaskEditor(task.id);
+      return;
+    }
     beginInlineTaskEdit(task, item, titleEl);
   });
   item.dataset.status = statusKey;
