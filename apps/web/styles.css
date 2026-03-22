@@ -4162,23 +4162,34 @@ button:hover { opacity: 0.9; }
 
 .shopping-item-drag-handle {
   border: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 0.2rem 0.3rem;
-  font-size: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  width: 2.6rem;
+  min-width: 2.6rem;
+  height: 2.6rem;
+  min-height: 2.6rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.8rem;
+  font-size: 1.1rem;
   line-height: 1;
-  letter-spacing: -0.12rem;
+  letter-spacing: -0.08rem;
   cursor: grab;
   flex: 0 0 auto;
   touch-action: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .shopping-item-drag-handle:hover,
 .shopping-item-drag-handle:focus-visible {
-  color: var(--text);
+  background: rgba(132, 173, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(132, 173, 255, 0.35);
 }
 
 .shopping-item-drag-handle:active {
+  background: rgba(132, 173, 255, 0.18);
   cursor: grabbing;
 }
 
@@ -6898,5 +6909,13 @@ body.auth-gated #auth-cancel-invite {
 
   .shopping-list-item-row-actions > button {
     flex: 0 0 auto;
+  }
+
+  .shopping-item-drag-handle {
+    width: 2.9rem;
+    min-width: 2.9rem;
+    height: 2.9rem;
+    min-height: 2.9rem;
+    margin-right: -0.15rem;
   }
 }

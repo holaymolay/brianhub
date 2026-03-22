@@ -43,6 +43,8 @@ test('shopping item drag target uses a full-row highlight', () => {
   assert.ok(styles.includes('.shopping-item.is-drop-target'));
   assert.ok(styles.includes('.shopping-item.drop-before::before'));
   assert.ok(styles.includes('.shopping-item.drop-after::after'));
+  assert.ok(styles.includes('min-width: 2.6rem;'));
+  assert.ok(styles.includes('min-height: 2.6rem;'));
 });
 
 test('shopping item list reassignment is supported in service and schema layers', () => {
