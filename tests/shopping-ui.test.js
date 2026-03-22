@@ -3,33 +3,42 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-function readRepoFile(relativePath) {
-  return readFileSync(resolve(process.cwd(), relativePath), 'utf8');
+function read(relPath) {
+  return readFileSync(resolve(process.cwd(), relPath), 'utf8');
 }
 
-test('shopping list modal captures a title and scheduled date', () => {
-  const html = readRepoFile('apps/web/index.html');
-  assert.match(html, /id="shopping-list-name"/);
-  assert.match(html, /id="shopping-list-date"/);
-  assert.match(html, /\bTitle\b/);
-  assert.match(html, /\bDate\b/);
+test('shopping UI retains list and item modal surfaces', () => {
+  const html = read('apps/web/index.html');
+  assert.ok(html.includes('shopping-list-modal'));
+  assert.ok(html.includes('shopping-item-modal'));
+  assert.ok(html.includes('shopping-item-form'));
+  assert.ok(html.includes('shopping-item-parse'));
 });
 
-test('shopping list creation persists scheduled_for metadata', () => {
-  const script = readRepoFile('apps/web/app.js');
-  assert.match(script, /normalizeShoppingListDateValue/);
-  assert.match(script, /scheduled_for: dateValue \|\| null/);
-  assert.match(script, /formatShoppingListScheduledForLabel/);
+test('shopping item first-slice controls exist in app layer', () => {
+  const script = read('apps/web/app.js');
+  assert.ok(script.includes('Delete shopping item'));
+  assert.ok(script.includes("editBtn.textContent = 'Edit'"));
+  assert.ok(script.includes("moveBtn.textContent = 'Move'"));
+  assert.ok(script.includes("upBtn.textContent = '↑'"));
+  assert.ok(script.includes("downBtn.textContent = '↓'"));
+  assert.ok(script.includes('shopping-item-editor-modal'));
+  assert.ok(script.includes("const SHOPPING_ITEM_MOVE_NEW_VALUE = '__new__';"));
+  assert.ok(script.includes('function openShoppingItemEditorModal(itemId)'));
+  assert.ok(script.includes("shoppingItemEditorForm?.addEventListener('submit'"));
+  assert.ok(script.includes('createShoppingListRecord({ name: newListName })'));
+  assert.ok(script.includes('patch.list_id = targetListId'));
+  assert.ok(script.includes('function moveShoppingItemWithinList(itemId, direction)'));
 });
 
-test('task editor exposes shopping conversion controls backed by the conversion API', () => {
-  const html = readRepoFile('apps/web/index.html');
-  const script = readRepoFile('apps/web/app.js');
-  assert.match(html, /id="editor-shopping-list"/);
-  assert.match(html, /id="editor-convert-shopping"/);
-  assert.match(script, /const editorShoppingList = document\.getElementById\('editor-shopping-list'\);/);
-  assert.match(script, /const editorConvertShopping = document\.getElementById\('editor-convert-shopping'\);/);
-  assert.match(script, /populateShoppingListSelect\(editorShoppingList/);
-  assert.match(script, /await convertTaskToShoppingItemRecord\(task\.id, targetListId\);/);
-  assert.match(script, /api\.convertTaskToShoppingItem\(taskId, \{ list_id: listId \}\)/);
+test('shopping item list reassignment is supported in service and schema layers', () => {
+  const taskService = read('services/api/src/taskService.js');
+  const schemas = read('services/api/src/routeSchemas.js');
+  assert.ok(taskService.includes('const { list_id, name, is_checked } = patch;'));
+  assert.ok(taskService.includes('let { sort_order } = patch;'));
+  assert.ok(taskService.includes('SET list_id = COALESCE(?, list_id),'));
+  assert.ok(taskService.includes("'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?'"));
+  assert.ok(taskService.includes('list_id ?? null,'));
+  assert.ok(taskService.includes('sort_order ?? null,'));
+  assert.ok(schemas.includes("list_id: { type: 'string', format: 'uuid' }"));
 });

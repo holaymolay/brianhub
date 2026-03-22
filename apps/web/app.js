@@ -110,6 +110,7 @@ const PROJECT_KIND_PROJECT = 'project';
 const PROJECT_KIND_LIST = 'list';
 const TASK_TYPE_WORKFLOW = 'workflow';
 const SHOPPING_INBOX_NAME = 'Shopping Inbox';
+const SHOPPING_ITEM_MOVE_NEW_VALUE = '__new__';
 const SHOPPING_LIST_EDITOR_INBOX = '__shopping_inbox__';
 const SHOPPING_KEYWORD_STOPWORDS = new Set([
   'and', 'the', 'with', 'for', 'from', 'into', 'onto', 'your', 'our',
@@ -372,6 +373,14 @@ const shoppingItemForm = document.getElementById('shopping-item-form');
 const shoppingItemInput = document.getElementById('shopping-item-input');
 const shoppingItemParse = document.getElementById('shopping-item-parse');
 const shoppingItemCancel = document.getElementById('shopping-item-cancel');
+const shoppingItemEditorModal = document.getElementById('shopping-item-editor-modal');
+const shoppingItemEditorForm = document.getElementById('shopping-item-editor-form');
+const shoppingItemEditorName = document.getElementById('shopping-item-editor-name');
+const shoppingItemEditorList = document.getElementById('shopping-item-editor-list');
+const shoppingItemEditorNewListRow = document.getElementById('shopping-item-editor-new-list-row');
+const shoppingItemEditorNewList = document.getElementById('shopping-item-editor-new-list');
+const shoppingItemEditorClose = document.getElementById('shopping-item-editor-close');
+const shoppingItemEditorCancel = document.getElementById('shopping-item-editor-cancel');
 const syncStatus = document.getElementById('sync-status');
 const syncOfflineNotice = document.getElementById('sync-offline-notice');
 const appTitleTrigger = document.getElementById('app-title-trigger');
@@ -803,6 +812,7 @@ let draggingWorkflowEntryEl = null;
 let draggingWorkflowPhaseMeta = null;
 let draggingWorkflowPhaseEl = null;
 let draggingShoppingInboxItemId = null;
+let activeShoppingItemEditorId = null;
 let sectionOrderDirty = false;
 let columnOrderDirty = false;
 let suppressTaskClick = false;
@@ -13586,6 +13596,99 @@ function getShoppingItemsForList(listId) {
   return Object.values(state.shoppingItems ?? {}).filter(item => item.list_id === listId);
 }
 
+function getSortedShoppingItemsForList(listId) {
+  return getShoppingItemsForList(listId)
+    .slice()
+    .sort((a, b) => {
+      const sortA = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : Number.MAX_SAFE_INTEGER;
+      const sortB = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : Number.MAX_SAFE_INTEGER;
+      if (sortA !== sortB) return sortA - sortB;
+      const createdA = String(a?.created_at ?? '');
+      const createdB = String(b?.created_at ?? '');
+      if (createdA !== createdB) return createdA.localeCompare(createdB);
+      return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+    });
+}
+
+async function resequenceShoppingItems(listId, orderedItems) {
+  if (!listId || !Array.isArray(orderedItems) || !orderedItems.length) return false;
+  let changed = false;
+  for (let index = 0; index < orderedItems.length; index += 1) {
+    const item = orderedItems[index];
+    const nextSortOrder = (index + 1) * 100;
+    if (Number(item?.sort_order) === nextSortOrder) continue;
+    await updateShoppingItemRecord(item.id, { sort_order: nextSortOrder });
+    changed = true;
+  }
+  return changed;
+}
+
+async function moveShoppingItemWithinList(itemId, direction) {
+  const item = state.shoppingItems?.[itemId] ?? null;
+  if (!item?.list_id || !Number.isInteger(direction) || direction === 0) return false;
+  const orderedItems = getSortedShoppingItemsForList(item.list_id);
+  const currentIndex = orderedItems.findIndex((entry) => entry.id === itemId);
+  if (currentIndex === -1) return false;
+  const targetIndex = currentIndex + direction;
+  if (targetIndex < 0 || targetIndex >= orderedItems.length) return false;
+  const reordered = orderedItems.slice();
+  const [moved] = reordered.splice(currentIndex, 1);
+  reordered.splice(targetIndex, 0, moved);
+  return resequenceShoppingItems(item.list_id, reordered);
+}
+
+function setShoppingItemEditorNewListVisible(visible) {
+  if (shoppingItemEditorNewListRow) shoppingItemEditorNewListRow.hidden = !visible;
+  if (shoppingItemEditorNewList) {
+    shoppingItemEditorNewList.required = visible;
+    if (!visible) shoppingItemEditorNewList.value = '';
+  }
+}
+
+function syncShoppingItemEditorMoveInputs() {
+  setShoppingItemEditorNewListVisible((shoppingItemEditorList?.value ?? '') === SHOPPING_ITEM_MOVE_NEW_VALUE);
+}
+
+function populateShoppingItemEditorListOptions(selectedListId = '') {
+  if (!shoppingItemEditorList) return;
+  shoppingItemEditorList.innerHTML = '';
+  const lists = (state.shoppingLists ?? [])
+    .filter((list) => list.workspace_id === state.workspace?.id)
+    .filter((list) => !list.archived)
+    .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+  for (const list of lists) {
+    const option = document.createElement('option');
+    option.value = list.id;
+    option.textContent = list.name || 'Untitled list';
+    shoppingItemEditorList.appendChild(option);
+  }
+  const createOption = document.createElement('option');
+  createOption.value = SHOPPING_ITEM_MOVE_NEW_VALUE;
+  createOption.textContent = 'Create new list…';
+  shoppingItemEditorList.appendChild(createOption);
+  const preferredValue = lists.some((list) => list.id === selectedListId) ? selectedListId : (lists[0]?.id ?? SHOPPING_ITEM_MOVE_NEW_VALUE);
+  shoppingItemEditorList.value = preferredValue;
+  syncShoppingItemEditorMoveInputs();
+}
+
+function openShoppingItemEditorModal(itemId) {
+  const item = state.shoppingItems?.[itemId] ?? null;
+  if (!item || !shoppingItemEditorModal) return;
+  activeShoppingItemEditorId = itemId;
+  if (shoppingItemEditorName) shoppingItemEditorName.value = item.name ?? '';
+  populateShoppingItemEditorListOptions(item.list_id);
+  setShoppingItemEditorNewListVisible(false);
+  shoppingItemEditorModal.classList.remove('hidden');
+  requestAnimationFrame(() => shoppingItemEditorName?.focus());
+}
+
+function closeShoppingItemEditorModal() {
+  activeShoppingItemEditorId = null;
+  shoppingItemEditorForm?.reset();
+  setShoppingItemEditorNewListVisible(false);
+  shoppingItemEditorModal?.classList.add('hidden');
+}
+
 function isShoppingListComplete(listId) {
   if (isShoppingInboxListId(listId)) return false;
   const items = getShoppingItemsForList(listId);
@@ -18594,8 +18697,7 @@ function renderShoppingPanel() {
     : [];
   const scheduledLabel = formatShoppingListScheduledForLabel(activeList);
   shoppingListTitle.textContent = activeIsInbox ? 'Shopping Inbox' : activeList.name;
-  const items = getShoppingItemsForList(activeList.id)
-    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const items = getSortedShoppingItemsForList(activeList.id);
   const complete = isShoppingListComplete(activeList.id);
   shoppingListSubtitle.textContent = activeIsInbox
     ? `${items.length} item${items.length === 1 ? '' : 's'} waiting assignment`
@@ -18633,7 +18735,8 @@ function renderShoppingPanel() {
     deleteBtn.type = 'button';
     deleteBtn.className = 'icon-button shopping-item-delete';
     deleteBtn.textContent = '✕';
-    deleteBtn.title = 'Remove item';
+    deleteBtn.title = 'Delete shopping item';
+    deleteBtn.setAttribute('aria-label', 'Delete shopping item');
     deleteBtn.addEventListener('click', async () => {
       await deleteShoppingItemRecord(item.id);
       render();
@@ -18704,9 +18807,52 @@ function renderShoppingPanel() {
         await updateShoppingItemRecord(item.id, { is_checked: checkbox.checked ? 1 : 0 });
         render();
       });
+
+      const actions = document.createElement('div');
+      actions.className = 'shopping-list-item-row-actions';
+      const sortedItems = getSortedShoppingItemsForList(item.list_id);
+      const currentIndex = sortedItems.findIndex((entry) => entry.id === item.id);
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'subtle-button';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', () => openShoppingItemEditorModal(item.id));
+
+      const moveBtn = document.createElement('button');
+      moveBtn.type = 'button';
+      moveBtn.className = 'subtle-button';
+      moveBtn.textContent = 'Move';
+      moveBtn.addEventListener('click', () => openShoppingItemEditorModal(item.id));
+
+      const upBtn = document.createElement('button');
+      upBtn.type = 'button';
+      upBtn.className = 'subtle-button';
+      upBtn.textContent = '↑';
+      upBtn.disabled = currentIndex <= 0;
+      upBtn.addEventListener('click', async () => {
+        const moved = await moveShoppingItemWithinList(item.id, -1);
+        if (moved) render();
+      });
+
+      const downBtn = document.createElement('button');
+      downBtn.type = 'button';
+      downBtn.className = 'subtle-button';
+      downBtn.textContent = '↓';
+      downBtn.disabled = currentIndex === -1 || currentIndex >= sortedItems.length - 1;
+      downBtn.addEventListener('click', async () => {
+        const moved = await moveShoppingItemWithinList(item.id, 1);
+        if (moved) render();
+      });
+
+      actions.appendChild(editBtn);
+      actions.appendChild(moveBtn);
+      actions.appendChild(upBtn);
+      actions.appendChild(downBtn);
+      actions.appendChild(deleteBtn);
       row.appendChild(checkbox);
       row.appendChild(label);
-      row.appendChild(deleteBtn);
+      row.appendChild(actions);
     }
     shoppingListItemsEl.appendChild(row);
   });
@@ -25304,6 +25450,54 @@ shoppingMobileBack?.addEventListener('click', () => {
 });
 shoppingItemCancel?.addEventListener('click', closeShoppingItemModal);
 shoppingItemModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeShoppingItemModal);
+shoppingItemEditorClose?.addEventListener('click', closeShoppingItemEditorModal);
+shoppingItemEditorCancel?.addEventListener('click', closeShoppingItemEditorModal);
+shoppingItemEditorModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeShoppingItemEditorModal);
+shoppingItemEditorList?.addEventListener('change', syncShoppingItemEditorMoveInputs);
+shoppingItemEditorForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const item = state.shoppingItems?.[activeShoppingItemEditorId] ?? null;
+  if (!item) {
+    closeShoppingItemEditorModal();
+    return;
+  }
+  const nextName = String(shoppingItemEditorName?.value ?? '').trim();
+  if (!nextName) {
+    shoppingItemEditorName?.focus();
+    return;
+  }
+  let targetListId = String(shoppingItemEditorList?.value ?? item.list_id ?? '').trim();
+  const creatingNewList = targetListId === SHOPPING_ITEM_MOVE_NEW_VALUE;
+  if (creatingNewList) {
+    const newListName = String(shoppingItemEditorNewList?.value ?? '').trim();
+    if (!newListName) {
+      shoppingItemEditorNewList?.focus();
+      return;
+    }
+    const createdList = await createShoppingListRecord({ name: newListName });
+    if (!createdList?.id) {
+      showToast({ type: 'error', message: 'Could not create that shopping list yet.' });
+      return;
+    }
+    targetListId = createdList.id;
+  }
+  const patch = {};
+  if (nextName !== String(item.name ?? '')) patch.name = nextName;
+  if (targetListId && targetListId !== item.list_id) patch.list_id = targetListId;
+  if (Object.keys(patch).length) {
+    const updated = await updateShoppingItemRecord(item.id, patch);
+    if (!updated) {
+      showToast({ type: 'error', message: 'Could not save that shopping item yet.' });
+      return;
+    }
+    if (patch.list_id) {
+      state.ui = state.ui ?? {};
+      state.ui.activeShoppingListId = patch.list_id;
+    }
+  }
+  closeShoppingItemEditorModal();
+  render();
+});
 
 shoppingListStoreSelect?.addEventListener('change', () => {
   if (!shoppingListStoreSelect) return;

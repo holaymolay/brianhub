@@ -1112,6 +1112,7 @@ const routeSchemas = new Map([
       type: 'object',
       additionalProperties: false,
       properties: {
+        list_id: { type: 'string', format: 'uuid' },
         name: nullableString(512),
         is_checked: boolishSchema,
         sort_order: integerSchema

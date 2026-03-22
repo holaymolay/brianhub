@@ -1428,26 +1428,55 @@ export async function createShoppingItem(db, data, clientId = null) {
 }
 
 export async function updateShoppingItem(db, id, patch, clientId = null) {
-  const itemId = assertUuid(id, 'shopping_item id');
-  const existing = await getShoppingItem(db, itemId);
+  id = assertUuid(id, 'shopping_item id');
+  const existing = await getShoppingItem(db, id);
   if (!existing) return null;
-  const list = await getShoppingList(db, existing.list_id);
-  const next = {
-    ...existing,
-    name: patch.name ?? existing.name,
-    is_checked: patch.is_checked !== undefined ? (patch.is_checked ? 1 : 0) : existing.is_checked ?? 0,
-    sort_order: Number.isFinite(patch.sort_order) ? patch.sort_order : existing.sort_order,
-    updated_at: nowIso()
-  };
+  const currentList = await getShoppingList(db, existing.list_id);
+  const { list_id, name, is_checked } = patch;
+  let { sort_order } = patch;
+  let targetListId = existing.list_id;
+  let targetList = currentList;
+  if (list_id !== undefined) {
+    targetListId = assertUuid(list_id, 'list_id');
+    targetList = await getShoppingList(db, targetListId);
+    if (!targetList) {
+      throw new Error('Shopping list not found');
+    }
+    if (currentList && targetList.workspace_id !== currentList.workspace_id) {
+      throw new Error('Shopping item and shopping list must belong to the same workspace');
+    }
+  }
+  if (targetListId !== existing.list_id && !Number.isFinite(sort_order)) {
+    const maxRow = await getRow(
+      db,
+      'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
+      [targetListId]
+    );
+    sort_order = Number(maxRow?.max_sort ?? 0) + 1;
+  }
   await run(
     db,
-    'UPDATE shopping_list_items SET name = ?, is_checked = ?, sort_order = ?, updated_at = ? WHERE id = ?',
-    [next.name, next.is_checked, next.sort_order, next.updated_at, itemId]
+    `UPDATE shopping_list_items
+     SET list_id = COALESCE(?, list_id),
+         name = COALESCE(?, name),
+         is_checked = COALESCE(?, is_checked),
+         sort_order = COALESCE(?, sort_order),
+         updated_at = ?
+     WHERE id = ?`,
+    [
+      list_id ?? null,
+      name ?? null,
+      is_checked ?? null,
+      sort_order ?? null,
+      nowIso(),
+      id
+    ]
   );
-  if (list) {
-    await recordChange(db, list.workspace_id, 'shopping_item', itemId, 'update', patch, clientId);
+  const workspaceId = currentList?.workspace_id ?? targetList?.workspace_id ?? null;
+  if (workspaceId) {
+    await recordChange(db, workspaceId, 'shopping_item', id, 'update', patch, clientId);
   }
-  return getShoppingItem(db, itemId);
+  return getShoppingItem(db, id);
 }
 
 export async function deleteShoppingItem(db, id, clientId = null) {

@@ -6775,3 +6775,51 @@ body.auth-gated #auth-cancel-invite {
   }
 
 }
+
+
+.shopping-list-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.shopping-list-item-content {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1 1 auto;
+}
+
+.shopping-list-item-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.shopping-item-editor-sheet {
+  width: min(32rem, calc(100vw - 2rem));
+}
+
+.shopping-item-editor-form {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .shopping-list-item-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .shopping-list-item-row-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .shopping-list-item-row-actions > button {
+    flex: 1 1 auto;
+  }
+}

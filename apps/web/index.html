@@ -2127,6 +2127,32 @@
       </div>
     </div>
 
+    <div id="shopping-item-editor-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card shopping-item-editor-sheet">
+        <h2>Edit shopping item</h2>
+        <form id="shopping-item-editor-form" class="shopping-item-editor-form">
+          <label>
+            Item name
+            <input id="shopping-item-editor-name" type="text" maxlength="512" required />
+          </label>
+          <label>
+            Shopping list
+            <select id="shopping-item-editor-list"></select>
+          </label>
+          <label id="shopping-item-editor-new-list-row" hidden>
+            New list name
+            <input id="shopping-item-editor-new-list" type="text" maxlength="512" />
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Save</button>
+            <button id="shopping-item-editor-cancel" class="subtle-button" type="button">Cancel</button>
+            <button id="shopping-item-editor-close" class="subtle-button" type="button">Close</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div id="template-prompt" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
