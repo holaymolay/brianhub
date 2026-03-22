@@ -112,6 +112,8 @@ const TASK_TYPE_WORKFLOW = 'workflow';
 const SHOPPING_INBOX_NAME = 'Shopping Inbox';
 const SHOPPING_ITEM_MOVE_NEW_VALUE = '__new__';
 const SHOPPING_LIST_EDITOR_INBOX = '__shopping_inbox__';
+const SHOPPING_ITEM_LONG_PRESS_MS = 450;
+const SHOPPING_ITEM_DRAG_THRESHOLD_PX = 6;
 const SHOPPING_KEYWORD_STOPWORDS = new Set([
   'and', 'the', 'with', 'for', 'from', 'into', 'onto', 'your', 'our',
   'of', 'to', 'in', 'on', 'at', 'a', 'an', 'oz', 'lb', 'lbs', 'pkg', 'pack'
@@ -375,12 +377,21 @@ const shoppingItemParse = document.getElementById('shopping-item-parse');
 const shoppingItemCancel = document.getElementById('shopping-item-cancel');
 const shoppingItemEditorModal = document.getElementById('shopping-item-editor-modal');
 const shoppingItemEditorForm = document.getElementById('shopping-item-editor-form');
+const shoppingItemEditorTitle = document.getElementById('shopping-item-editor-title');
+const shoppingItemEditorNameRow = document.getElementById('shopping-item-editor-name-row');
 const shoppingItemEditorName = document.getElementById('shopping-item-editor-name');
 const shoppingItemEditorList = document.getElementById('shopping-item-editor-list');
 const shoppingItemEditorNewListRow = document.getElementById('shopping-item-editor-new-list-row');
 const shoppingItemEditorNewList = document.getElementById('shopping-item-editor-new-list');
+const shoppingItemEditorSubmit = document.getElementById('shopping-item-editor-submit');
 const shoppingItemEditorClose = document.getElementById('shopping-item-editor-close');
 const shoppingItemEditorCancel = document.getElementById('shopping-item-editor-cancel');
+const shoppingItemActionsModal = document.getElementById('shopping-item-actions-modal');
+const shoppingItemActionsTitle = document.getElementById('shopping-item-actions-title');
+const shoppingItemActionsEdit = document.getElementById('shopping-item-actions-edit');
+const shoppingItemActionsMove = document.getElementById('shopping-item-actions-move');
+const shoppingItemActionsDelete = document.getElementById('shopping-item-actions-delete');
+const shoppingItemActionsCancel = document.getElementById('shopping-item-actions-cancel');
 const syncStatus = document.getElementById('sync-status');
 const syncOfflineNotice = document.getElementById('sync-offline-notice');
 const appTitleTrigger = document.getElementById('app-title-trigger');
@@ -813,6 +824,12 @@ let draggingWorkflowPhaseMeta = null;
 let draggingWorkflowPhaseEl = null;
 let draggingShoppingInboxItemId = null;
 let activeShoppingItemEditorId = null;
+let activeShoppingItemEditorMode = 'edit';
+let activeShoppingItemActionsId = null;
+let draggingShoppingListItemId = null;
+let draggingShoppingListItemEl = null;
+let shoppingItemPointerDragState = null;
+let shoppingItemLongPressState = null;
 let sectionOrderDirty = false;
 let columnOrderDirty = false;
 let suppressTaskClick = false;
@@ -13637,6 +13654,23 @@ async function moveShoppingItemWithinList(itemId, direction) {
   return resequenceShoppingItems(item.list_id, reordered);
 }
 
+function setShoppingItemEditorMode(mode = 'edit') {
+  activeShoppingItemEditorMode = mode === 'move' ? 'move' : 'edit';
+  const moveMode = activeShoppingItemEditorMode === 'move';
+  if (shoppingItemEditorTitle) {
+    shoppingItemEditorTitle.textContent = moveMode ? 'Move shopping item' : 'Edit shopping item';
+  }
+  if (shoppingItemEditorNameRow) {
+    shoppingItemEditorNameRow.hidden = moveMode;
+  }
+  if (shoppingItemEditorName) {
+    shoppingItemEditorName.required = !moveMode;
+  }
+  if (shoppingItemEditorSubmit) {
+    shoppingItemEditorSubmit.textContent = moveMode ? 'Move' : 'Save';
+  }
+}
+
 function setShoppingItemEditorNewListVisible(visible) {
   if (shoppingItemEditorNewListRow) shoppingItemEditorNewListRow.hidden = !visible;
   if (shoppingItemEditorNewList) {
@@ -13671,22 +13705,270 @@ function populateShoppingItemEditorListOptions(selectedListId = '') {
   syncShoppingItemEditorMoveInputs();
 }
 
-function openShoppingItemEditorModal(itemId) {
+function openShoppingItemEditorModal(itemId, { mode = 'edit' } = {}) {
   const item = state.shoppingItems?.[itemId] ?? null;
   if (!item || !shoppingItemEditorModal) return;
   activeShoppingItemEditorId = itemId;
+  setShoppingItemEditorMode(mode);
   if (shoppingItemEditorName) shoppingItemEditorName.value = item.name ?? '';
   populateShoppingItemEditorListOptions(item.list_id);
   setShoppingItemEditorNewListVisible(false);
   shoppingItemEditorModal.classList.remove('hidden');
-  requestAnimationFrame(() => shoppingItemEditorName?.focus());
+  requestAnimationFrame(() => {
+    if (activeShoppingItemEditorMode === 'move') {
+      shoppingItemEditorList?.focus();
+      return;
+    }
+    shoppingItemEditorName?.focus();
+  });
 }
 
 function closeShoppingItemEditorModal() {
   activeShoppingItemEditorId = null;
+  setShoppingItemEditorMode('edit');
   shoppingItemEditorForm?.reset();
   setShoppingItemEditorNewListVisible(false);
   shoppingItemEditorModal?.classList.add('hidden');
+}
+
+function openShoppingItemActionsModal(itemId) {
+  const item = state.shoppingItems?.[itemId] ?? null;
+  if (!item || !shoppingItemActionsModal) return;
+  activeShoppingItemActionsId = itemId;
+  if (shoppingItemActionsTitle) {
+    shoppingItemActionsTitle.textContent = item.name ? `Shopping item: ${item.name}` : 'Shopping item';
+  }
+  shoppingItemActionsModal.classList.remove('hidden');
+}
+
+function closeShoppingItemActionsModal() {
+  activeShoppingItemActionsId = null;
+  shoppingItemActionsModal?.classList.add('hidden');
+}
+
+async function confirmDeleteShoppingItem(itemId) {
+  const item = state.shoppingItems?.[itemId] ?? null;
+  if (!item) return false;
+  const confirmed = confirm(`Delete shopping item "${item.name}"?`);
+  if (!confirmed) return false;
+  await deleteShoppingItemRecord(item.id);
+  if (activeShoppingItemEditorId === item.id) {
+    closeShoppingItemEditorModal();
+  }
+  if (activeShoppingItemActionsId === item.id) {
+    closeShoppingItemActionsModal();
+  }
+  render();
+  return true;
+}
+
+function clearShoppingItemDragIndicators() {
+  shoppingListItemsEl?.querySelectorAll('.shopping-item.drop-before, .shopping-item.drop-after')
+    .forEach((row) => row.classList.remove('drop-before', 'drop-after'));
+}
+
+function endShoppingListItemDrag() {
+  clearShoppingItemDragIndicators();
+  if (draggingShoppingListItemEl) {
+    draggingShoppingListItemEl.classList.remove('is-dragging');
+    draggingShoppingListItemEl.style.pointerEvents = '';
+  }
+  draggingShoppingListItemId = null;
+  draggingShoppingListItemEl = null;
+}
+
+function beginShoppingListItemDrag(item, row, event = null) {
+  if (!item?.list_id || !row || isShoppingInboxListId(item.list_id)) return false;
+  draggingShoppingListItemId = item.id;
+  draggingShoppingListItemEl = row;
+  row.classList.add('is-dragging');
+  if (event?.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', item.id);
+    try {
+      event.dataTransfer.setDragImage(row, 24, 18);
+    } catch {}
+  }
+  return true;
+}
+
+function canDropShoppingListItemOnRow(row) {
+  if (!draggingShoppingListItemId || !row) return false;
+  const targetItemId = row.dataset.shoppingItemId ?? '';
+  if (!targetItemId || targetItemId === draggingShoppingListItemId) return false;
+  const draggingItem = state.shoppingItems?.[draggingShoppingListItemId] ?? null;
+  if (!draggingItem?.list_id) return false;
+  return String(row.dataset.shoppingListId ?? '') === String(draggingItem.list_id);
+}
+
+function updateShoppingListItemDropIndicator(row, clientY) {
+  clearShoppingItemDragIndicators();
+  if (!canDropShoppingListItemOnRow(row)) return null;
+  const rect = row.getBoundingClientRect();
+  const insertAfter = clientY > rect.top + rect.height / 2;
+  row.classList.add(insertAfter ? 'drop-after' : 'drop-before');
+  return { row, insertAfter };
+}
+
+async function dropShoppingListItemOnRow(row, clientY) {
+  const indicator = updateShoppingListItemDropIndicator(row, clientY);
+  if (!indicator) return false;
+  const movingItem = state.shoppingItems?.[draggingShoppingListItemId] ?? null;
+  if (!movingItem?.list_id) return false;
+  const orderedItems = getSortedShoppingItemsForList(movingItem.list_id);
+  const activeItem = orderedItems.find((entry) => entry.id === draggingShoppingListItemId);
+  if (!activeItem) return false;
+  const remaining = orderedItems.filter((entry) => entry.id !== draggingShoppingListItemId);
+  const targetIndex = remaining.findIndex((entry) => entry.id === row.dataset.shoppingItemId);
+  if (targetIndex < 0) return false;
+  const insertIndex = indicator.insertAfter ? targetIndex + 1 : targetIndex;
+  remaining.splice(insertIndex, 0, activeItem);
+  const changed = remaining.some((entry, index) => entry.id !== orderedItems[index]?.id);
+  if (!changed) return false;
+  const updated = await resequenceShoppingItems(movingItem.list_id, remaining);
+  if (updated) render();
+  return updated;
+}
+
+function getShoppingListItemDropTargetAtPoint(clientX, clientY) {
+  const element = document.elementFromPoint(clientX, clientY);
+  if (!(element instanceof Element)) return null;
+  const row = element.closest('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)');
+  if (!(row instanceof HTMLElement)) return null;
+  if (!canDropShoppingListItemOnRow(row)) return null;
+  return row;
+}
+
+function beginShoppingItemPointerGesture(event, item, row) {
+  if (event.button !== 0 || event.pointerType === 'mouse') return;
+  shoppingItemPointerDragState = {
+    pointerId: event.pointerId,
+    item,
+    row,
+    startX: event.clientX,
+    startY: event.clientY,
+    dragging: false,
+    dropRow: null
+  };
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function moveShoppingItemPointerGesture(event) {
+  if (!shoppingItemPointerDragState || shoppingItemPointerDragState.pointerId !== event.pointerId) return;
+  const deltaX = Math.abs(event.clientX - shoppingItemPointerDragState.startX);
+  const deltaY = Math.abs(event.clientY - shoppingItemPointerDragState.startY);
+  if (!shoppingItemPointerDragState.dragging) {
+    if (deltaX < SHOPPING_ITEM_DRAG_THRESHOLD_PX && deltaY < SHOPPING_ITEM_DRAG_THRESHOLD_PX) return;
+    if (!beginShoppingListItemDrag(shoppingItemPointerDragState.item, shoppingItemPointerDragState.row)) {
+      shoppingItemPointerDragState = null;
+      return;
+    }
+    shoppingItemPointerDragState.dragging = true;
+    if (draggingShoppingListItemEl) {
+      draggingShoppingListItemEl.style.pointerEvents = 'none';
+    }
+  }
+  const dropRow = getShoppingListItemDropTargetAtPoint(event.clientX, event.clientY);
+  shoppingItemPointerDragState.dropRow = dropRow;
+  if (dropRow) {
+    updateShoppingListItemDropIndicator(dropRow, event.clientY);
+  } else {
+    clearShoppingItemDragIndicators();
+  }
+  event.preventDefault();
+}
+
+async function finishShoppingItemPointerGesture(event, commit = false) {
+  if (!shoppingItemPointerDragState || shoppingItemPointerDragState.pointerId !== event.pointerId) return;
+  const activeGesture = shoppingItemPointerDragState;
+  shoppingItemPointerDragState = null;
+  event.currentTarget?.releasePointerCapture?.(event.pointerId);
+  if (activeGesture.dragging && commit && activeGesture.dropRow) {
+    await dropShoppingListItemOnRow(activeGesture.dropRow, event.clientY);
+  }
+  endShoppingListItemDrag();
+}
+
+function cancelShoppingItemLongPress() {
+  if (!shoppingItemLongPressState) return;
+  if (shoppingItemLongPressState.timerId) {
+    window.clearTimeout(shoppingItemLongPressState.timerId);
+  }
+  shoppingItemLongPressState = null;
+}
+
+function beginShoppingItemLongPress(event, itemId) {
+  if (!isMobileViewport() || event.pointerType === 'mouse') return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest('button, input, select, textarea, a, label')) return;
+  shoppingItemLongPressState = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    timerId: window.setTimeout(() => {
+      const current = shoppingItemLongPressState;
+      if (!current || current.pointerId !== event.pointerId) return;
+      openShoppingItemActionsModal(itemId);
+      shoppingItemLongPressState = null;
+    }, SHOPPING_ITEM_LONG_PRESS_MS)
+  };
+}
+
+function updateShoppingItemLongPress(event) {
+  if (!shoppingItemLongPressState || shoppingItemLongPressState.pointerId !== event.pointerId) return;
+  const deltaX = Math.abs(event.clientX - shoppingItemLongPressState.startX);
+  const deltaY = Math.abs(event.clientY - shoppingItemLongPressState.startY);
+  if (deltaX >= SHOPPING_ITEM_DRAG_THRESHOLD_PX || deltaY >= SHOPPING_ITEM_DRAG_THRESHOLD_PX) {
+    cancelShoppingItemLongPress();
+  }
+}
+
+function attachShoppingItemLongPressHandlers(row, itemId) {
+  row.addEventListener('pointerdown', (event) => beginShoppingItemLongPress(event, itemId));
+  row.addEventListener('pointermove', updateShoppingItemLongPress);
+  row.addEventListener('pointerup', cancelShoppingItemLongPress);
+  row.addEventListener('pointercancel', cancelShoppingItemLongPress);
+  row.addEventListener('contextmenu', (event) => {
+    if (!isMobileViewport()) return;
+    event.preventDefault();
+  });
+}
+
+function attachShoppingItemReorderHandlers(row, handle, item) {
+  if (!row || !handle || !item?.list_id || isShoppingInboxListId(item.list_id)) return;
+  row.dataset.shoppingItemId = item.id;
+  row.dataset.shoppingListId = item.list_id;
+  handle.draggable = true;
+  handle.addEventListener('dragstart', (event) => {
+    if (!beginShoppingListItemDrag(item, row, event)) {
+      event.preventDefault();
+    }
+  });
+  handle.addEventListener('dragend', endShoppingListItemDrag);
+  handle.addEventListener('pointerdown', (event) => beginShoppingItemPointerGesture(event, item, row));
+  handle.addEventListener('pointermove', moveShoppingItemPointerGesture);
+  handle.addEventListener('pointerup', (event) => {
+    void finishShoppingItemPointerGesture(event, true);
+  });
+  handle.addEventListener('pointercancel', (event) => {
+    void finishShoppingItemPointerGesture(event, false);
+  });
+  row.addEventListener('dragover', (event) => {
+    if (!canDropShoppingListItemOnRow(row)) return;
+    event.preventDefault();
+    updateShoppingListItemDropIndicator(row, event.clientY);
+  });
+  row.addEventListener('dragleave', () => {
+    row.classList.remove('drop-before', 'drop-after');
+  });
+  row.addEventListener('drop', async (event) => {
+    if (!canDropShoppingListItemOnRow(row)) return;
+    event.preventDefault();
+    await dropShoppingListItemOnRow(row, event.clientY);
+    endShoppingListItemDrag();
+  });
 }
 
 function isShoppingListComplete(listId) {
@@ -18726,7 +19008,7 @@ function renderShoppingPanel() {
   }
   items.forEach(item => {
     const row = document.createElement('div');
-    row.className = 'shopping-item' + (item.is_checked ? ' is-checked' : '');
+    row.className = 'shopping-item shopping-list-item-row' + (item.is_checked ? ' is-checked' : '');
     const label = document.createElement('span');
     label.className = 'shopping-item-label';
     label.textContent = item.name;
@@ -18738,8 +19020,7 @@ function renderShoppingPanel() {
     deleteBtn.title = 'Delete shopping item';
     deleteBtn.setAttribute('aria-label', 'Delete shopping item');
     deleteBtn.addEventListener('click', async () => {
-      await deleteShoppingItemRecord(item.id);
-      render();
+      await confirmDeleteShoppingItem(item.id);
     });
 
     if (activeIsInbox) {
@@ -18808,50 +19089,43 @@ function renderShoppingPanel() {
         render();
       });
 
+      const content = document.createElement('div');
+      content.className = 'shopping-list-item-content';
+      content.appendChild(checkbox);
+      content.appendChild(label);
+
       const actions = document.createElement('div');
       actions.className = 'shopping-list-item-row-actions';
-      const sortedItems = getSortedShoppingItemsForList(item.list_id);
-      const currentIndex = sortedItems.findIndex((entry) => entry.id === item.id);
+      const dragHandle = document.createElement('button');
+      dragHandle.type = 'button';
+      dragHandle.className = 'shopping-item-drag-handle';
+      dragHandle.textContent = '⋮⋮';
+      dragHandle.title = 'Drag to reorder';
+      dragHandle.setAttribute('aria-label', 'Drag to reorder shopping item');
+      actions.appendChild(dragHandle);
+      attachShoppingItemReorderHandlers(row, dragHandle, item);
 
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'subtle-button';
-      editBtn.textContent = 'Edit';
-      editBtn.addEventListener('click', () => openShoppingItemEditorModal(item.id));
+      if (isMobileShopping) {
+        attachShoppingItemLongPressHandlers(row, item.id);
+      } else {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'subtle-button';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => openShoppingItemEditorModal(item.id, { mode: 'edit' }));
 
-      const moveBtn = document.createElement('button');
-      moveBtn.type = 'button';
-      moveBtn.className = 'subtle-button';
-      moveBtn.textContent = 'Move';
-      moveBtn.addEventListener('click', () => openShoppingItemEditorModal(item.id));
+        const moveBtn = document.createElement('button');
+        moveBtn.type = 'button';
+        moveBtn.className = 'subtle-button';
+        moveBtn.textContent = 'Move';
+        moveBtn.addEventListener('click', () => openShoppingItemEditorModal(item.id, { mode: 'move' }));
 
-      const upBtn = document.createElement('button');
-      upBtn.type = 'button';
-      upBtn.className = 'subtle-button';
-      upBtn.textContent = '↑';
-      upBtn.disabled = currentIndex <= 0;
-      upBtn.addEventListener('click', async () => {
-        const moved = await moveShoppingItemWithinList(item.id, -1);
-        if (moved) render();
-      });
+        actions.appendChild(editBtn);
+        actions.appendChild(moveBtn);
+        actions.appendChild(deleteBtn);
+      }
 
-      const downBtn = document.createElement('button');
-      downBtn.type = 'button';
-      downBtn.className = 'subtle-button';
-      downBtn.textContent = '↓';
-      downBtn.disabled = currentIndex === -1 || currentIndex >= sortedItems.length - 1;
-      downBtn.addEventListener('click', async () => {
-        const moved = await moveShoppingItemWithinList(item.id, 1);
-        if (moved) render();
-      });
-
-      actions.appendChild(editBtn);
-      actions.appendChild(moveBtn);
-      actions.appendChild(upBtn);
-      actions.appendChild(downBtn);
-      actions.appendChild(deleteBtn);
-      row.appendChild(checkbox);
-      row.appendChild(label);
+      row.appendChild(content);
       row.appendChild(actions);
     }
     shoppingListItemsEl.appendChild(row);
@@ -25453,6 +25727,25 @@ shoppingItemModal?.querySelector('.modal-backdrop')?.addEventListener('click', c
 shoppingItemEditorClose?.addEventListener('click', closeShoppingItemEditorModal);
 shoppingItemEditorCancel?.addEventListener('click', closeShoppingItemEditorModal);
 shoppingItemEditorModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeShoppingItemEditorModal);
+shoppingItemActionsEdit?.addEventListener('click', () => {
+  const itemId = activeShoppingItemActionsId;
+  closeShoppingItemActionsModal();
+  if (itemId) openShoppingItemEditorModal(itemId, { mode: 'edit' });
+});
+shoppingItemActionsMove?.addEventListener('click', () => {
+  const itemId = activeShoppingItemActionsId;
+  closeShoppingItemActionsModal();
+  if (itemId) openShoppingItemEditorModal(itemId, { mode: 'move' });
+});
+shoppingItemActionsDelete?.addEventListener('click', async () => {
+  const itemId = activeShoppingItemActionsId;
+  closeShoppingItemActionsModal();
+  if (itemId) {
+    await confirmDeleteShoppingItem(itemId);
+  }
+});
+shoppingItemActionsCancel?.addEventListener('click', closeShoppingItemActionsModal);
+shoppingItemActionsModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeShoppingItemActionsModal);
 shoppingItemEditorList?.addEventListener('change', syncShoppingItemEditorMoveInputs);
 shoppingItemEditorForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -25461,8 +25754,9 @@ shoppingItemEditorForm?.addEventListener('submit', async (event) => {
     closeShoppingItemEditorModal();
     return;
   }
-  const nextName = String(shoppingItemEditorName?.value ?? '').trim();
-  if (!nextName) {
+  const moveOnly = activeShoppingItemEditorMode === 'move';
+  const nextName = moveOnly ? String(item.name ?? '').trim() : String(shoppingItemEditorName?.value ?? '').trim();
+  if (!moveOnly && !nextName) {
     shoppingItemEditorName?.focus();
     return;
   }

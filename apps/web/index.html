@@ -2130,9 +2130,9 @@
     <div id="shopping-item-editor-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-card shopping-item-editor-sheet">
-        <h2>Edit shopping item</h2>
+        <h2 id="shopping-item-editor-title">Edit shopping item</h2>
         <form id="shopping-item-editor-form" class="shopping-item-editor-form">
-          <label>
+          <label id="shopping-item-editor-name-row">
             Item name
             <input id="shopping-item-editor-name" type="text" maxlength="512" required />
           </label>
@@ -2145,11 +2145,24 @@
             <input id="shopping-item-editor-new-list" type="text" maxlength="512" />
           </label>
           <div class="modal-actions">
-            <button type="submit">Save</button>
+            <button id="shopping-item-editor-submit" type="submit">Save</button>
             <button id="shopping-item-editor-cancel" class="subtle-button" type="button">Cancel</button>
             <button id="shopping-item-editor-close" class="subtle-button" type="button">Close</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div id="shopping-item-actions-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card shopping-item-actions-sheet">
+        <h2 id="shopping-item-actions-title">Shopping item</h2>
+        <div class="modal-actions shopping-item-actions-sheet-actions">
+          <button id="shopping-item-actions-edit" type="button">Edit item</button>
+          <button id="shopping-item-actions-move" type="button">Move to another list</button>
+          <button id="shopping-item-actions-delete" type="button">Delete item</button>
+          <button id="shopping-item-actions-cancel" class="subtle-button" type="button">Cancel</button>
+        </div>
       </div>
     </div>
 

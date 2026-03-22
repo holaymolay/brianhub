@@ -13,22 +13,26 @@ test('shopping UI retains list and item modal surfaces', () => {
   assert.ok(html.includes('shopping-item-modal'));
   assert.ok(html.includes('shopping-item-form'));
   assert.ok(html.includes('shopping-item-parse'));
+  assert.ok(html.includes('shopping-item-actions-modal'));
 });
 
 test('shopping item first-slice controls exist in app layer', () => {
   const script = read('apps/web/app.js');
   assert.ok(script.includes('Delete shopping item'));
-  assert.ok(script.includes("editBtn.textContent = 'Edit'"));
+  assert.ok(script.includes('function confirmDeleteShoppingItem(itemId)'));
+  assert.ok(script.includes('function openShoppingItemActionsModal(itemId)'));
   assert.ok(script.includes("moveBtn.textContent = 'Move'"));
-  assert.ok(script.includes("upBtn.textContent = '↑'"));
-  assert.ok(script.includes("downBtn.textContent = '↓'"));
+  assert.ok(script.includes("dragHandle.textContent = '⋮⋮'"));
+  assert.ok(!script.includes("upBtn.textContent = '↑'"));
+  assert.ok(!script.includes("downBtn.textContent = '↓'"));
   assert.ok(script.includes('shopping-item-editor-modal'));
+  assert.ok(script.includes('shopping-item-actions-edit'));
   assert.ok(script.includes("const SHOPPING_ITEM_MOVE_NEW_VALUE = '__new__';"));
-  assert.ok(script.includes('function openShoppingItemEditorModal(itemId)'));
+  assert.ok(script.includes("function openShoppingItemEditorModal(itemId, { mode = 'edit' } = {})"));
   assert.ok(script.includes("shoppingItemEditorForm?.addEventListener('submit'"));
   assert.ok(script.includes('createShoppingListRecord({ name: newListName })'));
   assert.ok(script.includes('patch.list_id = targetListId'));
-  assert.ok(script.includes('function moveShoppingItemWithinList(itemId, direction)'));
+  assert.ok(script.includes('function attachShoppingItemReorderHandlers(row, handle, item)'));
 });
 
 test('shopping item list reassignment is supported in service and schema layers', () => {
