@@ -43,8 +43,9 @@ test('shopping item first-slice controls exist in app layer', () => {
 test('shopping item drag target uses a full-row highlight', () => {
   const styles = read('apps/web/styles.css');
   assert.ok(styles.includes('.shopping-item.is-drop-target'));
-  assert.ok(styles.includes('margin-top: 0.75rem;'));
-  assert.ok(styles.includes('box-shadow: 0 0 0 2px rgba(132, 173, 255, 0.28), 0 16px 30px rgba(0, 0, 0, 0.24);'));
+  assert.ok(styles.includes('transform: translateY(0.85rem);'));
+  assert.ok(styles.includes('box-shadow: 0 0 0 2px rgba(132, 173, 255, 0.36), 0 18px 32px rgba(0, 0, 0, 0.24);'));
+  assert.ok(styles.includes('.shopping-item.is-drop-target .shopping-item-label'));
   assert.ok(styles.includes('min-width: 2.6rem;'));
   assert.ok(styles.includes('min-height: 2.6rem;'));
   assert.ok(styles.includes('-webkit-user-drag: none;'));

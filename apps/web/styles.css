@@ -4086,7 +4086,7 @@ button:hover { opacity: 0.9; }
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   padding: 0.45rem 0.6rem;
-  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, margin-top 140ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
 
 .shopping-item.shopping-item-inbox {
@@ -4121,10 +4121,15 @@ button:hover { opacity: 0.9; }
 }
 
 .shopping-item.is-drop-target {
-  margin-top: 0.75rem;
-  background: #1a2637;
-  border-color: rgba(132, 173, 255, 0.82);
-  box-shadow: 0 0 0 2px rgba(132, 173, 255, 0.28), 0 16px 30px rgba(0, 0, 0, 0.24);
+  z-index: 1;
+  transform: translateY(0.85rem);
+  background: #203147;
+  border-color: rgba(132, 173, 255, 0.88);
+  box-shadow: 0 0 0 2px rgba(132, 173, 255, 0.36), 0 18px 32px rgba(0, 0, 0, 0.24);
+}
+
+.shopping-item.is-drop-target .shopping-item-label {
+  color: #f4f8ff;
 }
 
 .shopping-item-delete {
