@@ -33,6 +33,8 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('createShoppingListRecord({ name: newListName })'));
   assert.ok(script.includes('patch.list_id = targetListId'));
   assert.ok(script.includes('function attachShoppingItemReorderHandlers(row, handle, item)'));
+  assert.ok(script.includes('handle.draggable = !isMobileViewport();'));
+  assert.ok(script.includes('if (isMobileViewport()) {'));
   assert.ok(script.includes("document.addEventListener('pointermove', handleShoppingItemPointerMove)"));
   assert.ok(script.includes("handle.addEventListener('lostpointercapture'"));
   assert.ok(script.includes("row.classList.add('is-drop-target', insertAfter ? 'drop-after' : 'drop-before')"));
@@ -45,6 +47,7 @@ test('shopping item drag target uses a full-row highlight', () => {
   assert.ok(styles.includes('.shopping-item.drop-after::after'));
   assert.ok(styles.includes('min-width: 2.6rem;'));
   assert.ok(styles.includes('min-height: 2.6rem;'));
+  assert.ok(styles.includes('-webkit-user-drag: none;'));
 });
 
 test('shopping item list reassignment is supported in service and schema layers', () => {

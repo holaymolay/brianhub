@@ -13965,8 +13965,12 @@ function attachShoppingItemReorderHandlers(row, handle, item) {
   if (!row || !handle || !item?.list_id || isShoppingInboxListId(item.list_id)) return;
   row.dataset.shoppingItemId = item.id;
   row.dataset.shoppingListId = item.list_id;
-  handle.draggable = true;
+  handle.draggable = !isMobileViewport();
   handle.addEventListener('dragstart', (event) => {
+    if (isMobileViewport()) {
+      event.preventDefault();
+      return;
+    }
     if (!beginShoppingListItemDrag(item, row, event)) {
       event.preventDefault();
     }
