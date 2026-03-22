@@ -35,6 +35,14 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('function attachShoppingItemReorderHandlers(row, handle, item)'));
   assert.ok(script.includes("document.addEventListener('pointermove', handleShoppingItemPointerMove)"));
   assert.ok(script.includes("handle.addEventListener('lostpointercapture'"));
+  assert.ok(script.includes("row.classList.add('is-drop-target', insertAfter ? 'drop-after' : 'drop-before')"));
+});
+
+test('shopping item drag target uses a full-row highlight', () => {
+  const styles = read('apps/web/styles.css');
+  assert.ok(styles.includes('.shopping-item.is-drop-target'));
+  assert.ok(styles.includes('.shopping-item.drop-before::before'));
+  assert.ok(styles.includes('.shopping-item.drop-after::after'));
 });
 
 test('shopping item list reassignment is supported in service and schema layers', () => {

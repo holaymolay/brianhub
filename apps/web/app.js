@@ -13763,8 +13763,8 @@ async function confirmDeleteShoppingItem(itemId) {
 }
 
 function clearShoppingItemDragIndicators() {
-  shoppingListItemsEl?.querySelectorAll('.shopping-item.drop-before, .shopping-item.drop-after')
-    .forEach((row) => row.classList.remove('drop-before', 'drop-after'));
+  shoppingListItemsEl?.querySelectorAll('.shopping-item.is-drop-target, .shopping-item.drop-before, .shopping-item.drop-after')
+    .forEach((row) => row.classList.remove('is-drop-target', 'drop-before', 'drop-after'));
 }
 
 function endShoppingListItemDrag() {
@@ -13806,7 +13806,7 @@ function updateShoppingListItemDropIndicator(row, clientY) {
   if (!canDropShoppingListItemOnRow(row)) return null;
   const rect = row.getBoundingClientRect();
   const insertAfter = clientY > rect.top + rect.height / 2;
-  row.classList.add(insertAfter ? 'drop-after' : 'drop-before');
+  row.classList.add('is-drop-target', insertAfter ? 'drop-after' : 'drop-before');
   return { row, insertAfter };
 }
 
