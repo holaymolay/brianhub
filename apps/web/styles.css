@@ -4086,7 +4086,7 @@ button:hover { opacity: 0.9; }
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   padding: 0.45rem 0.6rem;
-  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, margin-top 140ms ease;
 }
 
 .shopping-item.shopping-item-inbox {
@@ -4121,37 +4121,10 @@ button:hover { opacity: 0.9; }
 }
 
 .shopping-item.is-drop-target {
-  background: #162131;
-  border-color: rgba(132, 173, 255, 0.72);
-  box-shadow: 0 0 0 1px rgba(132, 173, 255, 0.18), 0 14px 30px rgba(0, 0, 0, 0.22);
-}
-
-.shopping-item.drop-before::before,
-.shopping-item.drop-after::after {
-  content: '';
-  position: absolute;
-  left: 0.6rem;
-  right: 0.6rem;
-  height: 0.22rem;
-  border-radius: 999px;
-  background: var(--accent);
-  pointer-events: none;
-}
-
-.shopping-item.drop-before::before {
-  top: 0.22rem;
-}
-
-.shopping-item.drop-after::after {
-  bottom: 0.22rem;
-}
-
-.shopping-item.drop-before {
-  transform: translateY(-1px);
-}
-
-.shopping-item.drop-after {
-  transform: translateY(1px);
+  margin-top: 0.75rem;
+  background: #1a2637;
+  border-color: rgba(132, 173, 255, 0.82);
+  box-shadow: 0 0 0 2px rgba(132, 173, 255, 0.28), 0 16px 30px rgba(0, 0, 0, 0.24);
 }
 
 .shopping-item-delete {

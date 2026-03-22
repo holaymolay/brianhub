@@ -13763,8 +13763,8 @@ async function confirmDeleteShoppingItem(itemId) {
 }
 
 function clearShoppingItemDragIndicators() {
-  shoppingListItemsEl?.querySelectorAll('.shopping-item.is-drop-target, .shopping-item.drop-before, .shopping-item.drop-after')
-    .forEach((row) => row.classList.remove('is-drop-target', 'drop-before', 'drop-after'));
+  shoppingListItemsEl?.querySelectorAll('.shopping-item.is-drop-target')
+    .forEach((row) => row.classList.remove('is-drop-target'));
 }
 
 function endShoppingListItemDrag() {
@@ -13804,14 +13804,12 @@ function canDropShoppingListItemOnRow(row) {
 function updateShoppingListItemDropIndicator(row, clientY) {
   clearShoppingItemDragIndicators();
   if (!canDropShoppingListItemOnRow(row)) return null;
-  const rect = row.getBoundingClientRect();
-  const insertAfter = clientY > rect.top + rect.height / 2;
-  row.classList.add('is-drop-target', insertAfter ? 'drop-after' : 'drop-before');
-  return { row, insertAfter };
+  row.classList.add('is-drop-target');
+  return { row };
 }
 
-async function dropShoppingListItemOnRow(row, clientY) {
-  const indicator = updateShoppingListItemDropIndicator(row, clientY);
+async function dropShoppingListItemOnRow(row) {
+  const indicator = updateShoppingListItemDropIndicator(row);
   if (!indicator) return false;
   const movingItem = state.shoppingItems?.[draggingShoppingListItemId] ?? null;
   if (!movingItem?.list_id) return false;
@@ -13821,8 +13819,7 @@ async function dropShoppingListItemOnRow(row, clientY) {
   const remaining = orderedItems.filter((entry) => entry.id !== draggingShoppingListItemId);
   const targetIndex = remaining.findIndex((entry) => entry.id === row.dataset.shoppingItemId);
   if (targetIndex < 0) return false;
-  const insertIndex = indicator.insertAfter ? targetIndex + 1 : targetIndex;
-  remaining.splice(insertIndex, 0, activeItem);
+  remaining.splice(targetIndex, 0, activeItem);
   const changed = remaining.some((entry, index) => entry.id !== orderedItems[index]?.id);
   if (!changed) return false;
   const updated = await resequenceShoppingItems(movingItem.list_id, remaining);
@@ -13894,7 +13891,7 @@ function moveShoppingItemPointerGesture(event) {
   const dropRow = getShoppingListItemDropTargetAtPoint(event.clientX, event.clientY);
   shoppingItemPointerDragState.dropRow = dropRow;
   if (dropRow) {
-    updateShoppingListItemDropIndicator(dropRow, event.clientY);
+    updateShoppingListItemDropIndicator(dropRow);
   } else {
     clearShoppingItemDragIndicators();
   }
@@ -13910,7 +13907,7 @@ async function finishShoppingItemPointerGesture(event, commit = false) {
   document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
   event.currentTarget?.releasePointerCapture?.(event.pointerId);
   if (activeGesture.dragging && commit && activeGesture.dropRow) {
-    await dropShoppingListItemOnRow(activeGesture.dropRow, event.clientY);
+    await dropShoppingListItemOnRow(activeGesture.dropRow);
   }
   endShoppingListItemDrag();
 }
@@ -13983,15 +13980,15 @@ function attachShoppingItemReorderHandlers(row, handle, item) {
   row.addEventListener('dragover', (event) => {
     if (!canDropShoppingListItemOnRow(row)) return;
     event.preventDefault();
-    updateShoppingListItemDropIndicator(row, event.clientY);
+    updateShoppingListItemDropIndicator(row);
   });
   row.addEventListener('dragleave', () => {
-    row.classList.remove('drop-before', 'drop-after');
+    row.classList.remove('is-drop-target');
   });
   row.addEventListener('drop', async (event) => {
     if (!canDropShoppingListItemOnRow(row)) return;
     event.preventDefault();
-    await dropShoppingListItemOnRow(row, event.clientY);
+    await dropShoppingListItemOnRow(row);
     endShoppingListItemDrag();
   });
 }

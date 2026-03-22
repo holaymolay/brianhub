@@ -37,14 +37,14 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('if (isMobileViewport()) {'));
   assert.ok(script.includes("document.addEventListener('pointermove', handleShoppingItemPointerMove)"));
   assert.ok(script.includes("handle.addEventListener('lostpointercapture'"));
-  assert.ok(script.includes("row.classList.add('is-drop-target', insertAfter ? 'drop-after' : 'drop-before')"));
+  assert.ok(script.includes("row.classList.add('is-drop-target');"));
 });
 
 test('shopping item drag target uses a full-row highlight', () => {
   const styles = read('apps/web/styles.css');
   assert.ok(styles.includes('.shopping-item.is-drop-target'));
-  assert.ok(styles.includes('.shopping-item.drop-before::before'));
-  assert.ok(styles.includes('.shopping-item.drop-after::after'));
+  assert.ok(styles.includes('margin-top: 0.75rem;'));
+  assert.ok(styles.includes('box-shadow: 0 0 0 2px rgba(132, 173, 255, 0.28), 0 16px 30px rgba(0, 0, 0, 0.24);'));
   assert.ok(styles.includes('min-width: 2.6rem;'));
   assert.ok(styles.includes('min-height: 2.6rem;'));
   assert.ok(styles.includes('-webkit-user-drag: none;'));
