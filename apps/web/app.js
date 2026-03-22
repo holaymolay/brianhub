@@ -13839,8 +13839,27 @@ function getShoppingListItemDropTargetAtPoint(clientX, clientY) {
   return row;
 }
 
+function handleShoppingItemPointerMove(event) {
+  moveShoppingItemPointerGesture(event);
+}
+
+function handleShoppingItemPointerUp(event) {
+  void finishShoppingItemPointerGesture(event, true);
+}
+
+function handleShoppingItemPointerCancel(event) {
+  void finishShoppingItemPointerGesture(event, false);
+}
+
 function beginShoppingItemPointerGesture(event, item, row) {
-  if (event.button !== 0 || event.pointerType === 'mouse') return;
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  if (shoppingItemPointerDragState) {
+    shoppingItemPointerDragState = null;
+    document.removeEventListener('pointermove', handleShoppingItemPointerMove);
+    document.removeEventListener('pointerup', handleShoppingItemPointerUp);
+    document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
+    endShoppingListItemDrag();
+  }
   shoppingItemPointerDragState = {
     pointerId: event.pointerId,
     item,
@@ -13850,6 +13869,9 @@ function beginShoppingItemPointerGesture(event, item, row) {
     dragging: false,
     dropRow: null
   };
+  document.addEventListener('pointermove', handleShoppingItemPointerMove);
+  document.addEventListener('pointerup', handleShoppingItemPointerUp);
+  document.addEventListener('pointercancel', handleShoppingItemPointerCancel);
   event.currentTarget?.setPointerCapture?.(event.pointerId);
   event.preventDefault();
 }
@@ -13883,6 +13905,9 @@ async function finishShoppingItemPointerGesture(event, commit = false) {
   if (!shoppingItemPointerDragState || shoppingItemPointerDragState.pointerId !== event.pointerId) return;
   const activeGesture = shoppingItemPointerDragState;
   shoppingItemPointerDragState = null;
+  document.removeEventListener('pointermove', handleShoppingItemPointerMove);
+  document.removeEventListener('pointerup', handleShoppingItemPointerUp);
+  document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
   event.currentTarget?.releasePointerCapture?.(event.pointerId);
   if (activeGesture.dragging && commit && activeGesture.dropRow) {
     await dropShoppingListItemOnRow(activeGesture.dropRow, event.clientY);
@@ -13948,11 +13973,7 @@ function attachShoppingItemReorderHandlers(row, handle, item) {
   });
   handle.addEventListener('dragend', endShoppingListItemDrag);
   handle.addEventListener('pointerdown', (event) => beginShoppingItemPointerGesture(event, item, row));
-  handle.addEventListener('pointermove', moveShoppingItemPointerGesture);
-  handle.addEventListener('pointerup', (event) => {
-    void finishShoppingItemPointerGesture(event, true);
-  });
-  handle.addEventListener('pointercancel', (event) => {
+  handle.addEventListener('lostpointercapture', (event) => {
     void finishShoppingItemPointerGesture(event, false);
   });
   row.addEventListener('dragover', (event) => {

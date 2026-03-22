@@ -33,6 +33,8 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('createShoppingListRecord({ name: newListName })'));
   assert.ok(script.includes('patch.list_id = targetListId'));
   assert.ok(script.includes('function attachShoppingItemReorderHandlers(row, handle, item)'));
+  assert.ok(script.includes("document.addEventListener('pointermove', handleShoppingItemPointerMove)"));
+  assert.ok(script.includes("handle.addEventListener('lostpointercapture'"));
 });
 
 test('shopping item list reassignment is supported in service and schema layers', () => {
