@@ -18,7 +18,6 @@ test('shopping UI retains list and item modal surfaces', () => {
 
 test('shopping item first-slice controls exist in app layer', () => {
   const script = read('apps/web/app.js');
-  const shoppingDropIndicatorBody = script.match(/function updateShoppingListItemDropIndicator\(row, clientY\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
   assert.ok(script.includes('Delete shopping item'));
   assert.ok(script.includes('function confirmDeleteShoppingItem(itemId)'));
   assert.ok(script.includes('function openShoppingItemActionsModal(itemId)'));
@@ -39,12 +38,15 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes("document.addEventListener('pointermove', handleShoppingItemPointerMove)"));
   assert.ok(!script.includes("handle.addEventListener('lostpointercapture'"));
   assert.ok(script.includes('shoppingItemDragPreviewState = {'));
-  assert.ok(script.includes("row.style.pointerEvents = 'none';"));
-  assert.ok(script.includes("filter((candidate) => candidate !== draggingRow)"));
-  assert.ok(script.includes('const insertAfter = Number.isFinite(clientY) && clientY > rect.top + rect.height / 2;'));
-  assert.ok(script.includes('container.insertBefore(draggingRow, referenceNode);'));
+  assert.ok(script.includes("function createShoppingListItemPlaceholder(row)"));
+  assert.ok(script.includes("placeholder.classList.add('shopping-item-drag-placeholder');"));
+  assert.ok(script.includes("row.style.position = 'fixed';"));
+  assert.ok(script.includes("function moveShoppingListItemPlaceholder(clientY)"));
+  assert.ok(script.includes('return clientY < rect.top + (rect.height / 2);'));
+  assert.ok(script.includes('preview.container.appendChild(preview.placeholderEl);'));
+  assert.ok(script.includes('Array.from(previewContainer.children)'));
+  assert.ok(script.includes('if (child === preview.placeholderEl) {'));
   assert.ok(script.includes('function getPreviewOrderedShoppingItems(listId)'));
-  assert.ok(!shoppingDropIndicatorBody.includes("row.classList.add('is-drop-target');"));
 });
 
 test('shopping item dragging relies on live movement rather than target borders', () => {
@@ -52,10 +54,11 @@ test('shopping item dragging relies on live movement rather than target borders'
   assert.ok(styles.includes('.shopping-item.is-dragging'));
   assert.ok(styles.includes('background: #17263a;'));
   assert.ok(styles.includes('border-color: rgba(132, 173, 255, 0.48);'));
+  assert.ok(styles.includes('.shopping-item-drag-placeholder'));
+  assert.ok(styles.includes('background: rgba(64, 96, 142, 0.28);'));
   assert.ok(styles.includes('min-width: 2.6rem;'));
   assert.ok(styles.includes('min-height: 2.6rem;'));
   assert.ok(styles.includes('-webkit-user-drag: none;'));
-  assert.ok(!styles.includes('.shopping-item.is-drop-target'));
 });
 
 test('shopping item list reassignment is supported in service and schema layers', () => {

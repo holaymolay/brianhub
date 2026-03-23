@@ -13768,11 +13768,29 @@ function clearShoppingItemDragIndicators() {
     .forEach((row) => row.classList.remove('is-drop-target'));
 }
 
+function createShoppingListItemPlaceholder(row) {
+  const placeholder = row.cloneNode(true);
+  placeholder.classList.remove('is-dragging');
+  placeholder.classList.add('shopping-item-drag-placeholder');
+  placeholder.removeAttribute('draggable');
+  placeholder.querySelectorAll('input, button, select, textarea, a').forEach((control) => {
+    if (control instanceof HTMLElement) {
+      control.tabIndex = -1;
+      control.setAttribute('aria-hidden', 'true');
+    }
+    if ('disabled' in control) {
+      control.disabled = true;
+    }
+  });
+  return placeholder;
+}
+
 function restoreShoppingListItemPreviewOrder() {
   const preview = shoppingItemDragPreviewState;
   if (!preview?.container || !Array.isArray(preview.originalOrderIds)) return;
   const rowById = new Map(
     Array.from(preview.container.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)'))
+      .filter((row) => row !== preview.placeholderEl)
       .map((row) => [String(row.dataset.shoppingItemId ?? ''), row])
   );
   preview.originalOrderIds.forEach((itemId) => {
@@ -13782,6 +13800,10 @@ function restoreShoppingListItemPreviewOrder() {
 }
 
 function endShoppingListItemDrag({ restorePreview = false } = {}) {
+  const preview = shoppingItemDragPreviewState;
+  if (preview?.placeholderEl instanceof HTMLElement) {
+    preview.placeholderEl.remove();
+  }
   if (restorePreview) {
     restoreShoppingListItemPreviewOrder();
   }
@@ -13789,29 +13811,84 @@ function endShoppingListItemDrag({ restorePreview = false } = {}) {
   if (draggingShoppingListItemEl) {
     draggingShoppingListItemEl.classList.remove('is-dragging');
     draggingShoppingListItemEl.style.pointerEvents = '';
+    draggingShoppingListItemEl.style.position = '';
+    draggingShoppingListItemEl.style.left = '';
+    draggingShoppingListItemEl.style.top = '';
+    draggingShoppingListItemEl.style.width = '';
+    draggingShoppingListItemEl.style.zIndex = '';
+    draggingShoppingListItemEl.style.margin = '';
   }
   draggingShoppingListItemId = null;
   draggingShoppingListItemEl = null;
   shoppingItemDragPreviewState = null;
 }
 
-function beginShoppingListItemDrag(item, row, event = null) {
+function positionFloatingShoppingListItem(clientY) {
+  const preview = shoppingItemDragPreviewState;
+  if (!preview?.floating || !draggingShoppingListItemEl) return;
+  const nextTop = Math.round(clientY - preview.dragOffsetY);
+  draggingShoppingListItemEl.style.top = `${nextTop}px`;
+}
+
+function moveShoppingListItemPlaceholder(clientY) {
+  const preview = shoppingItemDragPreviewState;
+  if (!preview?.floating || !(preview.container instanceof HTMLElement) || !(preview.placeholderEl instanceof HTMLElement)) {
+    return null;
+  }
+  const rows = Array.from(preview.container.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)'))
+    .filter((candidate) => candidate !== draggingShoppingListItemEl && candidate !== preview.placeholderEl);
+  if (!rows.length) {
+    preview.container.appendChild(preview.placeholderEl);
+    return { row: null, insertAfter: true };
+  }
+  const referenceNode = rows.find((candidate) => {
+    const rect = candidate.getBoundingClientRect();
+    return clientY < rect.top + (rect.height / 2);
+  }) ?? null;
+  if (referenceNode) {
+    preview.container.insertBefore(preview.placeholderEl, referenceNode);
+    return { row: referenceNode, insertAfter: false };
+  }
+  preview.container.appendChild(preview.placeholderEl);
+  return { row: rows[rows.length - 1] ?? null, insertAfter: true };
+}
+
+function beginShoppingListItemDrag(item, row, options = {}) {
   if (!item?.list_id || !row || isShoppingInboxListId(item.list_id)) return false;
+  const floating = Boolean(options?.floating);
+  const rect = row.getBoundingClientRect();
   draggingShoppingListItemId = item.id;
   draggingShoppingListItemEl = row;
   shoppingItemDragPreviewState = {
     listId: item.list_id,
     container: row.parentElement instanceof HTMLElement ? row.parentElement : null,
     originalOrderIds: getSortedShoppingItemsForList(item.list_id).map((entry) => entry.id),
-    committed: false
+    committed: false,
+    floating,
+    placeholderEl: null,
+    dragOffsetY: floating && Number.isFinite(options?.clientY)
+      ? Math.max(0, Math.min(rect.height, options.clientY - rect.top))
+      : rect.height / 2,
+    left: rect.left
   };
+  if (floating && shoppingItemDragPreviewState.container) {
+    const placeholder = createShoppingListItemPlaceholder(row);
+    shoppingItemDragPreviewState.placeholderEl = placeholder;
+    shoppingItemDragPreviewState.container.insertBefore(placeholder, row);
+    row.style.position = 'fixed';
+    row.style.left = `${Math.round(rect.left)}px`;
+    row.style.top = `${Math.round(rect.top)}px`;
+    row.style.width = `${Math.round(rect.width)}px`;
+    row.style.zIndex = '220';
+    row.style.margin = '0';
+  }
   row.classList.add('is-dragging');
   row.style.pointerEvents = 'none';
-  if (event?.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', item.id);
+  if (options?.dataTransfer) {
+    options.dataTransfer.effectAllowed = 'move';
+    options.dataTransfer.setData('text/plain', item.id);
     try {
-      event.dataTransfer.setDragImage(row, 24, 18);
+      options.dataTransfer.setDragImage(row, 24, 18);
     } catch {}
   }
   return true;
@@ -13828,6 +13905,9 @@ function canDropShoppingListItemOnRow(row) {
 
 function updateShoppingListItemDropIndicator(row, clientY) {
   clearShoppingItemDragIndicators();
+  if (shoppingItemDragPreviewState?.floating) {
+    return moveShoppingListItemPlaceholder(clientY);
+  }
   if (!canDropShoppingListItemOnRow(row)) return null;
   const draggingRow = draggingShoppingListItemEl;
   const container = row.parentElement;
@@ -13846,8 +13926,27 @@ function updateShoppingListItemDropIndicator(row, clientY) {
 }
 
 function getPreviewOrderedShoppingItems(listId) {
-  const previewContainer = shoppingItemDragPreviewState?.container;
+  const preview = shoppingItemDragPreviewState;
+  const previewContainer = preview?.container;
   if (!(previewContainer instanceof HTMLElement)) return getSortedShoppingItemsForList(listId);
+  if (preview?.floating && preview.placeholderEl instanceof HTMLElement) {
+    const movingItem = state.shoppingItems?.[draggingShoppingListItemId] ?? null;
+    const ids = Array.from(previewContainer.children)
+      .flatMap((child) => {
+        if (!(child instanceof HTMLElement)) return [];
+        if (child === preview.placeholderEl) {
+          return movingItem ? [movingItem.id] : [];
+        }
+        if (child === draggingShoppingListItemEl) return [];
+        if (!child.matches('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)')) return [];
+        if (String(child.dataset.shoppingListId ?? '') !== String(listId)) return [];
+        return [String(child.dataset.shoppingItemId ?? '')].filter(Boolean);
+      });
+    if (!ids.length) return getSortedShoppingItemsForList(listId);
+    return ids
+      .map((itemId) => state.shoppingItems?.[itemId] ?? null)
+      .filter(Boolean);
+  }
   const ids = Array.from(previewContainer.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)'))
     .filter((row) => String(row.dataset.shoppingListId ?? '') === String(listId))
     .map((row) => String(row.dataset.shoppingItemId ?? ''))
@@ -13858,8 +13957,7 @@ function getPreviewOrderedShoppingItems(listId) {
     .filter(Boolean);
 }
 
-async function dropShoppingListItemOnRow(row, clientY) {
-  updateShoppingListItemDropIndicator(row, clientY);
+async function commitShoppingListItemPreview() {
   const movingItem = state.shoppingItems?.[draggingShoppingListItemId] ?? null;
   if (!movingItem?.list_id) return false;
   const orderedItems = getSortedShoppingItemsForList(movingItem.list_id);
@@ -13877,13 +13975,13 @@ async function dropShoppingListItemOnRow(row, clientY) {
   return updated;
 }
 
-function getShoppingListItemDropTargetAtPoint(clientX, clientY) {
-  const element = document.elementFromPoint(clientX, clientY);
-  if (!(element instanceof Element)) return null;
-  const row = element.closest('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)');
-  if (!(row instanceof HTMLElement)) return null;
-  if (!canDropShoppingListItemOnRow(row)) return null;
-  return row;
+async function dropShoppingListItemOnRow(row, clientY) {
+  updateShoppingListItemDropIndicator(row, clientY);
+  const updated = await commitShoppingListItemPreview();
+  if (updated) {
+    render();
+  }
+  return updated;
 }
 
 function handleShoppingItemPointerMove(event) {
@@ -13928,22 +14026,17 @@ function moveShoppingItemPointerGesture(event) {
   const deltaY = Math.abs(event.clientY - shoppingItemPointerDragState.startY);
   if (!shoppingItemPointerDragState.dragging) {
     if (deltaX < SHOPPING_ITEM_DRAG_THRESHOLD_PX && deltaY < SHOPPING_ITEM_DRAG_THRESHOLD_PX) return;
-    if (!beginShoppingListItemDrag(shoppingItemPointerDragState.item, shoppingItemPointerDragState.row)) {
+    if (!beginShoppingListItemDrag(shoppingItemPointerDragState.item, shoppingItemPointerDragState.row, {
+      floating: true,
+      clientY: event.clientY
+    })) {
       shoppingItemPointerDragState = null;
       return;
     }
     shoppingItemPointerDragState.dragging = true;
-    if (draggingShoppingListItemEl) {
-      draggingShoppingListItemEl.style.pointerEvents = 'none';
-    }
   }
-  const dropRow = getShoppingListItemDropTargetAtPoint(event.clientX, event.clientY);
-  shoppingItemPointerDragState.dropRow = dropRow;
-  if (dropRow) {
-    updateShoppingListItemDropIndicator(dropRow, event.clientY);
-  } else {
-    clearShoppingItemDragIndicators();
-  }
+  positionFloatingShoppingListItem(event.clientY);
+  shoppingItemPointerDragState.dropRow = moveShoppingListItemPlaceholder(event.clientY)?.row ?? null;
   event.preventDefault();
 }
 
@@ -13955,11 +14048,14 @@ async function finishShoppingItemPointerGesture(event, commit = false) {
   document.removeEventListener('pointerup', handleShoppingItemPointerUp);
   document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
   let restorePreview = Boolean(activeGesture.dragging);
-  if (activeGesture.dragging && commit && activeGesture.dropRow) {
-    const moved = await dropShoppingListItemOnRow(activeGesture.dropRow, event.clientY);
+  if (activeGesture.dragging && commit) {
+    const moved = await commitShoppingListItemPreview();
     restorePreview = !moved;
   }
   endShoppingListItemDrag({ restorePreview });
+  if (!restorePreview) {
+    render();
+  }
 }
 
 function cancelShoppingItemLongPress() {
@@ -14018,7 +14114,7 @@ function attachShoppingItemReorderHandlers(row, handle, item) {
       event.preventDefault();
       return;
     }
-    if (!beginShoppingListItemDrag(item, row, event)) {
+    if (!beginShoppingListItemDrag(item, row, { dataTransfer: event.dataTransfer })) {
       event.preventDefault();
     }
   });
