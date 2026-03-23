@@ -13833,12 +13833,16 @@ function updateShoppingListItemDropIndicator(row, clientY) {
   const container = row.parentElement;
   if (!(container instanceof HTMLElement) || !draggingRow || draggingRow === row) return null;
   const rect = row.getBoundingClientRect();
-  const insertAfter = Number.isFinite(clientY) && clientY > rect.top + rect.height / 2;
-  const referenceNode = insertAfter ? row.nextElementSibling : row;
-  if (referenceNode !== draggingRow) {
-    container.insertBefore(draggingRow, referenceNode);
+  let nextRow = row.nextElementSibling;
+  while (nextRow === draggingRow) {
+    nextRow = nextRow?.nextElementSibling ?? null;
   }
-  return { row, insertAfter };
+  const canAppendAfterLastRow = !nextRow && Number.isFinite(clientY) && clientY > rect.top + rect.height * 0.65;
+  const referenceNode = canAppendAfterLastRow ? nextRow : row;
+  if (referenceNode !== draggingRow) {
+    container.insertBefore(draggingRow, referenceNode ?? null);
+  }
+  return { row, insertAfter: canAppendAfterLastRow };
 }
 
 function getPreviewOrderedShoppingItems(listId) {
