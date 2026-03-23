@@ -9,12 +9,15 @@ import {
   createWorkspaceMembership,
   createProject,
   createShoppingList,
+  createShoppingItem,
+  createShoppingItems,
   createStatus,
   createTaskType,
   listShoppingItems,
   listTasks,
   getTask,
   updateTask,
+  updateShoppingItem,
   searchTasks,
   reparentTask,
   applyTaskCheckIn,
@@ -166,6 +169,78 @@ test('shopping lists persist scheduled dates', async () => {
   });
 });
 
+test('shopping items preserve unavailable and substitution outcomes', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Shopping outcomes', type: 'personal' });
+    const list = await createShoppingList(db, {
+      workspace_id: workspace.id,
+      name: 'Safeway run',
+      store_name: 'Safeway'
+    });
+    const item = await createShoppingItem(db, {
+      list_id: list.id,
+      name: 'Hand wipes'
+    });
+
+    const substituted = await updateShoppingItem(db, item.id, {
+      item_state: 'substituted',
+      substitute_name: 'Disinfecting wipes'
+    });
+    assert.equal(substituted.name, 'Hand wipes');
+    assert.equal(substituted.item_state, 'substituted');
+    assert.equal(substituted.substitute_name, 'Disinfecting wipes');
+    assert.equal(substituted.is_checked, 1);
+
+    const unavailable = await updateShoppingItem(db, item.id, {
+      item_state: 'unavailable'
+    });
+    assert.equal(unavailable.name, 'Hand wipes');
+    assert.equal(unavailable.item_state, 'unavailable');
+    assert.equal(unavailable.substitute_name, null);
+    assert.equal(unavailable.is_checked, 1);
+
+    const pending = await updateShoppingItem(db, item.id, { is_checked: 0 });
+    assert.equal(pending.item_state, 'pending');
+    assert.equal(pending.substitute_name, null);
+    assert.equal(pending.is_checked, 0);
+  });
+});
+
+test('manual shopping ordering is reused for future store-backed lists', async () => {
+  await withDb(async (db) => {
+    const workspace = await createWorkspace(db, { name: 'Shopping order memory', type: 'personal' });
+    const firstList = await createShoppingList(db, {
+      workspace_id: workspace.id,
+      name: 'Safeway first pass',
+      store_name: 'Safeway'
+    });
+    const firstItems = await createShoppingItems(db, firstList.id, [
+      { name: 'Apples' },
+      { name: 'Bread' },
+      { name: 'Milk' }
+    ]);
+    const byName = Object.fromEntries(firstItems.map((item) => [item.name, item]));
+
+    await updateShoppingItem(db, byName.Bread.id, { sort_order: 100 });
+    await updateShoppingItem(db, byName.Milk.id, { sort_order: 200 });
+    await updateShoppingItem(db, byName.Apples.id, { sort_order: 300 });
+
+    const secondList = await createShoppingList(db, {
+      workspace_id: workspace.id,
+      name: 'Safeway refill',
+      store_name: 'Safeway'
+    });
+    await createShoppingItems(db, secondList.id, [
+      { name: 'Milk' },
+      { name: 'Apples' },
+      { name: 'Bread' }
+    ]);
+
+    const ordered = await listShoppingItems(db, null, secondList.id);
+    assert.deepEqual(ordered.map((item) => item.name), ['Bread', 'Milk', 'Apples']);
+  });
+});
+
 test('task conversion moves a leaf task into shopping items and deletes the task', async () => {
   await withDb(async (db) => {
     const workspace = await createWorkspace(db, { name: 'Convert workspace', type: 'personal' });
@@ -181,6 +256,8 @@ test('task conversion moves a leaf task into shopping items and deletes the task
 
     const converted = await convertTaskToShoppingItem(db, task.id, { list_id: list.id });
     assert.equal(converted.shopping_item.name, 'Buy hand wipes');
+    assert.equal(converted.shopping_item.item_state, 'pending');
+    assert.equal(converted.shopping_item.substitute_name, null);
     assert.deepEqual(converted.deleted_task.ids, [task.id]);
 
     const fetchedTask = await getTask(db, task.id);

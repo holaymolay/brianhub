@@ -15,6 +15,10 @@ const dateTimeSchema = { type: 'string', format: 'date-time' };
 const nullableDateTimeSchema = { anyOf: [dateTimeSchema, { type: 'null' }] };
 const dateOnlySchema = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
 const nullableDateOnlySchema = { anyOf: [dateOnlySchema, { type: 'null' }] };
+const shoppingItemStateSchema = {
+  type: 'string',
+  enum: ['pending', 'bought', 'substituted', 'unavailable']
+};
 
 function nonEmptyString(maxLength = 512) {
   return { type: 'string', minLength: 1, maxLength };
@@ -1077,6 +1081,10 @@ const routeSchemas = new Map([
       properties: {
         list_id: uuidSchema,
         name: nullableString(512),
+        is_checked: boolishSchema,
+        sort_order: integerSchema,
+        item_state: shoppingItemStateSchema,
+        substitute_name: nullableString(512),
         items: {
           type: 'array',
           minItems: 1,
@@ -1090,7 +1098,9 @@ const routeSchemas = new Map([
                   id: uuidSchema,
                   name: nonEmptyString(512),
                   is_checked: boolishSchema,
-                  sort_order: integerSchema
+                  sort_order: integerSchema,
+                  item_state: shoppingItemStateSchema,
+                  substitute_name: nullableString(512)
                 },
                 required: ['name']
               }
@@ -1115,7 +1125,9 @@ const routeSchemas = new Map([
         list_id: { type: 'string', format: 'uuid' },
         name: nullableString(512),
         is_checked: boolishSchema,
-        sort_order: integerSchema
+        sort_order: integerSchema,
+        item_state: shoppingItemStateSchema,
+        substitute_name: nullableString(512)
       }
     }
   }],

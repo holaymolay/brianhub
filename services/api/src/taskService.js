@@ -34,6 +34,16 @@ const DEFAULT_NOTICE_TYPES = [
 ];
 const NOTICE_RECURRENCE_UNITS = new Set(['day', 'week', 'month', 'year']);
 const NOTICE_TYPE_BIRTHDAY = 'birthday';
+const SHOPPING_ITEM_STATE_PENDING = 'pending';
+const SHOPPING_ITEM_STATE_BOUGHT = 'bought';
+const SHOPPING_ITEM_STATE_SUBSTITUTED = 'substituted';
+const SHOPPING_ITEM_STATE_UNAVAILABLE = 'unavailable';
+const SHOPPING_ITEM_STATES = new Set([
+  SHOPPING_ITEM_STATE_PENDING,
+  SHOPPING_ITEM_STATE_BOUGHT,
+  SHOPPING_ITEM_STATE_SUBSTITUTED,
+  SHOPPING_ITEM_STATE_UNAVAILABLE
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -84,6 +94,100 @@ function normalizeShoppingStoreName(value) {
   if (value === undefined) return undefined;
   const text = String(value ?? '').trim();
   return text || null;
+}
+
+function normalizeShoppingItemName(value, fieldName = 'shopping item name') {
+  const text = String(value ?? '').trim();
+  if (!text || text.length > 512) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return text;
+}
+
+function normalizeShoppingItemSubstituteName(value) {
+  if (value === undefined) return undefined;
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  if (text.length > 512) {
+    throw new Error('Invalid substitute_name');
+  }
+  return text;
+}
+
+function normalizeShoppingItemState(value, { allowUndefined = true } = {}) {
+  if (value === undefined) {
+    return allowUndefined ? undefined : SHOPPING_ITEM_STATE_PENDING;
+  }
+  const state = String(value ?? '').trim().toLowerCase();
+  if (!state) return SHOPPING_ITEM_STATE_PENDING;
+  if (!SHOPPING_ITEM_STATES.has(state)) {
+    throw new Error('Invalid shopping item state');
+  }
+  return state;
+}
+
+function isCompletedShoppingItemState(state) {
+  return normalizeShoppingItemState(state, { allowUndefined: false }) !== SHOPPING_ITEM_STATE_PENDING;
+}
+
+function normalizeShoppingItemKey(value) {
+  const text = String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return text || null;
+}
+
+function getShoppingListStoreKey(list) {
+  const storeName = normalizeShoppingStoreName(list?.store_name);
+  return storeName ? storeName.toLowerCase() : null;
+}
+
+function resolveShoppingItemOutcome(existing, patch = {}) {
+  const currentState = normalizeShoppingItemState(existing?.item_state, { allowUndefined: false });
+  let nextState = patch.item_state !== undefined
+    ? normalizeShoppingItemState(patch.item_state, { allowUndefined: false })
+    : currentState;
+  let nextSubstituteName = patch.substitute_name !== undefined
+    ? normalizeShoppingItemSubstituteName(patch.substitute_name)
+    : (existing?.substitute_name ?? null);
+  const hasExplicitState = patch.item_state !== undefined;
+  const hasExplicitChecked = patch.is_checked !== undefined;
+  const hasExplicitSubstituteName = patch.substitute_name !== undefined;
+
+  if (!hasExplicitState) {
+    if (hasExplicitChecked) {
+      if (patch.is_checked) {
+        if (nextSubstituteName) {
+          nextState = SHOPPING_ITEM_STATE_SUBSTITUTED;
+        } else if (currentState === SHOPPING_ITEM_STATE_SUBSTITUTED && existing?.substitute_name && !hasExplicitSubstituteName) {
+          nextState = SHOPPING_ITEM_STATE_SUBSTITUTED;
+        } else if (currentState === SHOPPING_ITEM_STATE_UNAVAILABLE && !hasExplicitSubstituteName) {
+          nextState = SHOPPING_ITEM_STATE_UNAVAILABLE;
+        } else {
+          nextState = SHOPPING_ITEM_STATE_BOUGHT;
+        }
+      } else {
+        nextState = SHOPPING_ITEM_STATE_PENDING;
+        nextSubstituteName = null;
+      }
+    } else if (hasExplicitSubstituteName) {
+      nextState = nextSubstituteName ? SHOPPING_ITEM_STATE_SUBSTITUTED : SHOPPING_ITEM_STATE_PENDING;
+    }
+  }
+
+  if (nextState === SHOPPING_ITEM_STATE_PENDING) {
+    nextSubstituteName = null;
+  } else if (nextState === SHOPPING_ITEM_STATE_SUBSTITUTED) {
+    if (!nextSubstituteName) {
+      throw new Error('Substitute item name is required');
+    }
+  } else {
+    nextSubstituteName = null;
+  }
+
+  return {
+    item_state: nextState,
+    substitute_name: nextSubstituteName,
+    is_checked: isCompletedShoppingItemState(nextState) ? 1 : 0
+  };
 }
 
 function normalizeSettingsObject(value) {
@@ -1324,6 +1428,191 @@ export async function getShoppingItem(db, id) {
   return getRow(db, 'SELECT * FROM shopping_list_items WHERE id = ?', [itemId]);
 }
 
+async function getShoppingItemOrderHintsMap(db, workspaceId, storeNameKey) {
+  if (!workspaceId || !storeNameKey) return new Map();
+  const rows = await getRows(
+    db,
+    `SELECT item_name_key, sort_rank
+       FROM shopping_item_order_hints
+      WHERE workspace_id = ? AND store_name_key = ?`,
+    [workspaceId, storeNameKey]
+  );
+  return new Map(
+    rows
+      .map((row) => [String(row.item_name_key ?? ''), Number(row.sort_rank)])
+      .filter(([key, rank]) => key && Number.isFinite(rank))
+  );
+}
+
+function getShoppingItemHintRank(item, hints) {
+  const key = normalizeShoppingItemKey(item?.name);
+  if (!key || !(hints instanceof Map)) return null;
+  const rank = hints.get(key);
+  return Number.isFinite(rank) ? rank : null;
+}
+
+function buildHintAwareShoppingOrder(existingItems, newRecords, hints) {
+  const ordered = existingItems.map((record) => ({
+    record,
+    hintRank: getShoppingItemHintRank(record, hints),
+    isExisting: true,
+    inputIndex: -1
+  }));
+  const pending = newRecords
+    .map((record, inputIndex) => ({
+      record,
+      hintRank: getShoppingItemHintRank(record, hints),
+      isExisting: false,
+      inputIndex
+    }))
+    .sort((a, b) => {
+      const rankA = a.hintRank ?? Number.MAX_SAFE_INTEGER;
+      const rankB = b.hintRank ?? Number.MAX_SAFE_INTEGER;
+      if (rankA !== rankB) return rankA - rankB;
+      return a.inputIndex - b.inputIndex;
+    });
+
+  for (const entry of pending) {
+    if (entry.hintRank === null) {
+      ordered.push(entry);
+      continue;
+    }
+    let insertAt = ordered.length;
+    let lastRankAtOrBefore = -1;
+    for (let index = 0; index < ordered.length; index += 1) {
+      const candidateRank = ordered[index].hintRank;
+      if (candidateRank === null) continue;
+      if (candidateRank <= entry.hintRank) {
+        lastRankAtOrBefore = index;
+        continue;
+      }
+      insertAt = lastRankAtOrBefore >= 0 ? lastRankAtOrBefore + 1 : index;
+      break;
+    }
+    if (insertAt === ordered.length && lastRankAtOrBefore >= 0) {
+      insertAt = lastRankAtOrBefore + 1;
+    }
+    ordered.splice(insertAt, 0, entry);
+  }
+  return ordered.map((entry) => entry.record);
+}
+
+function buildShoppingItemRecord(input, listId, timestamp) {
+  const source = typeof input === 'string' ? { name: input } : (input ?? {});
+  const outcome = resolveShoppingItemOutcome(null, source);
+  const explicitSortOrder = Number.isFinite(Number(source.sort_order)) ? Number(source.sort_order) : null;
+  return {
+    id: ensureUuid(source?.id, 'shopping_item id'),
+    list_id: listId,
+    name: normalizeShoppingItemName(source.name ?? input),
+    item_state: outcome.item_state,
+    substitute_name: outcome.substitute_name,
+    is_checked: outcome.is_checked,
+    sort_order: explicitSortOrder,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+}
+
+async function planShoppingItemInsertion(db, list, inputs) {
+  const timestamp = nowIso();
+  const records = inputs.map((input) => buildShoppingItemRecord(input, list.id, timestamp));
+  const hasExplicitSortOrder = records.some((record) => Number.isFinite(record.sort_order));
+  const existingItems = await listShoppingItems(db, null, list.id);
+  const maxExistingSort = Math.max(0, ...existingItems.map((item) => Number(item.sort_order) || 0));
+
+  if (hasExplicitSortOrder) {
+    let nextSortOrder = maxExistingSort;
+    for (const record of records) {
+      if (Number.isFinite(record.sort_order)) continue;
+      nextSortOrder += 1;
+      record.sort_order = nextSortOrder;
+    }
+    return { timestamp, records, sortUpdates: [] };
+  }
+
+  const storeNameKey = getShoppingListStoreKey(list);
+  const hints = await getShoppingItemOrderHintsMap(db, list.workspace_id, storeNameKey);
+  if (!storeNameKey || !hints.size) {
+    let nextSortOrder = maxExistingSort;
+    for (const record of records) {
+      nextSortOrder += 1;
+      record.sort_order = nextSortOrder;
+    }
+    return { timestamp, records, sortUpdates: [] };
+  }
+
+  const ordered = buildHintAwareShoppingOrder(existingItems, records, hints);
+  const sortUpdates = [];
+  const nextSortById = new Map();
+  ordered.forEach((record, index) => {
+    nextSortById.set(record.id, (index + 1) * 100);
+  });
+
+  for (const existingItem of existingItems) {
+    const nextSortOrder = nextSortById.get(existingItem.id);
+    if (!Number.isFinite(nextSortOrder) || Number(existingItem.sort_order) === nextSortOrder) continue;
+    sortUpdates.push({
+      id: existingItem.id,
+      sort_order: nextSortOrder,
+      updated_at: timestamp
+    });
+  }
+
+  for (const record of records) {
+    record.sort_order = nextSortById.get(record.id) ?? record.sort_order ?? maxExistingSort + 1;
+  }
+
+  return { timestamp, records, sortUpdates };
+}
+
+async function applyShoppingItemSortUpdates(db, list, sortUpdates, clientId = null) {
+  if (!Array.isArray(sortUpdates) || !sortUpdates.length) return;
+  for (const update of sortUpdates) {
+    await run(
+      db,
+      'UPDATE shopping_list_items SET sort_order = ?, updated_at = ? WHERE id = ?',
+      [update.sort_order, update.updated_at ?? nowIso(), update.id]
+    );
+    await recordChange(db, list.workspace_id, 'shopping_item', update.id, 'update', { sort_order: update.sort_order }, clientId);
+  }
+}
+
+async function learnShoppingItemOrderHints(db, list) {
+  const storeNameKey = getShoppingListStoreKey(list);
+  if (!list?.workspace_id || !storeNameKey) return;
+  const orderedItems = await listShoppingItems(db, null, list.id);
+  const timestamp = nowIso();
+  for (let index = 0; index < orderedItems.length; index += 1) {
+    const itemNameKey = normalizeShoppingItemKey(orderedItems[index]?.name);
+    if (!itemNameKey) continue;
+    const existing = await getRow(
+      db,
+      `SELECT workspace_id
+         FROM shopping_item_order_hints
+        WHERE workspace_id = ? AND store_name_key = ? AND item_name_key = ?`,
+      [list.workspace_id, storeNameKey, itemNameKey]
+    );
+    if (existing) {
+      await run(
+        db,
+        `UPDATE shopping_item_order_hints
+            SET sort_rank = ?, updated_at = ?
+          WHERE workspace_id = ? AND store_name_key = ? AND item_name_key = ?`,
+        [(index + 1) * 100, timestamp, list.workspace_id, storeNameKey, itemNameKey]
+      );
+      continue;
+    }
+    await run(
+      db,
+      `INSERT INTO shopping_item_order_hints
+        (workspace_id, store_name_key, item_name_key, sort_rank, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [list.workspace_id, storeNameKey, itemNameKey, (index + 1) * 100, timestamp, timestamp]
+    );
+  }
+}
+
 export async function listShoppingItems(db, workspaceId, listId = null) {
   if (listId) {
     const safeListId = assertUuid(listId, 'list_id');
@@ -1349,35 +1638,23 @@ export async function createShoppingItems(db, listId, items, clientId = null) {
   const safeListId = assertUuid(listId, 'list_id');
   const list = await getShoppingList(db, safeListId);
   if (!list) return [];
-  const timestamp = nowIso();
-  const maxRow = await getRow(
-    db,
-    'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
-    [safeListId]
-  );
-  let sortOrder = Number(maxRow?.max_sort ?? 0);
+  const insertionPlan = await planShoppingItemInsertion(db, list, items);
   const created = [];
   await db.transaction(async (tx) => {
-    for (const item of items) {
-      const id = ensureUuid(item?.id, 'shopping_item id');
-      sortOrder += 1;
-      const record = {
-        id,
-        list_id: safeListId,
-        name: item.name ?? item,
-        is_checked: item.is_checked ? 1 : 0,
-        sort_order: Number.isFinite(item.sort_order) ? item.sort_order : sortOrder,
-        created_at: timestamp,
-        updated_at: timestamp
-      };
+    await applyShoppingItemSortUpdates(tx, list, insertionPlan.sortUpdates, clientId);
+    for (const record of insertionPlan.records) {
       await run(
         tx,
-        'INSERT INTO shopping_list_items (id, list_id, name, is_checked, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        `INSERT INTO shopping_list_items
+          (id, list_id, name, is_checked, item_state, substitute_name, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           record.id,
           record.list_id,
           record.name,
           record.is_checked,
+          record.item_state,
+          record.substitute_name,
           record.sort_order,
           record.created_at,
           record.updated_at
@@ -1391,40 +1668,8 @@ export async function createShoppingItems(db, listId, items, clientId = null) {
 }
 
 export async function createShoppingItem(db, data, clientId = null) {
-  const listId = assertUuid(data.list_id, 'list_id');
-  const list = await getShoppingList(db, listId);
-  if (!list) return null;
-  const timestamp = nowIso();
-  const maxRow = await getRow(
-    db,
-    'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
-    [listId]
-  );
-  const nextSort = Number(maxRow?.max_sort ?? 0) + 1;
-  const item = {
-    id: ensureUuid(data?.id, 'shopping_item id'),
-    list_id: listId,
-    name: data.name,
-    is_checked: data.is_checked ? 1 : 0,
-    sort_order: Number.isFinite(data.sort_order) ? data.sort_order : nextSort,
-    created_at: timestamp,
-    updated_at: timestamp
-  };
-  await run(
-    db,
-    'INSERT INTO shopping_list_items (id, list_id, name, is_checked, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [
-      item.id,
-      item.list_id,
-      item.name,
-      item.is_checked,
-      item.sort_order,
-      item.created_at,
-      item.updated_at
-    ]
-  );
-  await recordChange(db, list.workspace_id, 'shopping_item', item.id, 'create', item, clientId);
-  return getShoppingItem(db, item.id);
+  const created = await createShoppingItems(db, data.list_id, [data], clientId);
+  return created[0] ?? null;
 }
 
 export async function updateShoppingItem(db, id, patch, clientId = null) {
@@ -1432,7 +1677,8 @@ export async function updateShoppingItem(db, id, patch, clientId = null) {
   const existing = await getShoppingItem(db, id);
   if (!existing) return null;
   const currentList = await getShoppingList(db, existing.list_id);
-  const { list_id, name, is_checked } = patch;
+  const { list_id } = patch;
+  const name = patch.name !== undefined ? normalizeShoppingItemName(patch.name) : undefined;
   let { sort_order } = patch;
   let targetListId = existing.list_id;
   let targetList = currentList;
@@ -1454,27 +1700,45 @@ export async function updateShoppingItem(db, id, patch, clientId = null) {
     );
     sort_order = Number(maxRow?.max_sort ?? 0) + 1;
   }
+  const outcome = resolveShoppingItemOutcome(existing, patch);
+  const updatedAt = nowIso();
   await run(
     db,
     `UPDATE shopping_list_items
      SET list_id = COALESCE(?, list_id),
          name = COALESCE(?, name),
-         is_checked = COALESCE(?, is_checked),
+         is_checked = ?,
+         item_state = ?,
+         substitute_name = ?,
          sort_order = COALESCE(?, sort_order),
          updated_at = ?
      WHERE id = ?`,
     [
       list_id ?? null,
       name ?? null,
-      is_checked ?? null,
+      outcome.is_checked,
+      outcome.item_state,
+      outcome.substitute_name,
       sort_order ?? null,
-      nowIso(),
+      updatedAt,
       id
     ]
   );
   const workspaceId = currentList?.workspace_id ?? targetList?.workspace_id ?? null;
   if (workspaceId) {
-    await recordChange(db, workspaceId, 'shopping_item', id, 'update', patch, clientId);
+    const changePayload = {};
+    if (list_id !== undefined) changePayload.list_id = targetListId;
+    if (name !== undefined) changePayload.name = name;
+    if (sort_order !== undefined) changePayload.sort_order = sort_order;
+    if (patch.is_checked !== undefined || patch.item_state !== undefined || patch.substitute_name !== undefined) {
+      changePayload.is_checked = outcome.is_checked;
+      changePayload.item_state = outcome.item_state;
+      changePayload.substitute_name = outcome.substitute_name;
+    }
+    await recordChange(db, workspaceId, 'shopping_item', id, 'update', changePayload, clientId);
+  }
+  if (sort_order !== undefined && targetList) {
+    await learnShoppingItemOrderHints(db, targetList);
   }
   return getShoppingItem(db, id);
 }
@@ -1514,33 +1778,26 @@ export async function convertTaskToShoppingItem(db, id, data = {}, clientId = nu
     throw new Error('Only tasks without subtasks can be converted to shopping items');
   }
 
-  const timestamp = nowIso();
-  const maxRow = await getRow(
-    db,
-    'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?',
-    [listId]
-  );
-  const nextSort = Number(maxRow?.max_sort ?? 0) + 1;
-  const itemId = ensureUuid(data?.shopping_item_id, 'shopping_item id');
-  const shoppingItem = {
-    id: itemId,
-    list_id: listId,
-    name: task.title,
-    is_checked: 0,
-    sort_order: nextSort,
-    created_at: timestamp,
-    updated_at: timestamp
-  };
+  const insertionPlan = await planShoppingItemInsertion(db, list, [{
+    id: data?.shopping_item_id,
+    name: task.title
+  }]);
+  const shoppingItem = insertionPlan.records[0];
 
   await db.transaction(async (tx) => {
+    await applyShoppingItemSortUpdates(tx, list, insertionPlan.sortUpdates, clientId);
     await run(
       tx,
-      'INSERT INTO shopping_list_items (id, list_id, name, is_checked, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      `INSERT INTO shopping_list_items
+        (id, list_id, name, is_checked, item_state, substitute_name, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         shoppingItem.id,
         shoppingItem.list_id,
         shoppingItem.name,
         shoppingItem.is_checked,
+        shoppingItem.item_state,
+        shoppingItem.substitute_name,
         shoppingItem.sort_order,
         shoppingItem.created_at,
         shoppingItem.updated_at

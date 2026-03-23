@@ -2136,6 +2136,19 @@
             Item name
             <input id="shopping-item-editor-name" type="text" maxlength="512" required />
           </label>
+          <label id="shopping-item-editor-outcome-row">
+            Trip outcome
+            <select id="shopping-item-editor-outcome">
+              <option value="pending">Still pending</option>
+              <option value="bought">Bought</option>
+              <option value="substituted">Substituted</option>
+              <option value="unavailable">Unavailable / didn’t get it</option>
+            </select>
+          </label>
+          <label id="shopping-item-editor-substitute-row" hidden>
+            Substitute item
+            <input id="shopping-item-editor-substitute" type="text" maxlength="512" placeholder="What you got instead" />
+          </label>
           <label>
             Shopping list
             <select id="shopping-item-editor-list"></select>

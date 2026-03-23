@@ -13,6 +13,8 @@ test('shopping UI retains list and item modal surfaces', () => {
   assert.ok(html.includes('shopping-item-modal'));
   assert.ok(html.includes('shopping-item-form'));
   assert.ok(html.includes('shopping-item-parse'));
+  assert.ok(html.includes('shopping-item-editor-outcome'));
+  assert.ok(html.includes('shopping-item-editor-substitute'));
   assert.ok(html.includes('shopping-item-actions-modal'));
 });
 
@@ -29,6 +31,14 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('shopping-item-editor-modal'));
   assert.ok(script.includes('shopping-item-actions-edit'));
   assert.ok(script.includes("const SHOPPING_ITEM_MOVE_NEW_VALUE = '__new__';"));
+  assert.ok(script.includes("const SHOPPING_ITEM_STATE_SUBSTITUTED = 'substituted';"));
+  assert.ok(script.includes("const SHOPPING_ITEM_STATE_UNAVAILABLE = 'unavailable';"));
+  assert.ok(script.includes('function getShoppingItemOutcomeLabel(item)'));
+  assert.ok(script.includes("shoppingItemEditorOutcome?.addEventListener('change', syncShoppingItemEditorOutcomeInputs);"));
+  assert.ok(script.includes('patch.item_state = nextItemState'));
+  assert.ok(script.includes('patch.substitute_name = nextSubstituteName ?? null;'));
+  assert.ok(script.includes("await updateShoppingItemRecord(item.id, { item_state: SHOPPING_ITEM_STATE_BOUGHT });"));
+  assert.ok(script.includes("meta.className = 'shopping-item-meta';"));
   assert.ok(script.includes("function openShoppingItemEditorModal(itemId, { mode = 'edit' } = {})"));
   assert.ok(script.includes("shoppingItemEditorForm?.addEventListener('submit'"));
   assert.ok(script.includes('createShoppingListRecord({ name: newListName })'));
@@ -79,11 +89,19 @@ test('shopping item dragging relies on live movement rather than target borders'
 test('shopping item list reassignment is supported in service and schema layers', () => {
   const taskService = read('services/api/src/taskService.js');
   const schemas = read('services/api/src/routeSchemas.js');
-  assert.ok(taskService.includes('const { list_id, name, is_checked } = patch;'));
+  const migration = read('services/api/db/migrations/026_shopping_item_outcomes_and_order_hints.sql');
+  assert.ok(taskService.includes('const outcome = resolveShoppingItemOutcome(existing, patch);'));
   assert.ok(taskService.includes('let { sort_order } = patch;'));
   assert.ok(taskService.includes('SET list_id = COALESCE(?, list_id),'));
+  assert.ok(taskService.includes('item_state = ?,'));
+  assert.ok(taskService.includes('substitute_name = ?,'));
+  assert.ok(taskService.includes('function buildHintAwareShoppingOrder(existingItems, newRecords, hints)'));
+  assert.ok(taskService.includes('await learnShoppingItemOrderHints(db, targetList);'));
   assert.ok(taskService.includes("'SELECT MAX(sort_order) AS max_sort FROM shopping_list_items WHERE list_id = ?'"));
   assert.ok(taskService.includes('list_id ?? null,'));
   assert.ok(taskService.includes('sort_order ?? null,'));
+  assert.ok(migration.includes('CREATE TABLE IF NOT EXISTS shopping_item_order_hints'));
   assert.ok(schemas.includes("list_id: { type: 'string', format: 'uuid' }"));
+  assert.ok(schemas.includes("item_state: shoppingItemStateSchema"));
+  assert.ok(schemas.includes("substitute_name: nullableString(512)"));
 });

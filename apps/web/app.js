@@ -112,6 +112,10 @@ const TASK_TYPE_WORKFLOW = 'workflow';
 const SHOPPING_INBOX_NAME = 'Shopping Inbox';
 const SHOPPING_ITEM_MOVE_NEW_VALUE = '__new__';
 const SHOPPING_LIST_EDITOR_INBOX = '__shopping_inbox__';
+const SHOPPING_ITEM_STATE_PENDING = 'pending';
+const SHOPPING_ITEM_STATE_BOUGHT = 'bought';
+const SHOPPING_ITEM_STATE_SUBSTITUTED = 'substituted';
+const SHOPPING_ITEM_STATE_UNAVAILABLE = 'unavailable';
 const SHOPPING_ITEM_LONG_PRESS_MS = 450;
 const SHOPPING_ITEM_REORDER_HOLD_MS = 500;
 const SHOPPING_ITEM_DRAG_THRESHOLD_PX = 6;
@@ -381,6 +385,10 @@ const shoppingItemEditorForm = document.getElementById('shopping-item-editor-for
 const shoppingItemEditorTitle = document.getElementById('shopping-item-editor-title');
 const shoppingItemEditorNameRow = document.getElementById('shopping-item-editor-name-row');
 const shoppingItemEditorName = document.getElementById('shopping-item-editor-name');
+const shoppingItemEditorOutcomeRow = document.getElementById('shopping-item-editor-outcome-row');
+const shoppingItemEditorOutcome = document.getElementById('shopping-item-editor-outcome');
+const shoppingItemEditorSubstituteRow = document.getElementById('shopping-item-editor-substitute-row');
+const shoppingItemEditorSubstitute = document.getElementById('shopping-item-editor-substitute');
 const shoppingItemEditorList = document.getElementById('shopping-item-editor-list');
 const shoppingItemEditorNewListRow = document.getElementById('shopping-item-editor-new-list-row');
 const shoppingItemEditorNewList = document.getElementById('shopping-item-editor-new-list');
@@ -8731,8 +8739,45 @@ function normalizeShoppingList(list) {
   };
 }
 
+function normalizeShoppingItemState(value) {
+  const state = String(value ?? '').trim().toLowerCase();
+  if (state === SHOPPING_ITEM_STATE_BOUGHT) return SHOPPING_ITEM_STATE_BOUGHT;
+  if (state === SHOPPING_ITEM_STATE_SUBSTITUTED) return SHOPPING_ITEM_STATE_SUBSTITUTED;
+  if (state === SHOPPING_ITEM_STATE_UNAVAILABLE) return SHOPPING_ITEM_STATE_UNAVAILABLE;
+  return SHOPPING_ITEM_STATE_PENDING;
+}
+
+function normalizeShoppingItemSubstituteName(value) {
+  const text = normalizeTitleInput(value ?? '');
+  return text || null;
+}
+
+function isCompletedShoppingItemState(state) {
+  return normalizeShoppingItemState(state) !== SHOPPING_ITEM_STATE_PENDING;
+}
+
+function getShoppingItemOutcomeLabel(item) {
+  const state = normalizeShoppingItemState(item?.item_state);
+  if (state === SHOPPING_ITEM_STATE_SUBSTITUTED) {
+    return item?.substitute_name ? `Got instead: ${item.substitute_name}` : 'Substituted';
+  }
+  if (state === SHOPPING_ITEM_STATE_UNAVAILABLE) {
+    return 'Unavailable this trip';
+  }
+  if (state === SHOPPING_ITEM_STATE_BOUGHT) {
+    return 'Bought';
+  }
+  return '';
+}
+
 function normalizeShoppingItem(item) {
-  return { ...item, is_checked: Number(item.is_checked) ? 1 : 0 };
+  const itemState = normalizeShoppingItemState(item?.item_state ?? (Number(item?.is_checked) ? SHOPPING_ITEM_STATE_BOUGHT : SHOPPING_ITEM_STATE_PENDING));
+  return {
+    ...item,
+    item_state: itemState,
+    substitute_name: normalizeShoppingItemSubstituteName(item?.substitute_name ?? null),
+    is_checked: isCompletedShoppingItemState(itemState) ? 1 : 0
+  };
 }
 
 function normalizeScheduleEventKind(kind) {
@@ -10512,7 +10557,9 @@ async function createShoppingItemsRecord(listId, items) {
   if (!items.length) return [];
   const normalizedItems = items.map(item => ({
     ...item,
-    name: item.name !== undefined ? normalizeTitleInput(item.name) : item.name
+    name: item.name !== undefined ? normalizeTitleInput(item.name) : item.name,
+    substitute_name: item.substitute_name !== undefined ? normalizeShoppingItemSubstituteName(item.substitute_name) : item.substitute_name,
+    item_state: item.item_state !== undefined ? normalizeShoppingItemState(item.item_state) : item.item_state
   }));
   const result = await api.createShoppingItems(listId, normalizedItems);
   const createdItems = Array.isArray(result?.items) ? result.items : [];
@@ -10540,6 +10587,12 @@ async function createShoppingItemsRecord(listId, items) {
 async function updateShoppingItemRecord(id, patch) {
   if (patch.name !== undefined) {
     patch = { ...patch, name: normalizeTitleInput(patch.name) };
+  }
+  if (patch.substitute_name !== undefined) {
+    patch = { ...patch, substitute_name: normalizeShoppingItemSubstituteName(patch.substitute_name) };
+  }
+  if (patch.item_state !== undefined) {
+    patch = { ...patch, item_state: normalizeShoppingItemState(patch.item_state) };
   }
   const updated = await api.updateShoppingItem(id, patch);
   if (updated) {
@@ -13668,8 +13721,34 @@ function setShoppingItemEditorMode(mode = 'edit') {
   if (shoppingItemEditorName) {
     shoppingItemEditorName.required = !moveMode;
   }
+  if (shoppingItemEditorOutcomeRow) {
+    shoppingItemEditorOutcomeRow.hidden = moveMode;
+  }
+  if (shoppingItemEditorOutcome) {
+    shoppingItemEditorOutcome.disabled = moveMode;
+  }
+  if (shoppingItemEditorSubstituteRow) {
+    shoppingItemEditorSubstituteRow.hidden = moveMode;
+  }
+  if (shoppingItemEditorSubstitute) {
+    shoppingItemEditorSubstitute.required = false;
+    shoppingItemEditorSubstitute.disabled = moveMode;
+  }
   if (shoppingItemEditorSubmit) {
     shoppingItemEditorSubmit.textContent = moveMode ? 'Move' : 'Save';
+  }
+}
+
+function syncShoppingItemEditorOutcomeInputs() {
+  const state = normalizeShoppingItemState(shoppingItemEditorOutcome?.value ?? SHOPPING_ITEM_STATE_PENDING);
+  const showSubstitute = activeShoppingItemEditorMode !== 'move' && state === SHOPPING_ITEM_STATE_SUBSTITUTED;
+  if (shoppingItemEditorSubstituteRow) shoppingItemEditorSubstituteRow.hidden = !showSubstitute;
+  if (shoppingItemEditorSubstitute) {
+    shoppingItemEditorSubstitute.required = showSubstitute;
+    shoppingItemEditorSubstitute.disabled = activeShoppingItemEditorMode === 'move' || !showSubstitute;
+    if (!showSubstitute) {
+      shoppingItemEditorSubstitute.value = '';
+    }
   }
 }
 
@@ -13713,6 +13792,9 @@ function openShoppingItemEditorModal(itemId, { mode = 'edit' } = {}) {
   activeShoppingItemEditorId = itemId;
   setShoppingItemEditorMode(mode);
   if (shoppingItemEditorName) shoppingItemEditorName.value = item.name ?? '';
+  if (shoppingItemEditorOutcome) shoppingItemEditorOutcome.value = normalizeShoppingItemState(item.item_state);
+  if (shoppingItemEditorSubstitute) shoppingItemEditorSubstitute.value = item.substitute_name ?? '';
+  syncShoppingItemEditorOutcomeInputs();
   populateShoppingItemEditorListOptions(item.list_id);
   setShoppingItemEditorNewListVisible(false);
   shoppingItemEditorModal.classList.remove('hidden');
@@ -13729,6 +13811,10 @@ function closeShoppingItemEditorModal() {
   activeShoppingItemEditorId = null;
   setShoppingItemEditorMode('edit');
   shoppingItemEditorForm?.reset();
+  if (shoppingItemEditorOutcome) {
+    shoppingItemEditorOutcome.value = SHOPPING_ITEM_STATE_PENDING;
+  }
+  syncShoppingItemEditorOutcomeInputs();
   setShoppingItemEditorNewListVisible(false);
   shoppingItemEditorModal?.classList.add('hidden');
 }
@@ -19297,9 +19383,11 @@ function renderShoppingPanel() {
   items.forEach(item => {
     const row = document.createElement('div');
     row.className = 'shopping-item shopping-list-item-row' + (item.is_checked ? ' is-checked' : '');
+    row.classList.add(`is-${normalizeShoppingItemState(item.item_state)}`);
     const label = document.createElement('span');
     label.className = 'shopping-item-label';
     label.textContent = item.name;
+    const outcomeLabel = getShoppingItemOutcomeLabel(item);
 
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
@@ -19379,8 +19467,17 @@ function renderShoppingPanel() {
 
       const content = document.createElement('div');
       content.className = 'shopping-list-item-content';
+      const text = document.createElement('div');
+      text.className = 'shopping-item-text';
+      text.appendChild(label);
+      if (outcomeLabel) {
+        const meta = document.createElement('span');
+        meta.className = 'shopping-item-meta';
+        meta.textContent = outcomeLabel;
+        text.appendChild(meta);
+      }
       content.appendChild(checkbox);
-      content.appendChild(label);
+      content.appendChild(text);
 
       const actions = document.createElement('div');
       actions.className = 'shopping-list-item-row-actions';
@@ -26035,6 +26132,7 @@ shoppingItemActionsDelete?.addEventListener('click', async () => {
 shoppingItemActionsCancel?.addEventListener('click', closeShoppingItemActionsModal);
 shoppingItemActionsModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeShoppingItemActionsModal);
 shoppingItemEditorList?.addEventListener('change', syncShoppingItemEditorMoveInputs);
+shoppingItemEditorOutcome?.addEventListener('change', syncShoppingItemEditorOutcomeInputs);
 shoppingItemEditorForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const item = state.shoppingItems?.[activeShoppingItemEditorId] ?? null;
@@ -26046,6 +26144,16 @@ shoppingItemEditorForm?.addEventListener('submit', async (event) => {
   const nextName = moveOnly ? String(item.name ?? '').trim() : String(shoppingItemEditorName?.value ?? '').trim();
   if (!moveOnly && !nextName) {
     shoppingItemEditorName?.focus();
+    return;
+  }
+  const nextItemState = moveOnly
+    ? normalizeShoppingItemState(item.item_state)
+    : normalizeShoppingItemState(shoppingItemEditorOutcome?.value ?? item.item_state);
+  const nextSubstituteName = moveOnly
+    ? normalizeShoppingItemSubstituteName(item.substitute_name)
+    : normalizeShoppingItemSubstituteName(shoppingItemEditorSubstitute?.value ?? '');
+  if (!moveOnly && nextItemState === SHOPPING_ITEM_STATE_SUBSTITUTED && !nextSubstituteName) {
+    shoppingItemEditorSubstitute?.focus();
     return;
   }
   let targetListId = String(shoppingItemEditorList?.value ?? item.list_id ?? '').trim();
@@ -26065,6 +26173,12 @@ shoppingItemEditorForm?.addEventListener('submit', async (event) => {
   }
   const patch = {};
   if (nextName !== String(item.name ?? '')) patch.name = nextName;
+  if (!moveOnly) {
+    if (nextItemState !== normalizeShoppingItemState(item.item_state)) patch.item_state = nextItemState;
+    if ((nextSubstituteName ?? null) !== (item.substitute_name ?? null)) {
+      patch.substitute_name = nextSubstituteName ?? null;
+    }
+  }
   if (targetListId && targetListId !== item.list_id) patch.list_id = targetListId;
   if (Object.keys(patch).length) {
     const updated = await updateShoppingItemRecord(item.id, patch);
@@ -26264,7 +26378,7 @@ shoppingCompleteBtn?.addEventListener('click', async () => {
       if (!confirmed) return;
       for (const item of items) {
         if (!item.is_checked) {
-          await updateShoppingItemRecord(item.id, { is_checked: 1 });
+          await updateShoppingItemRecord(item.id, { item_state: SHOPPING_ITEM_STATE_BOUGHT });
         }
       }
     }

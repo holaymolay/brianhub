@@ -4106,6 +4106,28 @@ button:hover { opacity: 0.9; }
   font-size: 0.9rem;
 }
 
+.shopping-item-text {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.shopping-item-meta {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+.shopping-item.is-substituted .shopping-item-meta {
+  color: #9fc3ff;
+}
+
+.shopping-item.is-unavailable .shopping-item-meta {
+  color: #f4c97b;
+}
+
 .shopping-item.is-checked {
   opacity: 0.7;
 }
@@ -6877,7 +6899,7 @@ body.auth-gated #auth-cancel-invite {
 .shopping-list-item-content {
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.65rem;
   flex: 1 1 auto;
 }

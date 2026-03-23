@@ -1600,7 +1600,7 @@ server.post('/shopping-items', async (request, reply) => {
   if (!name) {
     return reply.code(400).send({ error: 'name required' });
   }
-  const created = await createShoppingItem(db, { list_id, name }, request.headers['x-client-id'] ?? null);
+  const created = await createShoppingItem(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
   if (!created) return reply.code(404).send({ error: 'list not found' });
   return created;
 });

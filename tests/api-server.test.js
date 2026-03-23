@@ -318,6 +318,8 @@ test('shopping lists persist scheduled_for and tasks can convert into shopping i
   assert.equal(convertRes.statusCode, 200);
   const converted = convertRes.json();
   assert.equal(converted.shopping_item.name, 'Buy hand wipes');
+  assert.equal(converted.shopping_item.item_state, 'pending');
+  assert.equal(converted.shopping_item.substitute_name, null);
   assert.deepEqual(converted.deleted_task.ids, [task.id]);
 
   const fetchedTaskRes = await server.inject({
@@ -332,6 +334,69 @@ test('shopping lists persist scheduled_for and tasks can convert into shopping i
   });
   assert.equal(itemsRes.statusCode, 200);
   assert.equal(itemsRes.json().some((item) => item.name === 'Buy hand wipes' && item.list_id === list.id), true);
+});
+
+test('shopping items support unavailable substitutions and preserved outcomes over the API', async () => {
+  const workspaceRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    payload: {
+      name: 'Shopping outcomes workspace',
+      type: 'personal',
+      org_id: '00000000-0000-4000-8000-000000000001'
+    }
+  });
+  assert.equal(workspaceRes.statusCode, 200);
+  const workspaceId = workspaceRes.json().id;
+
+  const listRes = await server.inject({
+    method: 'POST',
+    url: '/shopping-lists',
+    payload: {
+      workspace_id: workspaceId,
+      name: 'Safeway run',
+      store_name: 'Safeway'
+    }
+  });
+  assert.equal(listRes.statusCode, 200);
+  const list = listRes.json();
+
+  const itemRes = await server.inject({
+    method: 'POST',
+    url: '/shopping-items',
+    payload: {
+      list_id: list.id,
+      name: 'Hand wipes'
+    }
+  });
+  assert.equal(itemRes.statusCode, 200);
+  const item = itemRes.json();
+
+  const substitutedRes = await server.inject({
+    method: 'PATCH',
+    url: `/shopping-items/${item.id}`,
+    payload: {
+      item_state: 'substituted',
+      substitute_name: 'Disinfecting wipes'
+    }
+  });
+  assert.equal(substitutedRes.statusCode, 200);
+  assert.equal(substitutedRes.json().name, 'Hand wipes');
+  assert.equal(substitutedRes.json().item_state, 'substituted');
+  assert.equal(substitutedRes.json().substitute_name, 'Disinfecting wipes');
+  assert.equal(substitutedRes.json().is_checked, 1);
+
+  const unavailableRes = await server.inject({
+    method: 'PATCH',
+    url: `/shopping-items/${item.id}`,
+    payload: {
+      item_state: 'unavailable'
+    }
+  });
+  assert.equal(unavailableRes.statusCode, 200);
+  assert.equal(unavailableRes.json().item_state, 'unavailable');
+  assert.equal(unavailableRes.json().substitute_name, null);
+  assert.equal(unavailableRes.json().is_checked, 1);
 });
 
 test('invite accept creates credentials and session, then login/logout cycle works', async () => {
