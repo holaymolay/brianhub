@@ -37,10 +37,12 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('handle.draggable = !isMobileViewport();'));
   assert.ok(script.includes('if (isMobileViewport()) {'));
   assert.ok(script.includes("document.addEventListener('pointermove', handleShoppingItemPointerMove)"));
-  assert.ok(script.includes("handle.addEventListener('lostpointercapture'"));
+  assert.ok(!script.includes("handle.addEventListener('lostpointercapture'"));
   assert.ok(script.includes('shoppingItemDragPreviewState = {'));
   assert.ok(script.includes("row.style.pointerEvents = 'none';"));
-  assert.ok(script.includes('container.insertBefore(draggingRow, referenceNode ?? null);'));
+  assert.ok(script.includes("filter((candidate) => candidate !== draggingRow)"));
+  assert.ok(script.includes('const insertAfter = Number.isFinite(clientY) && clientY > rect.top + rect.height / 2;'));
+  assert.ok(script.includes('container.insertBefore(draggingRow, referenceNode);'));
   assert.ok(script.includes('function getPreviewOrderedShoppingItems(listId)'));
   assert.ok(!shoppingDropIndicatorBody.includes("row.classList.add('is-drop-target');"));
 });

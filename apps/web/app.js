@@ -13833,16 +13833,16 @@ function updateShoppingListItemDropIndicator(row, clientY) {
   const container = row.parentElement;
   if (!(container instanceof HTMLElement) || !draggingRow || draggingRow === row) return null;
   const rect = row.getBoundingClientRect();
-  let nextRow = row.nextElementSibling;
-  while (nextRow === draggingRow) {
-    nextRow = nextRow?.nextElementSibling ?? null;
+  const rows = Array.from(container.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)'))
+    .filter((candidate) => candidate !== draggingRow);
+  const targetIndex = rows.indexOf(row);
+  if (targetIndex < 0) return null;
+  const insertAfter = Number.isFinite(clientY) && clientY > rect.top + rect.height / 2;
+  const referenceNode = rows[targetIndex + (insertAfter ? 1 : 0)] ?? null;
+  if (draggingRow.nextElementSibling !== referenceNode) {
+    container.insertBefore(draggingRow, referenceNode);
   }
-  const canAppendAfterLastRow = !nextRow && Number.isFinite(clientY) && clientY > rect.top + rect.height * 0.65;
-  const referenceNode = canAppendAfterLastRow ? nextRow : row;
-  if (referenceNode !== draggingRow) {
-    container.insertBefore(draggingRow, referenceNode ?? null);
-  }
-  return { row, insertAfter: canAppendAfterLastRow };
+  return { row, insertAfter };
 }
 
 function getPreviewOrderedShoppingItems(listId) {
@@ -13919,7 +13919,6 @@ function beginShoppingItemPointerGesture(event, item, row) {
   document.addEventListener('pointermove', handleShoppingItemPointerMove);
   document.addEventListener('pointerup', handleShoppingItemPointerUp);
   document.addEventListener('pointercancel', handleShoppingItemPointerCancel);
-  event.currentTarget?.setPointerCapture?.(event.pointerId);
   event.preventDefault();
 }
 
@@ -13955,7 +13954,6 @@ async function finishShoppingItemPointerGesture(event, commit = false) {
   document.removeEventListener('pointermove', handleShoppingItemPointerMove);
   document.removeEventListener('pointerup', handleShoppingItemPointerUp);
   document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
-  event.currentTarget?.releasePointerCapture?.(event.pointerId);
   let restorePreview = Boolean(activeGesture.dragging);
   if (activeGesture.dragging && commit && activeGesture.dropRow) {
     const moved = await dropShoppingListItemOnRow(activeGesture.dropRow, event.clientY);
@@ -14028,9 +14026,6 @@ function attachShoppingItemReorderHandlers(row, handle, item) {
     endShoppingListItemDrag({ restorePreview: !shoppingItemDragPreviewState?.committed });
   });
   handle.addEventListener('pointerdown', (event) => beginShoppingItemPointerGesture(event, item, row));
-  handle.addEventListener('lostpointercapture', (event) => {
-    void finishShoppingItemPointerGesture(event, false);
-  });
   row.addEventListener('dragover', (event) => {
     if (!canDropShoppingListItemOnRow(row)) return;
     event.preventDefault();
