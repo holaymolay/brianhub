@@ -18,6 +18,7 @@ test('shopping UI retains list and item modal surfaces', () => {
 
 test('shopping item first-slice controls exist in app layer', () => {
   const script = read('apps/web/app.js');
+  const shoppingDropIndicatorBody = script.match(/function updateShoppingListItemDropIndicator\(row, clientY\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
   assert.ok(script.includes('Delete shopping item'));
   assert.ok(script.includes('function confirmDeleteShoppingItem(itemId)'));
   assert.ok(script.includes('function openShoppingItemActionsModal(itemId)'));
@@ -37,18 +38,22 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('if (isMobileViewport()) {'));
   assert.ok(script.includes("document.addEventListener('pointermove', handleShoppingItemPointerMove)"));
   assert.ok(script.includes("handle.addEventListener('lostpointercapture'"));
-  assert.ok(script.includes("row.classList.add('is-drop-target');"));
+  assert.ok(script.includes('shoppingItemDragPreviewState = {'));
+  assert.ok(script.includes("row.style.pointerEvents = 'none';"));
+  assert.ok(script.includes('container.insertBefore(draggingRow, referenceNode);'));
+  assert.ok(script.includes('function getPreviewOrderedShoppingItems(listId)'));
+  assert.ok(!shoppingDropIndicatorBody.includes("row.classList.add('is-drop-target');"));
 });
 
-test('shopping item drag target uses a full-row highlight', () => {
+test('shopping item dragging relies on live movement rather than target borders', () => {
   const styles = read('apps/web/styles.css');
-  assert.ok(styles.includes('.shopping-item.is-drop-target'));
-  assert.ok(styles.includes('transform: translateY(0.85rem);'));
-  assert.ok(styles.includes('box-shadow: 0 0 0 2px rgba(132, 173, 255, 0.36), 0 18px 32px rgba(0, 0, 0, 0.24);'));
-  assert.ok(styles.includes('.shopping-item.is-drop-target .shopping-item-label'));
+  assert.ok(styles.includes('.shopping-item.is-dragging'));
+  assert.ok(styles.includes('background: #17263a;'));
+  assert.ok(styles.includes('border-color: rgba(132, 173, 255, 0.48);'));
   assert.ok(styles.includes('min-width: 2.6rem;'));
   assert.ok(styles.includes('min-height: 2.6rem;'));
   assert.ok(styles.includes('-webkit-user-drag: none;'));
+  assert.ok(!styles.includes('.shopping-item.is-drop-target'));
 });
 
 test('shopping item list reassignment is supported in service and schema layers', () => {

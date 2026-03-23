@@ -829,6 +829,7 @@ let activeShoppingItemActionsId = null;
 let draggingShoppingListItemId = null;
 let draggingShoppingListItemEl = null;
 let shoppingItemPointerDragState = null;
+let shoppingItemDragPreviewState = null;
 let shoppingItemLongPressState = null;
 let sectionOrderDirty = false;
 let columnOrderDirty = false;
@@ -13767,7 +13768,23 @@ function clearShoppingItemDragIndicators() {
     .forEach((row) => row.classList.remove('is-drop-target'));
 }
 
-function endShoppingListItemDrag() {
+function restoreShoppingListItemPreviewOrder() {
+  const preview = shoppingItemDragPreviewState;
+  if (!preview?.container || !Array.isArray(preview.originalOrderIds)) return;
+  const rowById = new Map(
+    Array.from(preview.container.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)'))
+      .map((row) => [String(row.dataset.shoppingItemId ?? ''), row])
+  );
+  preview.originalOrderIds.forEach((itemId) => {
+    const row = rowById.get(String(itemId ?? ''));
+    if (row) preview.container.appendChild(row);
+  });
+}
+
+function endShoppingListItemDrag({ restorePreview = false } = {}) {
+  if (restorePreview) {
+    restoreShoppingListItemPreviewOrder();
+  }
   clearShoppingItemDragIndicators();
   if (draggingShoppingListItemEl) {
     draggingShoppingListItemEl.classList.remove('is-dragging');
@@ -13775,13 +13792,21 @@ function endShoppingListItemDrag() {
   }
   draggingShoppingListItemId = null;
   draggingShoppingListItemEl = null;
+  shoppingItemDragPreviewState = null;
 }
 
 function beginShoppingListItemDrag(item, row, event = null) {
   if (!item?.list_id || !row || isShoppingInboxListId(item.list_id)) return false;
   draggingShoppingListItemId = item.id;
   draggingShoppingListItemEl = row;
+  shoppingItemDragPreviewState = {
+    listId: item.list_id,
+    container: row.parentElement instanceof HTMLElement ? row.parentElement : null,
+    originalOrderIds: getSortedShoppingItemsForList(item.list_id).map((entry) => entry.id),
+    committed: false
+  };
   row.classList.add('is-dragging');
+  row.style.pointerEvents = 'none';
   if (event?.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', item.id);
@@ -13804,26 +13829,47 @@ function canDropShoppingListItemOnRow(row) {
 function updateShoppingListItemDropIndicator(row, clientY) {
   clearShoppingItemDragIndicators();
   if (!canDropShoppingListItemOnRow(row)) return null;
-  row.classList.add('is-drop-target');
-  return { row };
+  const draggingRow = draggingShoppingListItemEl;
+  const container = row.parentElement;
+  if (!(container instanceof HTMLElement) || !draggingRow || draggingRow === row) return null;
+  const rect = row.getBoundingClientRect();
+  const insertAfter = Number.isFinite(clientY) && clientY > rect.top + rect.height / 2;
+  const referenceNode = insertAfter ? row.nextElementSibling : row;
+  if (referenceNode !== draggingRow) {
+    container.insertBefore(draggingRow, referenceNode);
+  }
+  return { row, insertAfter };
 }
 
-async function dropShoppingListItemOnRow(row) {
-  const indicator = updateShoppingListItemDropIndicator(row);
-  if (!indicator) return false;
+function getPreviewOrderedShoppingItems(listId) {
+  const previewContainer = shoppingItemDragPreviewState?.container;
+  if (!(previewContainer instanceof HTMLElement)) return getSortedShoppingItemsForList(listId);
+  const ids = Array.from(previewContainer.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)'))
+    .filter((row) => String(row.dataset.shoppingListId ?? '') === String(listId))
+    .map((row) => String(row.dataset.shoppingItemId ?? ''))
+    .filter(Boolean);
+  if (!ids.length) return getSortedShoppingItemsForList(listId);
+  return ids
+    .map((itemId) => state.shoppingItems?.[itemId] ?? null)
+    .filter(Boolean);
+}
+
+async function dropShoppingListItemOnRow(row, clientY) {
+  updateShoppingListItemDropIndicator(row, clientY);
   const movingItem = state.shoppingItems?.[draggingShoppingListItemId] ?? null;
   if (!movingItem?.list_id) return false;
   const orderedItems = getSortedShoppingItemsForList(movingItem.list_id);
-  const activeItem = orderedItems.find((entry) => entry.id === draggingShoppingListItemId);
-  if (!activeItem) return false;
-  const remaining = orderedItems.filter((entry) => entry.id !== draggingShoppingListItemId);
-  const targetIndex = remaining.findIndex((entry) => entry.id === row.dataset.shoppingItemId);
-  if (targetIndex < 0) return false;
-  remaining.splice(targetIndex, 0, activeItem);
-  const changed = remaining.some((entry, index) => entry.id !== orderedItems[index]?.id);
+  const previewItems = getPreviewOrderedShoppingItems(movingItem.list_id);
+  if (!previewItems.length) return false;
+  const changed = previewItems.some((entry, index) => entry.id !== orderedItems[index]?.id);
   if (!changed) return false;
-  const updated = await resequenceShoppingItems(movingItem.list_id, remaining);
-  if (updated) render();
+  const updated = await resequenceShoppingItems(movingItem.list_id, previewItems);
+  if (updated) {
+    if (shoppingItemDragPreviewState) {
+      shoppingItemDragPreviewState.committed = true;
+    }
+    render();
+  }
   return updated;
 }
 
@@ -13891,7 +13937,7 @@ function moveShoppingItemPointerGesture(event) {
   const dropRow = getShoppingListItemDropTargetAtPoint(event.clientX, event.clientY);
   shoppingItemPointerDragState.dropRow = dropRow;
   if (dropRow) {
-    updateShoppingListItemDropIndicator(dropRow);
+    updateShoppingListItemDropIndicator(dropRow, event.clientY);
   } else {
     clearShoppingItemDragIndicators();
   }
@@ -13906,10 +13952,12 @@ async function finishShoppingItemPointerGesture(event, commit = false) {
   document.removeEventListener('pointerup', handleShoppingItemPointerUp);
   document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
   event.currentTarget?.releasePointerCapture?.(event.pointerId);
+  let restorePreview = Boolean(activeGesture.dragging);
   if (activeGesture.dragging && commit && activeGesture.dropRow) {
-    await dropShoppingListItemOnRow(activeGesture.dropRow);
+    const moved = await dropShoppingListItemOnRow(activeGesture.dropRow, event.clientY);
+    restorePreview = !moved;
   }
-  endShoppingListItemDrag();
+  endShoppingListItemDrag({ restorePreview });
 }
 
 function cancelShoppingItemLongPress() {
@@ -13972,7 +14020,9 @@ function attachShoppingItemReorderHandlers(row, handle, item) {
       event.preventDefault();
     }
   });
-  handle.addEventListener('dragend', endShoppingListItemDrag);
+  handle.addEventListener('dragend', () => {
+    endShoppingListItemDrag({ restorePreview: !shoppingItemDragPreviewState?.committed });
+  });
   handle.addEventListener('pointerdown', (event) => beginShoppingItemPointerGesture(event, item, row));
   handle.addEventListener('lostpointercapture', (event) => {
     void finishShoppingItemPointerGesture(event, false);
@@ -13980,16 +14030,12 @@ function attachShoppingItemReorderHandlers(row, handle, item) {
   row.addEventListener('dragover', (event) => {
     if (!canDropShoppingListItemOnRow(row)) return;
     event.preventDefault();
-    updateShoppingListItemDropIndicator(row);
-  });
-  row.addEventListener('dragleave', () => {
-    row.classList.remove('is-drop-target');
+    updateShoppingListItemDropIndicator(row, event.clientY);
   });
   row.addEventListener('drop', async (event) => {
     if (!canDropShoppingListItemOnRow(row)) return;
     event.preventDefault();
-    await dropShoppingListItemOnRow(row);
-    endShoppingListItemDrag();
+    await dropShoppingListItemOnRow(row, event.clientY);
   });
 }
 
