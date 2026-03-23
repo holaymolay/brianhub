@@ -44,8 +44,11 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('pulseShoppingListPlaceholder(placeholder);'));
   assert.ok(script.includes("placeholder.classList.add('shopping-item-drag-placeholder');"));
   assert.ok(script.includes("row.style.position = 'fixed';"));
-  assert.ok(script.includes("function moveShoppingListItemPlaceholder(clientY)"));
-  assert.ok(script.includes('return clientY < rect.top + (rect.height / 2);'));
+  assert.ok(script.includes("function moveShoppingListItemPlaceholder(clientY, direction = 0)"));
+  assert.ok(script.includes('const hoveredRow = rows.find((candidate) => {'));
+  assert.ok(script.includes('const movingUp = direction < 0;'));
+  assert.ok(script.includes('referenceNode = insertAfter ? (rows[hoveredIndex + 1] ?? null) : hoveredRow;'));
+  assert.ok(script.includes('shoppingItemPointerDragState.lastDirection = Math.sign(incrementalDeltaY);'));
   assert.ok(script.includes('preview.container.appendChild(preview.placeholderEl);'));
   assert.ok(script.includes('Array.from(previewContainer.children)'));
   assert.ok(script.includes('if (child === preview.placeholderEl) {'));

@@ -13882,7 +13882,7 @@ function positionFloatingShoppingListItem(clientY) {
   draggingShoppingListItemEl.style.top = `${nextTop}px`;
 }
 
-function moveShoppingListItemPlaceholder(clientY) {
+function moveShoppingListItemPlaceholder(clientY, direction = 0) {
   const preview = shoppingItemDragPreviewState;
   if (!preview?.floating || !(preview.container instanceof HTMLElement) || !(preview.placeholderEl instanceof HTMLElement)) {
     return null;
@@ -13894,17 +13894,41 @@ function moveShoppingListItemPlaceholder(clientY) {
     preview.container.appendChild(preview.placeholderEl);
     return { row: null, insertAfter: true };
   }
-  const referenceNode = rows.find((candidate) => {
+  const hoveredRow = rows.find((candidate) => {
     const rect = candidate.getBoundingClientRect();
-    return clientY < rect.top + (rect.height / 2);
+    return clientY >= rect.top && clientY <= rect.bottom;
   }) ?? null;
+  let referenceNode = null;
+  let insertAfter = true;
+  if (hoveredRow) {
+    const hoveredIndex = rows.indexOf(hoveredRow);
+    const movingUp = direction < 0;
+    insertAfter = !movingUp;
+    referenceNode = insertAfter ? (rows[hoveredIndex + 1] ?? null) : hoveredRow;
+  } else {
+    const firstRect = rows[0]?.getBoundingClientRect() ?? null;
+    const lastRect = rows[rows.length - 1]?.getBoundingClientRect() ?? null;
+    if (firstRect && clientY < firstRect.top) {
+      referenceNode = rows[0];
+      insertAfter = false;
+    } else if (lastRect && clientY > lastRect.bottom) {
+      referenceNode = null;
+      insertAfter = true;
+    } else {
+      referenceNode = rows.find((candidate) => {
+        const rect = candidate.getBoundingClientRect();
+        return clientY < rect.top + (rect.height / 2);
+      }) ?? null;
+      insertAfter = referenceNode === null;
+    }
+  }
   if (referenceNode) {
     if (preview.placeholderEl.nextElementSibling === referenceNode) {
-      return { row: referenceNode, insertAfter: false };
+      return { row: hoveredRow ?? referenceNode, insertAfter };
     }
     preview.container.insertBefore(preview.placeholderEl, referenceNode);
     animateShoppingListPreviewShift(preview.container, beforeRects);
-    return { row: referenceNode, insertAfter: false };
+    return { row: hoveredRow ?? referenceNode, insertAfter };
   }
   if (preview.placeholderEl === preview.container.lastElementChild) {
     return { row: rows[rows.length - 1] ?? null, insertAfter: true };
@@ -14072,6 +14096,8 @@ function beginShoppingItemPointerGesture(event, item, row) {
     row,
     startX: event.clientX,
     startY: event.clientY,
+    lastClientY: event.clientY,
+    lastDirection: 0,
     dragging: false,
     dropRow: null
   };
@@ -14085,6 +14111,11 @@ function moveShoppingItemPointerGesture(event) {
   if (!shoppingItemPointerDragState || shoppingItemPointerDragState.pointerId !== event.pointerId) return;
   const deltaX = Math.abs(event.clientX - shoppingItemPointerDragState.startX);
   const deltaY = Math.abs(event.clientY - shoppingItemPointerDragState.startY);
+  const incrementalDeltaY = event.clientY - (shoppingItemPointerDragState.lastClientY ?? shoppingItemPointerDragState.startY);
+  if (Math.abs(incrementalDeltaY) >= 1) {
+    shoppingItemPointerDragState.lastDirection = Math.sign(incrementalDeltaY);
+  }
+  shoppingItemPointerDragState.lastClientY = event.clientY;
   if (!shoppingItemPointerDragState.dragging) {
     if (deltaX < SHOPPING_ITEM_DRAG_THRESHOLD_PX && deltaY < SHOPPING_ITEM_DRAG_THRESHOLD_PX) return;
     if (!beginShoppingListItemDrag(shoppingItemPointerDragState.item, shoppingItemPointerDragState.row, {
@@ -14097,7 +14128,10 @@ function moveShoppingItemPointerGesture(event) {
     shoppingItemPointerDragState.dragging = true;
   }
   positionFloatingShoppingListItem(event.clientY);
-  shoppingItemPointerDragState.dropRow = moveShoppingListItemPlaceholder(event.clientY)?.row ?? null;
+  const direction = shoppingItemPointerDragState.lastDirection
+    || Math.sign(event.clientY - shoppingItemPointerDragState.startY)
+    || 1;
+  shoppingItemPointerDragState.dropRow = moveShoppingListItemPlaceholder(event.clientY, direction)?.row ?? null;
   event.preventDefault();
 }
 
