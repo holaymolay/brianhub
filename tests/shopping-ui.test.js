@@ -39,6 +39,9 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(!script.includes("handle.addEventListener('lostpointercapture'"));
   assert.ok(script.includes('shoppingItemDragPreviewState = {'));
   assert.ok(script.includes("function createShoppingListItemPlaceholder(row)"));
+  assert.ok(script.includes('function captureShoppingListPreviewRects(container)'));
+  assert.ok(script.includes('function animateShoppingListPreviewShift(container, beforeRects)'));
+  assert.ok(script.includes('pulseShoppingListPlaceholder(placeholder);'));
   assert.ok(script.includes("placeholder.classList.add('shopping-item-drag-placeholder');"));
   assert.ok(script.includes("row.style.position = 'fixed';"));
   assert.ok(script.includes("function moveShoppingListItemPlaceholder(clientY)"));
@@ -46,6 +49,7 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('preview.container.appendChild(preview.placeholderEl);'));
   assert.ok(script.includes('Array.from(previewContainer.children)'));
   assert.ok(script.includes('if (child === preview.placeholderEl) {'));
+  assert.ok(script.includes('element.animate('));
   assert.ok(script.includes('function getPreviewOrderedShoppingItems(listId)'));
 });
 
@@ -56,6 +60,8 @@ test('shopping item dragging relies on live movement rather than target borders'
   assert.ok(styles.includes('border-color: rgba(132, 173, 255, 0.48);'));
   assert.ok(styles.includes('.shopping-item-drag-placeholder'));
   assert.ok(styles.includes('background: rgba(64, 96, 142, 0.28);'));
+  assert.ok(styles.includes('.shopping-item-drag-placeholder.is-snap-target'));
+  assert.ok(styles.includes('@keyframes shopping-item-placeholder-snap'));
   assert.ok(styles.includes('min-width: 2.6rem;'));
   assert.ok(styles.includes('min-height: 2.6rem;'));
   assert.ok(styles.includes('-webkit-user-drag: none;'));

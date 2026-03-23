@@ -4127,6 +4127,11 @@ button:hover { opacity: 0.9; }
   background: rgba(64, 96, 142, 0.28);
   border-color: rgba(132, 173, 255, 0.62);
   box-shadow: inset 0 0 0 1px rgba(132, 173, 255, 0.22);
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.shopping-item-drag-placeholder.is-snap-target {
+  animation: shopping-item-placeholder-snap 180ms cubic-bezier(0.2, 0.9, 0.2, 1.08);
 }
 
 .shopping-item-drag-placeholder .shopping-item-label,
@@ -4141,6 +4146,19 @@ button:hover { opacity: 0.9; }
 .shopping-item-drag-placeholder textarea,
 .shopping-item-drag-placeholder a {
   pointer-events: none;
+}
+
+@keyframes shopping-item-placeholder-snap {
+  0% {
+    background: rgba(87, 127, 186, 0.46);
+    border-color: rgba(160, 196, 255, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(160, 196, 255, 0.38), 0 0 0 0 rgba(132, 173, 255, 0.28);
+  }
+  100% {
+    background: rgba(64, 96, 142, 0.28);
+    border-color: rgba(132, 173, 255, 0.62);
+    box-shadow: inset 0 0 0 1px rgba(132, 173, 255, 0.22), 0 0 0 0 rgba(132, 173, 255, 0);
+  }
 }
 
 .shopping-item-delete {

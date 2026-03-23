@@ -13785,6 +13785,57 @@ function createShoppingListItemPlaceholder(row) {
   return placeholder;
 }
 
+function captureShoppingListPreviewRects(container) {
+  if (!(container instanceof HTMLElement)) return new Map();
+  return new Map(
+    Array.from(container.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox), .shopping-item-drag-placeholder'))
+      .filter((element) => element !== draggingShoppingListItemEl)
+      .map((element) => [element, element.getBoundingClientRect()])
+  );
+}
+
+function pulseShoppingListPlaceholder(placeholder) {
+  if (!(placeholder instanceof HTMLElement)) return;
+  placeholder.classList.remove('is-snap-target');
+  void placeholder.offsetWidth;
+  placeholder.classList.add('is-snap-target');
+}
+
+function animateShoppingListPreviewShift(container, beforeRects) {
+  if (!(container instanceof HTMLElement) || !(beforeRects instanceof Map) || !beforeRects.size) return;
+  const preview = shoppingItemDragPreviewState;
+  const placeholder = preview?.placeholderEl instanceof HTMLElement ? preview.placeholderEl : null;
+  Array.from(container.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox), .shopping-item-drag-placeholder'))
+    .filter((element) => element !== draggingShoppingListItemEl)
+    .forEach((element) => {
+      const previousRect = beforeRects.get(element);
+      if (!previousRect) return;
+      const nextRect = element.getBoundingClientRect();
+      const deltaY = previousRect.top - nextRect.top;
+      if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 1) return;
+      if (typeof element.getAnimations === 'function') {
+        element.getAnimations().forEach((animation) => animation.cancel());
+      }
+      const isPlaceholder = element === placeholder;
+      element.animate(
+        [
+          {
+            transform: `translateY(${Math.round(deltaY)}px) scale(${isPlaceholder ? 0.985 : 1})`
+          },
+          {
+            transform: 'translateY(0) scale(1)'
+          }
+        ],
+        {
+          duration: isPlaceholder ? 170 : 150,
+          easing: isPlaceholder ? 'cubic-bezier(0.2, 0.9, 0.2, 1.08)' : 'cubic-bezier(0.22, 0.9, 0.22, 1)',
+          fill: 'both'
+        }
+      );
+    });
+  pulseShoppingListPlaceholder(placeholder);
+}
+
 function restoreShoppingListItemPreviewOrder() {
   const preview = shoppingItemDragPreviewState;
   if (!preview?.container || !Array.isArray(preview.originalOrderIds)) return;
@@ -13802,6 +13853,7 @@ function restoreShoppingListItemPreviewOrder() {
 function endShoppingListItemDrag({ restorePreview = false } = {}) {
   const preview = shoppingItemDragPreviewState;
   if (preview?.placeholderEl instanceof HTMLElement) {
+    preview.placeholderEl.classList.remove('is-snap-target');
     preview.placeholderEl.remove();
   }
   if (restorePreview) {
@@ -13835,6 +13887,7 @@ function moveShoppingListItemPlaceholder(clientY) {
   if (!preview?.floating || !(preview.container instanceof HTMLElement) || !(preview.placeholderEl instanceof HTMLElement)) {
     return null;
   }
+  const beforeRects = captureShoppingListPreviewRects(preview.container);
   const rows = Array.from(preview.container.querySelectorAll('.shopping-item.shopping-list-item-row:not(.shopping-item-inbox)'))
     .filter((candidate) => candidate !== draggingShoppingListItemEl && candidate !== preview.placeholderEl);
   if (!rows.length) {
@@ -13846,10 +13899,18 @@ function moveShoppingListItemPlaceholder(clientY) {
     return clientY < rect.top + (rect.height / 2);
   }) ?? null;
   if (referenceNode) {
+    if (preview.placeholderEl.nextElementSibling === referenceNode) {
+      return { row: referenceNode, insertAfter: false };
+    }
     preview.container.insertBefore(preview.placeholderEl, referenceNode);
+    animateShoppingListPreviewShift(preview.container, beforeRects);
     return { row: referenceNode, insertAfter: false };
   }
+  if (preview.placeholderEl === preview.container.lastElementChild) {
+    return { row: rows[rows.length - 1] ?? null, insertAfter: true };
+  }
   preview.container.appendChild(preview.placeholderEl);
+  animateShoppingListPreviewShift(preview.container, beforeRects);
   return { row: rows[rows.length - 1] ?? null, insertAfter: true };
 }
 
