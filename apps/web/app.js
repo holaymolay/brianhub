@@ -113,6 +113,7 @@ const SHOPPING_INBOX_NAME = 'Shopping Inbox';
 const SHOPPING_ITEM_MOVE_NEW_VALUE = '__new__';
 const SHOPPING_LIST_EDITOR_INBOX = '__shopping_inbox__';
 const SHOPPING_ITEM_LONG_PRESS_MS = 450;
+const SHOPPING_ITEM_REORDER_HOLD_MS = 500;
 const SHOPPING_ITEM_DRAG_THRESHOLD_PX = 6;
 const SHOPPING_KEYWORD_STOPWORDS = new Set([
   'and', 'the', 'with', 'for', 'from', 'into', 'onto', 'your', 'our',
@@ -14081,14 +14082,42 @@ function handleShoppingItemPointerCancel(event) {
   void finishShoppingItemPointerGesture(event, false);
 }
 
+function clearShoppingItemPointerGestureTimer(state = shoppingItemPointerDragState) {
+  if (!state?.holdTimerId) return;
+  window.clearTimeout(state.holdTimerId);
+  state.holdTimerId = null;
+}
+
+function cleanupShoppingItemPointerGesture({ cancelDrag = false } = {}) {
+  clearShoppingItemPointerGestureTimer();
+  document.removeEventListener('pointermove', handleShoppingItemPointerMove);
+  document.removeEventListener('pointerup', handleShoppingItemPointerUp);
+  document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
+  if (cancelDrag) {
+    endShoppingListItemDrag({ restorePreview: true });
+  }
+  shoppingItemPointerDragState = null;
+}
+
+function armShoppingItemPointerGesture(clientY) {
+  const activeGesture = shoppingItemPointerDragState;
+  if (!activeGesture || activeGesture.dragging) return false;
+  if (!beginShoppingListItemDrag(activeGesture.item, activeGesture.row, {
+    floating: true,
+    clientY
+  })) {
+    cleanupShoppingItemPointerGesture();
+    return false;
+  }
+  activeGesture.dragging = true;
+  return true;
+}
+
 function beginShoppingItemPointerGesture(event, item, row) {
+  if (!isMobileViewport()) return;
   if (event.pointerType === 'mouse' && event.button !== 0) return;
   if (shoppingItemPointerDragState) {
-    shoppingItemPointerDragState = null;
-    document.removeEventListener('pointermove', handleShoppingItemPointerMove);
-    document.removeEventListener('pointerup', handleShoppingItemPointerUp);
-    document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
-    endShoppingListItemDrag();
+    cleanupShoppingItemPointerGesture({ cancelDrag: true });
   }
   shoppingItemPointerDragState = {
     pointerId: event.pointerId,
@@ -14098,13 +14127,17 @@ function beginShoppingItemPointerGesture(event, item, row) {
     startY: event.clientY,
     lastClientY: event.clientY,
     lastDirection: 0,
+    holdTimerId: window.setTimeout(() => {
+      const activeGesture = shoppingItemPointerDragState;
+      if (!activeGesture || activeGesture.pointerId !== event.pointerId) return;
+      armShoppingItemPointerGesture(activeGesture.lastClientY ?? event.clientY);
+    }, SHOPPING_ITEM_REORDER_HOLD_MS),
     dragging: false,
     dropRow: null
   };
   document.addEventListener('pointermove', handleShoppingItemPointerMove);
   document.addEventListener('pointerup', handleShoppingItemPointerUp);
   document.addEventListener('pointercancel', handleShoppingItemPointerCancel);
-  event.preventDefault();
 }
 
 function moveShoppingItemPointerGesture(event) {
@@ -14117,15 +14150,11 @@ function moveShoppingItemPointerGesture(event) {
   }
   shoppingItemPointerDragState.lastClientY = event.clientY;
   if (!shoppingItemPointerDragState.dragging) {
-    if (deltaX < SHOPPING_ITEM_DRAG_THRESHOLD_PX && deltaY < SHOPPING_ITEM_DRAG_THRESHOLD_PX) return;
-    if (!beginShoppingListItemDrag(shoppingItemPointerDragState.item, shoppingItemPointerDragState.row, {
-      floating: true,
-      clientY: event.clientY
-    })) {
-      shoppingItemPointerDragState = null;
+    if (deltaX >= SHOPPING_ITEM_DRAG_THRESHOLD_PX || deltaY >= SHOPPING_ITEM_DRAG_THRESHOLD_PX) {
+      cleanupShoppingItemPointerGesture();
       return;
     }
-    shoppingItemPointerDragState.dragging = true;
+    return;
   }
   positionFloatingShoppingListItem(event.clientY);
   const direction = shoppingItemPointerDragState.lastDirection
@@ -14138,10 +14167,11 @@ function moveShoppingItemPointerGesture(event) {
 async function finishShoppingItemPointerGesture(event, commit = false) {
   if (!shoppingItemPointerDragState || shoppingItemPointerDragState.pointerId !== event.pointerId) return;
   const activeGesture = shoppingItemPointerDragState;
-  shoppingItemPointerDragState = null;
+  clearShoppingItemPointerGestureTimer(activeGesture);
   document.removeEventListener('pointermove', handleShoppingItemPointerMove);
   document.removeEventListener('pointerup', handleShoppingItemPointerUp);
   document.removeEventListener('pointercancel', handleShoppingItemPointerCancel);
+  shoppingItemPointerDragState = null;
   let restorePreview = Boolean(activeGesture.dragging);
   if (activeGesture.dragging && commit) {
     const moved = await commitShoppingListItemPreview();

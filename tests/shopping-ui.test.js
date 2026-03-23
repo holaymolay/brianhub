@@ -25,6 +25,7 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes("dragHandle.textContent = '⋮⋮'"));
   assert.ok(!script.includes("upBtn.textContent = '↑'"));
   assert.ok(!script.includes("downBtn.textContent = '↓'"));
+  assert.ok(script.includes('const SHOPPING_ITEM_REORDER_HOLD_MS = 500;'));
   assert.ok(script.includes('shopping-item-editor-modal'));
   assert.ok(script.includes('shopping-item-actions-edit'));
   assert.ok(script.includes("const SHOPPING_ITEM_MOVE_NEW_VALUE = '__new__';"));
@@ -34,6 +35,9 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('patch.list_id = targetListId'));
   assert.ok(script.includes('function attachShoppingItemReorderHandlers(row, handle, item)'));
   assert.ok(script.includes('handle.draggable = !isMobileViewport();'));
+  assert.ok(script.includes('function armShoppingItemPointerGesture(clientY) {'));
+  assert.ok(script.includes('holdTimerId: window.setTimeout(() => {'));
+  assert.ok(script.includes('}, SHOPPING_ITEM_REORDER_HOLD_MS),'));
   assert.ok(script.includes('if (isMobileViewport()) {'));
   assert.ok(script.includes("document.addEventListener('pointermove', handleShoppingItemPointerMove)"));
   assert.ok(!script.includes("handle.addEventListener('lostpointercapture'"));
@@ -49,6 +53,8 @@ test('shopping item first-slice controls exist in app layer', () => {
   assert.ok(script.includes('const movingUp = direction < 0;'));
   assert.ok(script.includes('referenceNode = insertAfter ? (rows[hoveredIndex + 1] ?? null) : hoveredRow;'));
   assert.ok(script.includes('shoppingItemPointerDragState.lastDirection = Math.sign(incrementalDeltaY);'));
+  assert.ok(script.includes('if (deltaX >= SHOPPING_ITEM_DRAG_THRESHOLD_PX || deltaY >= SHOPPING_ITEM_DRAG_THRESHOLD_PX) {'));
+  assert.ok(script.includes('cleanupShoppingItemPointerGesture();'));
   assert.ok(script.includes('preview.container.appendChild(preview.placeholderEl);'));
   assert.ok(script.includes('Array.from(previewContainer.children)'));
   assert.ok(script.includes('if (child === preview.placeholderEl) {'));
