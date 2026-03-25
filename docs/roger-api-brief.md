@@ -7,7 +7,7 @@ It separates two different access modes:
 - server operations over Tailscale + SSH
 - product API access over `https://brianhub.com`
 
-Roger is currently approved for server operations only. Product API automation should wait until machine auth exists.
+Roger can use BrianHub product API automation only through owner-provisioned service-account auth with explicit workspace grants and scoped permissions.
 
 ## Current production rules
 
@@ -58,17 +58,16 @@ ssh -i ~/.ssh/roger_brianhub_ed25519 roger-admin@<brianhub-tailnet-ip> \
 
 ## Product API status
 
-Roger should treat BrianHub product API access as human-session-only for now.
-
 Current production model:
 
 - public health route
-- browser/session-cookie auth for authenticated routes
-- no bearer token auth
-- no service-account auth
-- no workspace-scoped machine permissions
+- browser/session-cookie auth for human users
+- bearer-token auth for owner-provisioned service accounts
+- explicit workspace grants for service-account workspace access
+- service accounts are constrained by route policy and fine-grained permissions
+- Roger defaults to product-only task/project automation, not broader admin powers
 
-Because of that, Roger should not automate a human workspace through the product API yet.
+The Telegram group is a request channel only. It is not a privilege boundary by itself.
 
 ## Public routes
 
@@ -95,15 +94,41 @@ Expected `GET /auth/me` shape:
 ```json
 {
   "authenticated": false,
+  "auth_type": "none",
   "require_auth": true,
+  "principal_type": null,
+  "principal_id": null,
+  "org_id": null,
   "user": null,
+  "service_account": null,
   "session": null,
+  "machine": null,
   "workspaces": [],
+  "granted_permissions": [],
+  "effective_permissions": [],
   "owner_email": "owner@example.com",
   "is_owner": false,
   "is_admin": false
 }
 ```
+
+Roger runtime/channel identifier to store as an alias:
+
+- `agent:main:telegram:group:-5130223325`
+
+Owner-only service-account provisioning routes:
+
+- `GET /admin/service-accounts`
+- `POST /admin/service-accounts`
+- `PATCH /admin/service-accounts/:id`
+- `GET /admin/service-accounts/:id/tokens`
+- `POST /admin/service-accounts/:id/tokens`
+- `PATCH /admin/service-account-tokens/:id`
+- `POST /admin/service-account-tokens/:id/rotate`
+- `DELETE /admin/service-account-tokens/:id`
+- `GET /admin/service-accounts/:id/workspace-grants`
+- `POST /admin/service-accounts/:id/workspace-grants`
+- `DELETE /admin/service-account-workspace-grants/:id`
 
 ## Authenticated routes
 
@@ -165,6 +190,16 @@ Admin-only routes:
 - `DELETE /admin/invites/:id`
 - `POST /admin/users/:id/reset-password`
 - `POST /admin/ownership/transfer`
+
+Roger default service-account permissions:
+
+- `workspaces.read`
+- `tasks.read`
+- `tasks.create`
+- `tasks.update`
+- `projects.read`
+
+Roger default scope excludes `tasks.delete`. Destructive task authority must be explicitly granted later.
 
 ## Minimal request shapes
 
@@ -355,16 +390,16 @@ Not approved yet:
 
 - use a human browser session to manipulate personal tasks
 - use `X-Actor-Email`
-- access a personal workspace as a machine actor
-- assume direct API automation is supported in production
+- bypass service-account workspace grants or owner provisioning
+- treat Telegram chat context as sufficient authorization by itself
 
 ## Phase 2 target
 
 Before Roger should manipulate BrianHub data over the product API, add:
 
-- bearer-token or service-account auth
-- workspace-scoped machine permissions
-- a dedicated Roger workspace
-- explicit approval before any access to a human workspace
+- claim/lease semantics for workers
+- richer approval policies for high-risk admin actions
+- webhook/subscription delivery instead of polling
+- a dedicated operator UI for admin-action review and execution
 
 At that point Roger can be given a narrow API credential and a documented workspace scope.

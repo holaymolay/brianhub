@@ -86,7 +86,9 @@ before(async () => {
   process.env.BRIANHUB_EXPOSE_INVITE_TOKEN = 'true';
   process.env.BRIANHUB_REQUIRE_AUTH = 'false';
   process.env.BRIANHUB_ALLOW_HEADER_ACTOR_AUTH = 'true';
-  const serverModule = await import('../services/api/src/server.js');
+  const serverUrl = new URL('../services/api/src/server.js', import.meta.url);
+  serverUrl.search = `v=${Date.now()}-${process.hrtime.bigint().toString()}`;
+  const serverModule = await import(serverUrl);
   serverModuleRef = serverModule;
   server = serverModule.server;
   await server.ready();

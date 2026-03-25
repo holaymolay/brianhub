@@ -44,6 +44,41 @@ const SHOPPING_ITEM_STATES = new Set([
   SHOPPING_ITEM_STATE_SUBSTITUTED,
   SHOPPING_ITEM_STATE_UNAVAILABLE
 ]);
+const AGENT_EVENT_STATUS_PENDING = 'pending';
+const AGENT_EVENT_STATUS_HANDLED = 'handled';
+const AGENT_EVENT_STATUS_IGNORED = 'ignored';
+const AGENT_EVENT_STATUS_FAILED = 'failed';
+const AGENT_EVENT_STATUSES = new Set([
+  AGENT_EVENT_STATUS_PENDING,
+  AGENT_EVENT_STATUS_HANDLED,
+  AGENT_EVENT_STATUS_IGNORED,
+  AGENT_EVENT_STATUS_FAILED
+]);
+const AGENT_EVENT_PRIORITY_DEFAULT = 'normal';
+const AGENT_EVENT_LIST_DEFAULT_LIMIT = 100;
+const AGENT_EVENT_LIST_MAX_LIMIT = 500;
+const ADMIN_ACTION_STATUS_REQUESTED = 'requested';
+const ADMIN_ACTION_STATUS_APPROVED = 'approved';
+const ADMIN_ACTION_STATUS_REJECTED = 'rejected';
+const ADMIN_ACTION_STATUS_EXECUTED = 'executed';
+const ADMIN_ACTION_STATUS_FAILED = 'failed';
+const ADMIN_ACTION_STATUS_CANCELED = 'canceled';
+const ADMIN_ACTION_STATUSES = new Set([
+  ADMIN_ACTION_STATUS_REQUESTED,
+  ADMIN_ACTION_STATUS_APPROVED,
+  ADMIN_ACTION_STATUS_REJECTED,
+  ADMIN_ACTION_STATUS_EXECUTED,
+  ADMIN_ACTION_STATUS_FAILED,
+  ADMIN_ACTION_STATUS_CANCELED
+]);
+const ADMIN_ACTION_APPROVAL_MODE_EXPLICIT = 'explicit';
+const ADMIN_ACTION_APPROVAL_MODE_AUTO = 'auto';
+const ADMIN_ACTION_APPROVAL_MODES = new Set([
+  ADMIN_ACTION_APPROVAL_MODE_EXPLICIT,
+  ADMIN_ACTION_APPROVAL_MODE_AUTO
+]);
+const ADMIN_ACTION_LIST_DEFAULT_LIMIT = 100;
+const ADMIN_ACTION_LIST_MAX_LIMIT = 500;
 
 function nowIso() {
   return new Date().toISOString();
@@ -57,6 +92,24 @@ function addDaysIso(days) {
 function normalizeEmail(value) {
   const text = String(value ?? '').trim().toLowerCase();
   return text || null;
+}
+
+function normalizeOptionalText(value, fieldName, maxLength = 512) {
+  if (value === undefined) return undefined;
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  if (text.length > maxLength) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return text;
+}
+
+function normalizeRequiredText(value, fieldName, maxLength = 512) {
+  const text = String(value ?? '').trim();
+  if (!text || text.length > maxLength) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return text;
 }
 
 function normalizeRole(value) {
@@ -88,6 +141,17 @@ function normalizeDateOnly(value, fieldName = 'date') {
     throw new Error(`Invalid ${fieldName}`);
   }
   return text;
+}
+
+function normalizeDateTime(value, fieldName = 'datetime') {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const text = String(value).trim();
+  const timestamp = Date.parse(text);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return new Date(timestamp).toISOString();
 }
 
 function normalizeShoppingStoreName(value) {
@@ -201,6 +265,158 @@ function normalizeSettingsObject(value) {
     throw new Error('settings payload too large');
   }
   return JSON.parse(serialized);
+}
+
+function normalizeAgentEventPayload(value) {
+  if (value === undefined || value === null) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('payload_json must be an object');
+  }
+  const serialized = JSON.stringify(value);
+  if (serialized.length > 200000) {
+    throw new Error('payload_json too large');
+  }
+  return JSON.parse(serialized);
+}
+
+function normalizeJsonObject(value, fieldName, { allowNull = false, defaultValue = {} } = {}) {
+  if (value === undefined) return defaultValue;
+  if (value === null) {
+    if (allowNull) return null;
+    return defaultValue;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an object`);
+  }
+  const serialized = JSON.stringify(value);
+  if (serialized.length > 200000) {
+    throw new Error(`${fieldName} too large`);
+  }
+  return JSON.parse(serialized);
+}
+
+function parseAgentEventPayload(payloadJson) {
+  if (!payloadJson) return {};
+  try {
+    const parsed = JSON.parse(String(payloadJson));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function parseJsonObject(payloadJson, fallback = {}) {
+  if (!payloadJson) return fallback;
+  try {
+    const parsed = JSON.parse(String(payloadJson));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return fallback;
+    }
+    return parsed;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeAgentEventStatus(value, { allowUndefined = true } = {}) {
+  if (value === undefined) {
+    return allowUndefined ? undefined : AGENT_EVENT_STATUS_PENDING;
+  }
+  const status = String(value ?? '').trim().toLowerCase();
+  if (!status) return AGENT_EVENT_STATUS_PENDING;
+  if (!AGENT_EVENT_STATUSES.has(status)) {
+    throw new Error('Invalid agent event status');
+  }
+  return status;
+}
+
+function normalizeAgentEventPriority(value) {
+  if (value === undefined || value === null || value === '') {
+    return AGENT_EVENT_PRIORITY_DEFAULT;
+  }
+  return normalizeRequiredText(value, 'priority', 32).toLowerCase();
+}
+
+function normalizeAgentEventListLimit(value) {
+  if (value === undefined || value === null || value === '') {
+    return AGENT_EVENT_LIST_DEFAULT_LIMIT;
+  }
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error('Invalid limit');
+  }
+  return Math.min(parsed, AGENT_EVENT_LIST_MAX_LIMIT);
+}
+
+function normalizeAdminActionStatus(value, { allowUndefined = true } = {}) {
+  if (value === undefined) {
+    return allowUndefined ? undefined : ADMIN_ACTION_STATUS_REQUESTED;
+  }
+  const status = String(value ?? '').trim().toLowerCase();
+  if (!status) return ADMIN_ACTION_STATUS_REQUESTED;
+  if (!ADMIN_ACTION_STATUSES.has(status)) {
+    throw new Error('Invalid admin action status');
+  }
+  return status;
+}
+
+function normalizeAdminActionApprovalMode(value) {
+  if (value === undefined || value === null || value === '') {
+    return ADMIN_ACTION_APPROVAL_MODE_EXPLICIT;
+  }
+  const mode = String(value ?? '').trim().toLowerCase();
+  if (!ADMIN_ACTION_APPROVAL_MODES.has(mode)) {
+    throw new Error('Invalid admin action approval_mode');
+  }
+  return mode;
+}
+
+function normalizeAdminActionListLimit(value) {
+  if (value === undefined || value === null || value === '') {
+    return ADMIN_ACTION_LIST_DEFAULT_LIMIT;
+  }
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error('Invalid limit');
+  }
+  return Math.min(parsed, ADMIN_ACTION_LIST_MAX_LIMIT);
+}
+
+function parseAgentEventRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    payload_json: parseAgentEventPayload(row.payload_json)
+  };
+}
+
+function parseAdminActionRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    arguments_json: parseJsonObject(row.arguments_json, {}),
+    result_json: row.result_json ? parseJsonObject(row.result_json, null) : null
+  };
+}
+
+function encodeAgentEventCursor(event) {
+  if (!event?.created_at || !event?.id) return null;
+  return `${event.created_at}|${event.id}`;
+}
+
+function decodeAgentEventCursor(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const separatorIndex = text.lastIndexOf('|');
+  if (separatorIndex <= 0 || separatorIndex >= text.length - 1) {
+    throw new Error('Invalid cursor');
+  }
+  const createdAt = normalizeDateTime(text.slice(0, separatorIndex), 'cursor');
+  const id = assertUuid(text.slice(separatorIndex + 1), 'cursor');
+  return { created_at: createdAt, id };
 }
 
 function parseSettingsJson(settingsJson) {
@@ -2754,6 +2970,493 @@ export async function deleteTask(db, id, clientId = null) {
 
   await recordChange(db, existing.workspace_id, 'task', taskId, 'delete', { ids }, clientId);
   return { deleted: ids.length, ids };
+}
+
+async function getAgentEventRowByDedupe(db, workspaceId, targetAgent, dedupeKey) {
+  if (!dedupeKey) return null;
+  return getRow(
+    db,
+    `SELECT *
+       FROM agent_events
+      WHERE workspace_id = ?
+        AND dedupe_key = ?
+        AND COALESCE(target_agent, '') = ?
+      LIMIT 1`,
+    [workspaceId, dedupeKey, targetAgent ?? '']
+  );
+}
+
+export async function getAgentEvent(db, id) {
+  const eventId = assertUuid(id, 'agent event id');
+  const row = await getRow(db, 'SELECT * FROM agent_events WHERE id = ?', [eventId]);
+  return parseAgentEventRow(row);
+}
+
+export async function listAgentEvents(
+  db,
+  {
+    workspace_id: workspaceId,
+    target_agent: targetAgent = undefined,
+    source_agent: sourceAgent = undefined,
+    status = undefined,
+    event_type: eventType = undefined,
+    limit = undefined,
+    cursor = undefined
+  } = {}
+) {
+  if (!workspaceId) {
+    return {
+      events: [],
+      next_cursor: null
+    };
+  }
+
+  const safeWorkspaceId = assertUuid(workspaceId, 'workspace_id');
+  const safeTargetAgent = targetAgent === undefined
+    ? undefined
+    : normalizeOptionalText(targetAgent, 'target_agent', 128);
+  const safeSourceAgent = sourceAgent === undefined
+    ? undefined
+    : normalizeOptionalText(sourceAgent, 'source_agent', 128);
+  const safeStatus = status === undefined
+    ? undefined
+    : normalizeAgentEventStatus(status, { allowUndefined: false });
+  const safeEventType = eventType === undefined
+    ? undefined
+    : normalizeOptionalText(eventType, 'event_type', 128);
+  const safeLimit = normalizeAgentEventListLimit(limit);
+  const safeCursor = cursor === undefined ? null : decodeAgentEventCursor(cursor);
+
+  const where = ['workspace_id = ?'];
+  const params = [safeWorkspaceId];
+
+  if (safeTargetAgent !== undefined) {
+    if (safeTargetAgent === null) {
+      where.push('target_agent IS NULL');
+    } else {
+      where.push('target_agent = ?');
+      params.push(safeTargetAgent);
+    }
+  }
+  if (safeSourceAgent !== undefined) {
+    if (safeSourceAgent === null) {
+      where.push('source_agent IS NULL');
+    } else {
+      where.push('source_agent = ?');
+      params.push(safeSourceAgent);
+    }
+  }
+  if (safeStatus !== undefined) {
+    where.push('status = ?');
+    params.push(safeStatus);
+  }
+  if (safeEventType !== undefined) {
+    if (safeEventType === null) {
+      where.push('event_type IS NULL');
+    } else {
+      where.push('event_type = ?');
+      params.push(safeEventType);
+    }
+  }
+  if (safeCursor) {
+    where.push('(created_at > ? OR (created_at = ? AND id > ?))');
+    params.push(safeCursor.created_at, safeCursor.created_at, safeCursor.id);
+  }
+
+  const rows = await getRows(
+    db,
+    `SELECT *
+       FROM agent_events
+      WHERE ${where.join(' AND ')}
+      ORDER BY created_at ASC, id ASC
+      LIMIT ?`,
+    [...params, safeLimit + 1]
+  );
+  const hasMore = rows.length > safeLimit;
+  const visibleRows = hasMore ? rows.slice(0, safeLimit) : rows;
+  const events = visibleRows.map(parseAgentEventRow);
+  return {
+    events,
+    next_cursor: hasMore ? encodeAgentEventCursor(visibleRows[visibleRows.length - 1]) : null
+  };
+}
+
+export async function createAgentEvent(db, data, clientId = null) {
+  if (data?.id) {
+    const existing = await getAgentEvent(db, assertUuid(data.id, 'agent event id'));
+    if (existing) return existing;
+  }
+
+  const id = ensureUuid(data?.id, 'agent event id');
+  const workspaceId = await assertWorkspaceExists(db, data?.workspace_id);
+  const sourceAgent = normalizeRequiredText(data?.source_agent, 'source_agent', 128);
+  const targetAgent = normalizeOptionalText(data?.target_agent, 'target_agent', 128);
+  const eventType = normalizeRequiredText(data?.event_type, 'event_type', 128);
+  const payloadObject = normalizeAgentEventPayload(data?.payload_json);
+  const status = normalizeAgentEventStatus(data?.status, { allowUndefined: false });
+  const priority = normalizeAgentEventPriority(data?.priority);
+  const dedupeKey = normalizeOptionalText(data?.dedupe_key, 'dedupe_key', 256) ?? null;
+  const timestamp = nowIso();
+
+  if (dedupeKey) {
+    const existing = await getAgentEventRowByDedupe(db, workspaceId, targetAgent, dedupeKey);
+    if (existing) {
+      return parseAgentEventRow(existing);
+    }
+  }
+
+  const event = {
+    id,
+    workspace_id: workspaceId,
+    source_agent: sourceAgent,
+    target_agent: targetAgent,
+    event_type: eventType,
+    payload_json: JSON.stringify(payloadObject),
+    status,
+    priority,
+    dedupe_key: dedupeKey,
+    created_at: timestamp,
+    updated_at: timestamp,
+    handled_at: normalizeDateTime(data?.handled_at, 'handled_at') ?? null,
+    error_text: normalizeOptionalText(data?.error_text, 'error_text', 4000) ?? null
+  };
+
+  if (!event.handled_at && event.status !== AGENT_EVENT_STATUS_PENDING) {
+    event.handled_at = timestamp;
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      await run(
+        tx,
+        `INSERT INTO agent_events (
+          id, workspace_id, source_agent, target_agent, event_type, payload_json,
+          status, priority, dedupe_key, created_at, updated_at, handled_at, error_text
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          event.id,
+          event.workspace_id,
+          event.source_agent,
+          event.target_agent,
+          event.event_type,
+          event.payload_json,
+          event.status,
+          event.priority,
+          event.dedupe_key,
+          event.created_at,
+          event.updated_at,
+          event.handled_at,
+          event.error_text
+        ]
+      );
+      await recordChange(
+        tx,
+        event.workspace_id,
+        'agent_event',
+        event.id,
+        'create',
+        parseAgentEventRow(event),
+        clientId
+      );
+    });
+  } catch (error) {
+    if (dedupeKey && /UNIQUE constraint failed/i.test(String(error?.message ?? ''))) {
+      const existing = await getAgentEventRowByDedupe(db, workspaceId, targetAgent, dedupeKey);
+      if (existing) {
+        return parseAgentEventRow(existing);
+      }
+    }
+    throw error;
+  }
+
+  return getAgentEvent(db, id);
+}
+
+export async function updateAgentEvent(db, id, patch, clientId = null) {
+  const eventId = assertUuid(id, 'agent event id');
+  const existing = await getAgentEvent(db, eventId);
+  if (!existing) return null;
+
+  const nextStatus = Object.prototype.hasOwnProperty.call(patch ?? {}, 'status')
+    ? normalizeAgentEventStatus(patch.status, { allowUndefined: false })
+    : existing.status;
+  const hasHandledAt = Object.prototype.hasOwnProperty.call(patch ?? {}, 'handled_at');
+  const hasErrorText = Object.prototype.hasOwnProperty.call(patch ?? {}, 'error_text');
+  const normalizedHandledAt = hasHandledAt
+    ? normalizeDateTime(patch.handled_at, 'handled_at')
+    : undefined;
+  const normalizedErrorText = hasErrorText
+    ? normalizeOptionalText(patch.error_text, 'error_text', 4000)
+    : undefined;
+  const updatedAt = nowIso();
+
+  let handledAt = hasHandledAt ? normalizedHandledAt : existing.handled_at;
+  if (!hasHandledAt && Object.prototype.hasOwnProperty.call(patch ?? {}, 'status')) {
+    if (nextStatus === AGENT_EVENT_STATUS_PENDING) {
+      handledAt = null;
+    } else {
+      handledAt = existing.handled_at ?? updatedAt;
+    }
+  }
+
+  const next = {
+    ...existing,
+    status: nextStatus,
+    updated_at: updatedAt,
+    handled_at: handledAt,
+    error_text: hasErrorText ? normalizedErrorText : existing.error_text
+  };
+
+  const changePayload = {};
+  if (Object.prototype.hasOwnProperty.call(patch ?? {}, 'status')) {
+    changePayload.status = next.status;
+  }
+  if (hasHandledAt || handledAt !== existing.handled_at) {
+    changePayload.handled_at = next.handled_at;
+  }
+  if (hasErrorText) {
+    changePayload.error_text = next.error_text;
+  }
+
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      'UPDATE agent_events SET status = ?, updated_at = ?, handled_at = ?, error_text = ? WHERE id = ?',
+      [next.status, next.updated_at, next.handled_at, next.error_text, eventId]
+    );
+    await recordChange(tx, existing.workspace_id, 'agent_event', eventId, 'update', changePayload, clientId);
+  });
+
+  return getAgentEvent(db, eventId);
+}
+
+export async function getAdminAction(db, id) {
+  const actionId = assertUuid(id, 'admin action id');
+  const row = await getRow(db, 'SELECT * FROM admin_actions WHERE id = ?', [actionId]);
+  return parseAdminActionRow(row);
+}
+
+export async function listAdminActions(
+  db,
+  {
+    org_id: orgId = undefined,
+    workspace_id: workspaceId = undefined,
+    status = undefined,
+    action_type: actionType = undefined,
+    requested_by_type: requestedByType = undefined,
+    limit = undefined
+  } = {}
+) {
+  const safeWorkspaceId = workspaceId === undefined ? undefined : optionalUuid(workspaceId, 'workspace_id');
+  const safeOrgId = orgId === undefined ? undefined : assertUuid(orgId, 'org_id');
+  const safeStatus = status === undefined ? undefined : normalizeAdminActionStatus(status, { allowUndefined: false });
+  const safeActionType = actionType === undefined ? undefined : normalizeOptionalText(actionType, 'action_type', 128);
+  const safeRequestedByType = requestedByType === undefined ? undefined : normalizeOptionalText(requestedByType, 'requested_by_type', 32);
+  const safeLimit = normalizeAdminActionListLimit(limit);
+  const where = [];
+  const params = [];
+
+  if (safeWorkspaceId) {
+    where.push('workspace_id = ?');
+    params.push(safeWorkspaceId);
+  }
+  if (safeOrgId) {
+    where.push('org_id = ?');
+    params.push(safeOrgId);
+  }
+  if (safeStatus) {
+    where.push('status = ?');
+    params.push(safeStatus);
+  }
+  if (safeActionType !== undefined) {
+    if (safeActionType === null) {
+      where.push('action_type IS NULL');
+    } else {
+      where.push('action_type = ?');
+      params.push(safeActionType);
+    }
+  }
+  if (safeRequestedByType !== undefined) {
+    if (safeRequestedByType === null) {
+      where.push('requested_by_type IS NULL');
+    } else {
+      where.push('requested_by_type = ?');
+      params.push(safeRequestedByType);
+    }
+  }
+  const sql = [
+    'SELECT * FROM admin_actions',
+    where.length ? `WHERE ${where.join(' AND ')}` : '',
+    'ORDER BY created_at DESC, id DESC',
+    'LIMIT ?'
+  ].filter(Boolean).join(' ');
+  const rows = await getRows(db, sql, [...params, safeLimit]);
+  return rows.map(parseAdminActionRow);
+}
+
+export async function createAdminAction(db, data = {}) {
+  const orgId = assertUuid(data?.org_id, 'org_id');
+  const workspaceId = data?.workspace_id === undefined || data?.workspace_id === null || data?.workspace_id === ''
+    ? null
+    : await assertWorkspaceExists(db, data.workspace_id);
+  if (workspaceId) {
+    const workspace = await getWorkspaceRow(db, workspaceId);
+    if (workspace.org_id !== orgId) {
+      throw new Error('workspace_id does not belong to org_id');
+    }
+  }
+  const action = {
+    id: ensureUuid(data?.id, 'admin action id'),
+    org_id: orgId,
+    workspace_id: workspaceId,
+    requested_by_type: normalizeRequiredText(data?.requested_by_type, 'requested_by_type', 32).toLowerCase(),
+    requested_by_id: normalizeOptionalText(data?.requested_by_id, 'requested_by_id', 128) ?? null,
+    requested_by_label: normalizeRequiredText(data?.requested_by_label, 'requested_by_label', 256),
+    source_channel: normalizeOptionalText(data?.source_channel, 'source_channel', 256) ?? null,
+    source_principal: normalizeOptionalText(data?.source_principal, 'source_principal', 512) ?? null,
+    action_type: normalizeRequiredText(data?.action_type, 'action_type', 128),
+    target: normalizeOptionalText(data?.target, 'target', 512) ?? null,
+    arguments_json: JSON.stringify(normalizeJsonObject(data?.arguments_json, 'arguments_json')),
+    approval_mode: normalizeAdminActionApprovalMode(data?.approval_mode),
+    status: normalizeAdminActionStatus(data?.status, { allowUndefined: false }),
+    approved_by_type: normalizeOptionalText(data?.approved_by_type, 'approved_by_type', 32) ?? null,
+    approved_by_id: normalizeOptionalText(data?.approved_by_id, 'approved_by_id', 128) ?? null,
+    approved_by_label: normalizeOptionalText(data?.approved_by_label, 'approved_by_label', 256) ?? null,
+    result_json: data?.result_json === undefined
+      ? null
+      : (() => {
+        const normalized = normalizeJsonObject(data?.result_json, 'result_json', { allowNull: true, defaultValue: {} });
+        return normalized === null ? null : JSON.stringify(normalized);
+      })(),
+    error_text: normalizeOptionalText(data?.error_text, 'error_text', 4000) ?? null,
+    created_at: nowIso(),
+    updated_at: nowIso(),
+    approved_at: normalizeDateTime(data?.approved_at, 'approved_at') ?? null,
+    executed_at: normalizeDateTime(data?.executed_at, 'executed_at') ?? null
+  };
+
+  if (!action.approved_at && action.status === ADMIN_ACTION_STATUS_APPROVED) {
+    action.approved_at = action.updated_at;
+  }
+  if (!action.executed_at && action.status === ADMIN_ACTION_STATUS_EXECUTED) {
+    action.executed_at = action.updated_at;
+  }
+
+  await run(
+    db,
+    `INSERT INTO admin_actions (
+      id, org_id, workspace_id, requested_by_type, requested_by_id, requested_by_label,
+      source_channel, source_principal, action_type, target, arguments_json,
+      approval_mode, status, approved_by_type, approved_by_id, approved_by_label,
+      result_json, error_text, created_at, updated_at, approved_at, executed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      action.id,
+      action.org_id,
+      action.workspace_id,
+      action.requested_by_type,
+      action.requested_by_id,
+      action.requested_by_label,
+      action.source_channel,
+      action.source_principal,
+      action.action_type,
+      action.target,
+      action.arguments_json,
+      action.approval_mode,
+      action.status,
+      action.approved_by_type,
+      action.approved_by_id,
+      action.approved_by_label,
+      action.result_json,
+      action.error_text,
+      action.created_at,
+      action.updated_at,
+      action.approved_at,
+      action.executed_at
+    ]
+  );
+
+  return getAdminAction(db, action.id);
+}
+
+export async function updateAdminAction(db, id, patch = {}) {
+  const actionId = assertUuid(id, 'admin action id');
+  const existing = await getAdminAction(db, actionId);
+  if (!existing) return null;
+
+  const hasStatus = Object.prototype.hasOwnProperty.call(patch ?? {}, 'status');
+  const hasApprovalMode = Object.prototype.hasOwnProperty.call(patch ?? {}, 'approval_mode');
+  const hasErrorText = Object.prototype.hasOwnProperty.call(patch ?? {}, 'error_text');
+  const hasResultJson = Object.prototype.hasOwnProperty.call(patch ?? {}, 'result_json');
+  const hasExecutedAt = Object.prototype.hasOwnProperty.call(patch ?? {}, 'executed_at');
+  const hasApprovedByType = Object.prototype.hasOwnProperty.call(patch ?? {}, 'approved_by_type');
+  const hasApprovedById = Object.prototype.hasOwnProperty.call(patch ?? {}, 'approved_by_id');
+  const hasApprovedByLabel = Object.prototype.hasOwnProperty.call(patch ?? {}, 'approved_by_label');
+  const hasApprovedAt = Object.prototype.hasOwnProperty.call(patch ?? {}, 'approved_at');
+
+  const next = {
+    ...existing,
+    status: hasStatus
+      ? normalizeAdminActionStatus(patch.status, { allowUndefined: false })
+      : existing.status,
+    approval_mode: hasApprovalMode
+      ? normalizeAdminActionApprovalMode(patch.approval_mode)
+      : existing.approval_mode,
+    error_text: hasErrorText
+      ? (normalizeOptionalText(patch.error_text, 'error_text', 4000) ?? null)
+      : existing.error_text,
+    result_json: hasResultJson
+      ? normalizeJsonObject(patch.result_json, 'result_json', { allowNull: true, defaultValue: {} })
+      : existing.result_json,
+    executed_at: hasExecutedAt
+      ? (normalizeDateTime(patch.executed_at, 'executed_at') ?? null)
+      : existing.executed_at,
+    approved_by_type: hasApprovedByType
+      ? (normalizeOptionalText(patch.approved_by_type, 'approved_by_type', 32) ?? null)
+      : existing.approved_by_type,
+    approved_by_id: hasApprovedById
+      ? (normalizeOptionalText(patch.approved_by_id, 'approved_by_id', 128) ?? null)
+      : existing.approved_by_id,
+    approved_by_label: hasApprovedByLabel
+      ? (normalizeOptionalText(patch.approved_by_label, 'approved_by_label', 256) ?? null)
+      : existing.approved_by_label,
+    approved_at: hasApprovedAt
+      ? (normalizeDateTime(patch.approved_at, 'approved_at') ?? null)
+      : existing.approved_at,
+    updated_at: nowIso()
+  };
+
+  if (hasStatus) {
+    if (next.status === ADMIN_ACTION_STATUS_APPROVED && !next.approved_at) {
+      next.approved_at = next.updated_at;
+    }
+    if (next.status === ADMIN_ACTION_STATUS_EXECUTED && !next.executed_at) {
+      next.executed_at = next.updated_at;
+    }
+  }
+
+  await run(
+    db,
+    `UPDATE admin_actions
+        SET status = ?, approval_mode = ?, approved_by_type = ?, approved_by_id = ?, approved_by_label = ?,
+            approved_at = ?, executed_at = ?, result_json = ?, error_text = ?, updated_at = ?
+      WHERE id = ?`,
+    [
+      next.status,
+      next.approval_mode,
+      next.approved_by_type,
+      next.approved_by_id,
+      next.approved_by_label,
+      next.approved_at,
+      next.executed_at,
+      next.result_json === null ? null : JSON.stringify(next.result_json),
+      next.error_text,
+      next.updated_at,
+      actionId
+    ]
+  );
+
+  return getAdminAction(db, actionId);
 }
 
 export async function listTasks(db, workspaceId) {

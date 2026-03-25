@@ -28,6 +28,7 @@ import {
   deleteWorkspaceMembership,
   updateWorkspace,
   deleteWorkspace,
+  getProject,
   createProject,
   listProjects,
   updateProject,
@@ -70,6 +71,14 @@ import {
   getTask,
   updateTask,
   deleteTask,
+  getAgentEvent,
+  listAgentEvents,
+  createAgentEvent,
+  updateAgentEvent,
+  getAdminAction,
+  listAdminActions,
+  createAdminAction,
+  updateAdminAction,
   listTasks,
   listTaskDependencies,
   addTaskDependency,
@@ -85,10 +94,31 @@ import { sendInviteEmail } from './email.js';
 import {
   acceptInviteRegistration,
   loginWithPassword,
+  listUserWorkspaces,
   resolveSessionUser,
   revokeSessionByToken,
-  setUserPassword
+  setUserPassword,
 } from './authService.js';
+import {
+  createServiceAccount,
+  createServiceAccountToken,
+  createServiceAccountWorkspaceGrant,
+  listServiceAccounts,
+  listServiceAccountTokens,
+  listServiceAccountWorkspaceGrants,
+  listServiceAccountWorkspaces,
+  resolveServiceAccountToken,
+  revokeApiToken,
+  revokeServiceAccountWorkspaceGrant,
+  rotateApiToken,
+  serviceAccountHasWorkspaceAccess,
+  updateApiToken,
+  updateServiceAccount
+} from './serviceAuth.js';
+import {
+  ALL_PERMISSION_KEYS,
+  hasPermission as permissionSetHasPermission
+} from './permissionRegistry.js';
 
 export const config = getApiConfig();
 
@@ -107,6 +137,29 @@ export const db = await openDb({ filename: config.dbPath });
 await migrate(db, config.migrationsDir);
 const OWNER_SUPER_ADMIN_EMAIL = config.ownerSuperAdminEmail;
 const OWNER_SETTINGS_SINGLETON_ID = 1;
+const DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000001';
+const SERVICE_ACCOUNT_ROUTE_POLICIES = new Map([
+  ['GET /auth/me', { permission: null }],
+  ['GET /workspaces', { permission: 'workspaces.read' }],
+  ['GET /projects', { permission: 'projects.read' }],
+  ['POST /projects', { permission: 'projects.create' }],
+  ['PATCH /projects/:id', { permission: 'projects.update' }],
+  ['DELETE /projects/:id', { permission: 'projects.delete' }],
+  ['POST /tasks/:id/convert-to-shopping-item', { permission: 'tasks.delete' }],
+  ['POST /tasks', { permission: 'tasks.create' }],
+  ['GET /tasks/:id', { permission: 'tasks.read' }],
+  ['PATCH /tasks/:id', { permission: 'tasks.update' }],
+  ['DELETE /tasks/:id', { permission: 'tasks.delete' }],
+  ['GET /tasks', { permission: 'tasks.read' }],
+  ['GET /task-dependencies', { permission: 'tasks.read' }],
+  ['POST /task-dependencies', { permission: 'tasks.update' }],
+  ['DELETE /task-dependencies/:taskId/:dependsOnId', { permission: 'tasks.update' }],
+  ['GET /tasks/tree', { permission: 'tasks.read' }],
+  ['POST /tasks/:id/reparent', { permission: 'tasks.update' }],
+  ['POST /tasks/:id/checkin', { permission: 'tasks.update' }],
+  ['POST /tasks/:id/reschedule', { permission: 'tasks.update' }],
+  ['POST /tasks/search', { permission: 'tasks.read' }]
+]);
 
 let cachedOwnerEmail = null;
 let ownerEmailCacheLoaded = false;
@@ -351,7 +404,13 @@ const TRIM_SAFE_FIELDS = new Set([
   'org_role',
   'notice_type',
   'response',
-  'owner_email'
+  'owner_email',
+  'source_agent',
+  'target_agent',
+  'event_type',
+  'priority',
+  'dedupe_key',
+  'cursor'
 ]);
 
 function sanitizeRequestValue(value, key = '') {
@@ -373,6 +432,16 @@ function sanitizeRequestValue(value, key = '') {
 
 function getHeaderActorEmail(request) {
   return String(request.headers['x-actor-email'] ?? '').trim().toLowerCase();
+}
+
+function getBearerTokenFromRequest(request) {
+  const header = String(request.headers.authorization ?? '').trim();
+  if (!header) return null;
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return { invalid: true, token: null };
+  const token = String(match[1] ?? '').trim();
+  if (!token) return { invalid: true, token: null };
+  return { invalid: false, token };
 }
 
 function parseCookieHeader(cookieHeader) {
@@ -400,6 +469,39 @@ function getSessionTokenFromRequest(request) {
   } catch {
     return token;
   }
+}
+
+function getServiceAccountRoutePolicy(request) {
+  const routePath = String(request.routeOptions?.url ?? '').trim();
+  const method = String(request.method ?? '').toUpperCase();
+  return SERVICE_ACCOUNT_ROUTE_POLICIES.get(`${method} ${routePath}`) ?? null;
+}
+
+function getActorLabel(security) {
+  if (security?.serviceAccount?.display_name) return security.serviceAccount.display_name;
+  if (security?.machine?.display_name) return security.machine.display_name;
+  if (security?.actor?.display_name) return security.actor.display_name;
+  if (security?.user?.display_name) return security.user.display_name;
+  if (security?.actor?.principal_id) return security.actor.principal_id;
+  if (security?.actor?.email) return security.actor.email;
+  return 'unknown';
+}
+
+function getAuditPrincipal(security) {
+  if (security?.serviceAccount?.id || security?.actor?.service_account_id) {
+    return {
+      requested_by_type: 'service_account',
+      requested_by_id: security.serviceAccount?.id ?? security.actor?.service_account_id ?? null,
+      requested_by_label: getActorLabel(security),
+      source_principal: security.serviceAccount?.aliases?.[0]?.alias_value ?? security.actor?.principal_id ?? null
+    };
+  }
+  return {
+    requested_by_type: 'user',
+    requested_by_id: security?.user?.id ?? security?.actor?.user_id ?? null,
+    requested_by_label: getActorLabel(security),
+    source_principal: security?.actor?.email ?? null
+  };
 }
 
 function getSessionCookieAttributes(expiresAtIso, maxAgeSeconds) {
@@ -430,31 +532,69 @@ async function resolveRequestActor(request) {
     return request.actor ?? null;
   }
   let actor = null;
-  const sessionToken = getSessionTokenFromRequest(request);
-  if (sessionToken) {
-    const session = await resolveSessionUser(db, sessionToken);
-    if (session?.user?.email) {
-      actor = {
-        source: 'session',
-        email: String(session.user.email).trim().toLowerCase(),
-        user_id: session.user.id,
-        org_id: session.user.org_id,
-        org_role: normalizeOrgRole(session.user.org_role),
-        session_id: session.session?.id ?? null
-      };
-      request.authSession = session;
+  request.invalidAuthorization = false;
+  request.serviceAccountAuth = null;
+  const bearerAuth = getBearerTokenFromRequest(request);
+  if (bearerAuth) {
+    if (bearerAuth.invalid) {
+      request.invalidAuthorization = true;
+    } else {
+      const serviceAccountAuth = await resolveServiceAccountToken(db, bearerAuth.token);
+      if (serviceAccountAuth?.service_account?.id) {
+        actor = {
+          source: 'bearer',
+          type: 'service_account',
+          principal_type: 'service_account',
+          principal_id: serviceAccountAuth.service_account.id,
+          display_name: serviceAccountAuth.service_account.display_name,
+          email: null,
+          user_id: null,
+          service_account_id: serviceAccountAuth.service_account.id,
+          org_id: serviceAccountAuth.service_account.org_id,
+          org_role: 'member',
+          session_id: null
+        };
+        request.serviceAccountAuth = serviceAccountAuth;
+      } else {
+        request.invalidAuthorization = true;
+      }
     }
   }
-  if (!actor && config.allowHeaderActorAuth) {
+  if (!actor && !request.invalidAuthorization) {
+    const sessionToken = getSessionTokenFromRequest(request);
+    if (sessionToken) {
+      const session = await resolveSessionUser(db, sessionToken);
+      if (session?.user?.email) {
+        actor = {
+          source: 'session',
+          type: 'user',
+          principal_type: 'user',
+          principal_id: session.user.id,
+          email: String(session.user.email).trim().toLowerCase(),
+          user_id: session.user.id,
+          service_account_id: null,
+          org_id: session.user.org_id,
+          org_role: normalizeOrgRole(session.user.org_role),
+          session_id: session.session?.id ?? null
+        };
+        request.authSession = session;
+      }
+    }
+  }
+  if (!actor && !request.invalidAuthorization && config.allowHeaderActorAuth) {
     const fallbackEmail = getHeaderActorEmail(request);
-    if (fallbackEmail) {
-      actor = {
-        source: 'header',
-        email: fallbackEmail,
-        user_id: null,
-        org_id: null,
-        org_role: 'member',
-        session_id: null
+      if (fallbackEmail) {
+        actor = {
+          source: 'header',
+          type: 'user',
+          principal_type: 'user',
+          principal_id: null,
+          email: fallbackEmail,
+          user_id: null,
+          service_account_id: null,
+          org_id: null,
+          org_role: 'member',
+          session_id: null
       };
     }
   }
@@ -462,6 +602,7 @@ async function resolveRequestActor(request) {
     const userByEmail = await getUserByEmail(db, actor.email);
     if (userByEmail) {
       actor.user_id = userByEmail.id;
+      actor.principal_id = userByEmail.id;
       actor.org_id = userByEmail.org_id;
       actor.org_role = normalizeOrgRole(userByEmail.org_role);
     }
@@ -478,23 +619,45 @@ async function resolveActorSecurity(request) {
   const actor = await resolveRequestActor(request);
   const ownerEmail = await getCurrentOwnerEmail();
   let user = null;
+  let serviceAccount = null;
   if (actor?.user_id) {
     user = await db.queryOne(
       'SELECT id, org_id, email, org_role, archived FROM users WHERE id = ? LIMIT 1',
       [actor.user_id]
     );
+  } else if (actor?.service_account_id) {
+    serviceAccount = request.serviceAccountAuth?.service_account ?? null;
   } else if (actor?.email) {
     user = await getUserByEmail(db, actor.email);
   }
   const actorEmail = normalizeEmail(actor?.email ?? null);
   const isOwner = isOwnerEmail(actorEmail, ownerEmail);
   const isAdminRole = Boolean(user && !Number(user.archived) && normalizeOrgRole(user.org_role) === 'admin');
+  const sessionWorkspaces = request.authSession?.workspaces
+    ?? (user?.id ? await listUserWorkspaces(db, user.id) : []);
+  const grantedWorkspaces = serviceAccount
+    ? (request.serviceAccountAuth?.workspaces ?? [])
+    : sessionWorkspaces;
+  const grantedPermissions = serviceAccount
+    ? (request.serviceAccountAuth?.granted_permissions ?? [])
+    : (user ? ALL_PERMISSION_KEYS : []);
+  const effectivePermissions = serviceAccount
+    ? (request.serviceAccountAuth?.effective_permissions ?? [])
+    : (user ? ALL_PERMISSION_KEYS : []);
   const security = {
     actor,
     user,
+    machine: null,
+    serviceAccount,
     ownerEmail,
     isOwner,
-    isAdmin: isOwner || isAdminRole
+    isAdmin: isOwner || isAdminRole,
+    principalType: actor?.principal_type ?? null,
+    principalId: actor?.principal_id ?? user?.id ?? serviceAccount?.id ?? null,
+    orgId: serviceAccount?.org_id ?? user?.org_id ?? actor?.org_id ?? null,
+    grantedWorkspaces,
+    grantedPermissions,
+    effectivePermissions
   };
   request.actorSecurity = security;
   request.actorSecurityResolved = true;
@@ -510,10 +673,14 @@ async function ensureOwnerAccess(request, reply) {
   return security;
 }
 
-async function ensureAdminAccess(request, reply) {
+async function ensureAdminAccess(request, reply, { allowMachine = false } = {}) {
   const security = await resolveActorSecurity(request);
   if (!security?.isAdmin) {
     reply.code(403).send({ error: 'admin access required' });
+    return null;
+  }
+  if (!allowMachine && security?.principalType === 'service_account') {
+    reply.code(403).send({ error: 'human admin access required' });
     return null;
   }
   return security;
@@ -521,11 +688,56 @@ async function ensureAdminAccess(request, reply) {
 
 async function ensureAuthenticatedAccess(request, reply) {
   const actor = await resolveRequestActor(request);
+  if (request.invalidAuthorization) {
+    reply.code(401).send({ error: 'invalid bearer token' });
+    return null;
+  }
   if (!actor) {
     reply.code(401).send({ error: 'authentication required' });
     return null;
   }
   return actor;
+}
+
+async function ensureWorkspaceAccess(request, reply, workspaceId) {
+  const safeWorkspaceId = String(workspaceId ?? '').trim();
+  if (!safeWorkspaceId) {
+    reply.code(400).send({ error: 'workspace_id required' });
+    return null;
+  }
+  if (!config.requireAuth) {
+    return await resolveActorSecurity(request);
+  }
+  const actor = await ensureAuthenticatedAccess(request, reply);
+  if (!actor) return null;
+  const security = await resolveActorSecurity(request);
+  if (security?.isOwner) {
+    return security;
+  }
+  const routePolicy = getServiceAccountRoutePolicy(request);
+  if (security?.principalType === 'service_account') {
+    if (routePolicy?.permission && !permissionSetHasPermission(security.effectivePermissions, routePolicy.permission)) {
+      reply.code(403).send({ error: `${routePolicy.permission} required` });
+      return null;
+    }
+    const allowed = await serviceAccountHasWorkspaceAccess(db, security.actor.service_account_id, safeWorkspaceId);
+    if (!allowed) {
+      reply.code(403).send({ error: 'workspace access required' });
+      return null;
+    }
+    return security;
+  }
+  const userId = security?.user?.id ?? security?.actor?.user_id ?? null;
+  if (!userId) {
+    reply.code(403).send({ error: 'workspace access required' });
+    return null;
+  }
+  const member = await isWorkspaceMember(userId, safeWorkspaceId);
+  if (!member) {
+    reply.code(403).send({ error: 'workspace access required' });
+    return null;
+  }
+  return security;
 }
 
 const AUTH_PUBLIC_ROUTES = new Set([
@@ -579,6 +791,83 @@ function sanitizeAdminUserRecord(user, { ownerEmail = OWNER_SUPER_ADMIN_EMAIL } 
   };
 }
 
+async function ensureTaskAccess(request, reply, taskId) {
+  const task = await getTask(db, taskId);
+  if (!task) {
+    reply.code(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'not found',
+        requestId: request.id
+      }
+    });
+    return null;
+  }
+  const access = await ensureWorkspaceAccess(request, reply, task.workspace_id);
+  if (!access) return null;
+  return { task, access };
+}
+
+async function ensureProjectAccess(request, reply, projectId) {
+  const project = await getProject(db, projectId);
+  if (!project) {
+    reply.code(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'not found',
+        requestId: request.id
+      }
+    });
+    return null;
+  }
+  const access = await ensureWorkspaceAccess(request, reply, project.workspace_id);
+  if (!access) return null;
+  return { project, access };
+}
+
+async function ensureAdminActionReadAccess(request, reply, action) {
+  const security = await ensureAuthenticatedAccess(request, reply);
+  if (!security) return null;
+  if (!action) {
+    reply.code(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'not found',
+        requestId: request.id
+      }
+    });
+    return null;
+  }
+  const actorSecurity = await resolveActorSecurity(request);
+  const requesterId = actorSecurity?.principalId
+    ?? actorSecurity?.user?.id
+    ?? actorSecurity?.actor?.user_id
+    ?? null;
+  if (action.workspace_id) {
+    const access = await ensureWorkspaceAccess(request, reply, action.workspace_id);
+    if (!access) return null;
+    return { action, security: actorSecurity };
+  }
+  if (actorSecurity?.isAdmin || (requesterId && requesterId === action.requested_by_id)) {
+    return { action, security: actorSecurity };
+  }
+  reply.code(403).send({ error: 'admin action access required' });
+  return null;
+}
+
+async function ensureAdminActionWriteAccess(request, reply, action = null) {
+  const security = await resolveActorSecurity(request);
+  if (!security?.isAdmin) {
+    reply.code(403).send({ error: 'admin access required' });
+    return null;
+  }
+  if (action?.workspace_id) {
+    const access = await ensureWorkspaceAccess(request, reply, action.workspace_id);
+    if (!access) return null;
+  }
+  return security;
+}
+
 server.addHook('onRequest', (request, reply, done) => {
   request.startedAtMs = Date.now();
   request.actorResolved = false;
@@ -586,13 +875,15 @@ server.addHook('onRequest', (request, reply, done) => {
   request.actorSecurityResolved = false;
   request.actorSecurity = null;
   request.authSession = null;
+  request.serviceAccountAuth = null;
+  request.invalidAuthorization = false;
   const corsOrigin = getCorsOrigin(request.headers.origin);
   if (corsOrigin) {
     reply.header('Access-Control-Allow-Origin', corsOrigin);
   }
   reply.header('Access-Control-Allow-Credentials', 'true');
   reply.header('Vary', 'Origin');
-  reply.header('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id, X-Actor-Email, X-Request-Id');
+  reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Client-Id, X-Actor-Email, X-Request-Id');
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   reply.header('x-request-id', request.id);
   if (request.method === 'OPTIONS') {
@@ -634,9 +925,27 @@ server.addHook('preHandler', async (request, reply) => {
   const routePath = String(request.routeOptions?.url ?? '').trim();
   if (AUTH_PUBLIC_ROUTES.has(routePath)) return;
   const actor = await resolveRequestActor(request);
+  if (request.invalidAuthorization) {
+    reply.code(401).send({ error: 'invalid bearer token' });
+    return reply;
+  }
   if (!actor) {
     reply.code(401).send({ error: 'authentication required' });
     return reply;
+  }
+  if (actor.principal_type === 'service_account') {
+    const policy = getServiceAccountRoutePolicy(request);
+    if (!policy) {
+      reply.code(403).send({ error: 'service account route not allowed' });
+      return reply;
+    }
+    if (policy.permission) {
+      const security = await resolveActorSecurity(request);
+      if (!permissionSetHasPermission(security?.effectivePermissions ?? [], policy.permission)) {
+        reply.code(403).send({ error: `${policy.permission} required` });
+        return reply;
+      }
+    }
   }
 });
 
@@ -732,8 +1041,14 @@ server.post('/workspaces', async (request, reply) => {
   return await createWorkspace(db, { name, type, org_id, org_name });
 });
 
-server.get('/workspaces', async (request) => {
+server.get('/workspaces', async (request, reply) => {
   const { org_id } = request.query ?? {};
+  const security = await resolveActorSecurity(request);
+  if (security?.principalType === 'service_account') {
+    const grantedWorkspaces = security.grantedWorkspaces ?? [];
+    if (!org_id) return grantedWorkspaces;
+    return grantedWorkspaces.filter((workspace) => workspace.org_id === org_id);
+  }
   return await listWorkspaces(db, org_id);
 });
 
@@ -784,27 +1099,108 @@ server.post('/users', async (request, reply) => {
 server.get('/auth/me', async (request) => {
   const actor = await resolveRequestActor(request);
   const session = request.authSession ?? null;
+  const serviceAccountAuth = request.serviceAccountAuth ?? null;
+  const security = await resolveActorSecurity(request);
   const ownerEmail = await getCurrentOwnerEmail();
-  if (!actor || !session?.user) {
+  if (!actor) {
     return {
       authenticated: false,
+      auth_type: 'none',
       require_auth: Boolean(config.requireAuth),
+      principal_type: null,
+      principal_id: null,
+      org_id: null,
       user: null,
+      service_account: null,
       session: null,
+      machine: null,
       workspaces: [],
+      granted_permissions: [],
+      effective_permissions: [],
       owner_email: ownerEmail,
       is_owner: false,
       is_admin: false
     };
   }
+  if (actor.principal_type === 'service_account' && serviceAccountAuth?.service_account?.id) {
+    return {
+      authenticated: true,
+      auth_type: 'service_account',
+      require_auth: Boolean(config.requireAuth),
+      principal_type: 'service_account',
+      principal_id: serviceAccountAuth.service_account.id,
+      org_id: serviceAccountAuth.service_account.org_id,
+      user: null,
+      service_account: {
+        ...serviceAccountAuth.service_account,
+        token_id: serviceAccountAuth.token?.id ?? null,
+        token_label: serviceAccountAuth.token?.label ?? null,
+        token_expires_at: serviceAccountAuth.token?.expires_at ?? null
+      },
+      session: null,
+      machine: {
+        id: serviceAccountAuth.service_account.id,
+        org_id: serviceAccountAuth.service_account.org_id,
+        principal: serviceAccountAuth.service_account.aliases?.[0]?.alias_value ?? serviceAccountAuth.service_account.id,
+        display_name: serviceAccountAuth.service_account.display_name,
+        org_role: 'member',
+        all_workspaces: 0,
+        archived: serviceAccountAuth.service_account.archived,
+        token_id: serviceAccountAuth.token?.id ?? null,
+        token_label: serviceAccountAuth.token?.label ?? null,
+        token_expires_at: serviceAccountAuth.token?.expires_at ?? null
+      },
+      workspaces: serviceAccountAuth.workspaces ?? [],
+      granted_permissions: security?.grantedPermissions ?? [],
+      effective_permissions: security?.effectivePermissions ?? [],
+      owner_email: ownerEmail,
+      is_owner: false,
+      is_admin: false
+    };
+  }
+  const user = session?.user ?? (actor.user_id
+    ? await db.queryOne(
+      'SELECT id, org_id, display_name, email, org_role FROM users WHERE id = ? LIMIT 1',
+      [actor.user_id]
+    )
+    : null);
+  if (!user) {
+    return {
+      authenticated: true,
+      auth_type: actor.source === 'header' ? 'header' : 'session',
+      require_auth: Boolean(config.requireAuth),
+      principal_type: 'user',
+      principal_id: actor.principal_id ?? null,
+      org_id: actor.org_id ?? null,
+      user: null,
+      service_account: null,
+      session: null,
+      machine: null,
+      workspaces: [],
+      granted_permissions: [],
+      effective_permissions: [],
+      owner_email: ownerEmail,
+      is_owner: isOwnerEmail(actor.email, ownerEmail),
+      is_admin: isOwnerEmail(actor.email, ownerEmail)
+    };
+  }
+  const workspaces = session?.workspaces ?? await listUserWorkspaces(db, user.id);
   const isOwner = isOwnerEmail(actor.email, ownerEmail);
-  const isAdmin = isOwner || normalizeOrgRole(session.user.org_role) === 'admin';
+  const isAdmin = isOwner || normalizeOrgRole(user.org_role) === 'admin';
   return {
     authenticated: true,
+    auth_type: actor.source === 'header' ? 'header' : 'session',
     require_auth: Boolean(config.requireAuth),
-    user: session.user,
-    session: session.session,
-    workspaces: session.workspaces ?? [],
+    principal_type: 'user',
+    principal_id: user.id,
+    org_id: user.org_id,
+    user,
+    service_account: null,
+    session: session?.session ?? null,
+    machine: null,
+    workspaces: session?.workspaces ?? workspaces,
+    granted_permissions: ALL_PERMISSION_KEYS,
+    effective_permissions: ALL_PERMISSION_KEYS,
     owner_email: ownerEmail,
     is_owner: isOwner,
     is_admin: isAdmin
@@ -827,10 +1223,18 @@ server.post('/auth/login', async (request, reply) => {
     setSessionCookie(reply, login.token, login.session.expires_at);
     return {
       authenticated: true,
+      auth_type: 'session',
       require_auth: Boolean(config.requireAuth),
+      principal_type: 'user',
+      principal_id: login.user.id,
+      org_id: login.user.org_id,
       user: login.user,
+      service_account: null,
       session: login.session,
+      machine: null,
       workspaces: login.workspaces ?? [],
+      granted_permissions: ALL_PERMISSION_KEYS,
+      effective_permissions: ALL_PERMISSION_KEYS,
       owner_email: ownerEmail,
       is_owner: isOwner,
       is_admin: isAdmin
@@ -869,10 +1273,18 @@ server.post('/auth/invite/accept', async (request, reply) => {
     setSessionCookie(reply, accepted.token, accepted.session.expires_at);
     return {
       authenticated: true,
+      auth_type: 'session',
       require_auth: Boolean(config.requireAuth),
+      principal_type: 'user',
+      principal_id: accepted.user.id,
+      org_id: accepted.user.org_id,
       user: accepted.user,
+      service_account: null,
       session: accepted.session,
+      machine: null,
       workspaces: accepted.workspaces ?? [],
+      granted_permissions: ALL_PERMISSION_KEYS,
+      effective_permissions: ALL_PERMISSION_KEYS,
       owner_email: ownerEmail,
       is_owner: isOwner,
       is_admin: isAdmin
@@ -892,6 +1304,169 @@ server.get('/admin/info', async (request, reply) => {
     is_owner: Boolean(security?.isOwner),
     is_admin: Boolean(security?.isAdmin)
   };
+});
+
+server.get('/admin/service-accounts', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  const orgId = request.query?.org_id ?? security.user?.org_id ?? DEFAULT_ORG_ID;
+  try {
+    const serviceAccounts = await listServiceAccounts(db, {
+      orgId,
+      includeArchived: parseBooleanish(request.query?.include_archived, true)
+    });
+    return {
+      service_accounts: serviceAccounts,
+      count: serviceAccounts.length
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin/service-accounts', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const created = await createServiceAccount(
+      db,
+      {
+        org_id: request.body?.org_id ?? security.user?.org_id ?? DEFAULT_ORG_ID,
+        display_name: request.body?.display_name,
+        description: request.body?.description ?? null,
+        permissions: request.body?.permissions ?? [],
+        aliases: request.body?.aliases ?? []
+      },
+      {
+        createdByUserId: security.user?.id ?? null
+      }
+    );
+    return { service_account: created };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/admin/service-accounts/:id', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const updated = await updateServiceAccount(db, request.params?.id, request.body ?? {});
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return { service_account: updated };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/admin/service-accounts/:id/tokens', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const tokens = await listServiceAccountTokens(db, request.params?.id);
+    return {
+      tokens,
+      count: tokens.length
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin/service-accounts/:id/tokens', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const created = await createServiceAccountToken(
+      db,
+      request.params?.id,
+      request.body ?? {},
+      { createdByUserId: security.user?.id ?? null }
+    );
+    return created;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/admin/service-account-tokens/:id', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const updated = await updateApiToken(db, request.params?.id, request.body ?? {});
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return { token: updated };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin/service-account-tokens/:id/rotate', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const rotated = await rotateApiToken(
+      db,
+      request.params?.id,
+      request.body ?? {},
+      { createdByUserId: security.user?.id ?? null }
+    );
+    if (!rotated) return reply.code(404).send({ error: 'not found' });
+    return rotated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.delete('/admin/service-account-tokens/:id', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const revoked = await revokeApiToken(db, request.params?.id);
+    if (!revoked) return reply.code(404).send({ error: 'not found' });
+    return { ok: true };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/admin/service-accounts/:id/workspace-grants', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const grants = await listServiceAccountWorkspaceGrants(db, request.params?.id);
+    const workspaces = await listServiceAccountWorkspaces(db, request.params?.id);
+    return {
+      workspace_grants: grants,
+      count: grants.length,
+      effective_workspaces: workspaces
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin/service-accounts/:id/workspace-grants', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const grant = await createServiceAccountWorkspaceGrant(db, request.params?.id, request.body ?? {});
+    return { workspace_grant: grant };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.delete('/admin/service-account-workspace-grants/:id', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const revoked = await revokeServiceAccountWorkspaceGrant(db, request.params?.id);
+    if (!revoked) return reply.code(404).send({ error: 'not found' });
+    return { ok: true };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
 });
 
 server.get('/admin/invites', async (request, reply) => {
@@ -1352,8 +1927,152 @@ server.delete('/workspaces/:id', async (request, reply) => {
   return result;
 });
 
-server.get('/projects', async (request) => {
+server.get('/agent-events', async (request, reply) => {
   const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
+  try {
+    return await listAgentEvents(db, request.query ?? {});
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/agent-events/:id', async (request, reply) => {
+  try {
+    const event = await getAgentEvent(db, request.params.id);
+    if (!event) {
+      return reply.code(404).send({ error: 'not found' });
+    }
+    const access = await ensureWorkspaceAccess(request, reply, event.workspace_id);
+    if (!access) return;
+    return event;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/agent-events', async (request, reply) => {
+  const { workspace_id, source_agent, event_type } = request.body ?? {};
+  if (!workspace_id || !source_agent || !event_type) {
+    return reply.code(400).send({ error: 'workspace_id, source_agent, and event_type required' });
+  }
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
+  try {
+    return await createAgentEvent(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/agent-events/:id', async (request, reply) => {
+  try {
+    const event = await getAgentEvent(db, request.params.id);
+    if (!event) {
+      return reply.code(404).send({ error: 'not found' });
+    }
+    const access = await ensureWorkspaceAccess(request, reply, event.workspace_id);
+    if (!access) return;
+    const updated = await updateAgentEvent(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return updated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/admin-actions', async (request, reply) => {
+  const { workspace_id } = request.query ?? {};
+  try {
+    if (workspace_id) {
+      const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+      if (!access) return;
+      return {
+        actions: await listAdminActions(db, request.query ?? {})
+      };
+    }
+    const security = await ensureAdminActionWriteAccess(request, reply);
+    if (!security) return;
+    return {
+      actions: await listAdminActions(db, {
+        ...(request.query ?? {}),
+        org_id: request.query?.org_id ?? security.machine?.org_id ?? security.user?.org_id ?? security.actor?.org_id ?? DEFAULT_ORG_ID
+      })
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/admin-actions/:id', async (request, reply) => {
+  try {
+    const action = await getAdminAction(db, request.params?.id);
+    const access = await ensureAdminActionReadAccess(request, reply, action);
+    if (!access) return;
+    return action;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/admin-actions', async (request, reply) => {
+  const security = await resolveActorSecurity(request);
+  if (!security?.actor) {
+    return reply.code(401).send({ error: 'authentication required' });
+  }
+  try {
+    const workspaceId = request.body?.workspace_id ?? null;
+    if (workspaceId) {
+      const access = await ensureWorkspaceAccess(request, reply, workspaceId);
+      if (!access) return;
+    } else {
+      const admin = await ensureAdminActionWriteAccess(request, reply);
+      if (!admin) return;
+    }
+    const principal = getAuditPrincipal(security);
+    const action = await createAdminAction(db, {
+      ...principal,
+      org_id: request.body?.org_id ?? security.machine?.org_id ?? security.user?.org_id ?? security.actor?.org_id ?? DEFAULT_ORG_ID,
+      workspace_id: workspaceId,
+      source_channel: request.body?.source_channel ?? null,
+      source_principal: request.body?.source_principal ?? principal.source_principal,
+      action_type: request.body?.action_type,
+      target: request.body?.target ?? null,
+      arguments_json: request.body?.arguments_json ?? {},
+      approval_mode: request.body?.approval_mode ?? 'explicit',
+      status: request.body?.status ?? 'requested'
+    });
+    return action;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/admin-actions/:id', async (request, reply) => {
+  try {
+    const existing = await getAdminAction(db, request.params?.id);
+    const security = await ensureAdminActionWriteAccess(request, reply, existing);
+    if (!security) return;
+    if (!existing) return reply.code(404).send({ error: 'not found' });
+    const principal = getAuditPrincipal(security);
+    const updated = await updateAdminAction(db, request.params?.id, {
+      ...(request.body ?? {}),
+      approved_by_type: request.body?.approved_by_type ?? (request.body?.status === 'approved' ? principal.requested_by_type : undefined),
+      approved_by_id: request.body?.approved_by_id ?? (request.body?.status === 'approved' ? principal.requested_by_id : undefined),
+      approved_by_label: request.body?.approved_by_label ?? (request.body?.status === 'approved' ? principal.requested_by_label : undefined)
+    });
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+    return updated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/projects', async (request, reply) => {
+  const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listProjects(db, workspace_id);
 });
 
@@ -1362,16 +2081,22 @@ server.post('/projects', async (request, reply) => {
   if (!workspace_id || !name) {
     return reply.code(400).send({ error: 'workspace_id and name required' });
   }
-  return await createProject(db, { workspace_id, name, kind });
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
+  return await createProject(db, { workspace_id, name, kind }, request.headers['x-client-id'] ?? null);
 });
 
 server.patch('/projects/:id', async (request, reply) => {
+  const projectAccess = await ensureProjectAccess(request, reply, request.params.id);
+  if (!projectAccess) return;
   const updated = await updateProject(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
   if (!updated) return reply.code(404).send({ error: 'not found' });
   return updated;
 });
 
 server.delete('/projects/:id', async (request, reply) => {
+  const projectAccess = await ensureProjectAccess(request, reply, request.params.id);
+  if (!projectAccess) return;
   const result = await deleteProject(db, request.params.id, request.headers['x-client-id'] ?? null);
   if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
   return result;
@@ -1618,6 +2343,8 @@ server.delete('/shopping-items/:id', async (request, reply) => {
 });
 
 server.post('/tasks/:id/convert-to-shopping-item', async (request, reply) => {
+  const taskAccess = await ensureTaskAccess(request, reply, request.params.id);
+  if (!taskAccess) return;
   try {
     const converted = await convertTaskToShoppingItem(
       db,
@@ -1645,6 +2372,8 @@ server.post('/tasks', async (request, reply) => {
   if (!data.workspace_id || !data.title) {
     return reply.code(400).send({ error: 'workspace_id and title required' });
   }
+  const access = await ensureWorkspaceAccess(request, reply, data.workspace_id);
+  if (!access) return;
   try {
     const security = await resolveActorSecurity(request);
     const taskPayload = { ...data };
@@ -1664,20 +2393,14 @@ server.post('/tasks', async (request, reply) => {
 });
 
 server.get('/tasks/:id', async (request, reply) => {
-  const task = await getTask(db, request.params.id);
-  if (!task) {
-    return reply.code(404).send({
-      error: {
-        code: 'NOT_FOUND',
-        message: 'not found',
-        requestId: request.id
-      }
-    });
-  }
-  return task;
+  const taskAccess = await ensureTaskAccess(request, reply, request.params.id);
+  if (!taskAccess) return;
+  return taskAccess.task;
 });
 
 server.patch('/tasks/:id', async (request, reply) => {
+  const taskAccess = await ensureTaskAccess(request, reply, request.params.id);
+  if (!taskAccess) return;
   try {
     const updated = await updateTask(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
     if (!updated) return reply.code(404).send({ error: 'not found' });
@@ -1687,17 +2410,23 @@ server.patch('/tasks/:id', async (request, reply) => {
   }
 });
 
-server.delete('/tasks/:id', async (request) => {
+server.delete('/tasks/:id', async (request, reply) => {
+  const taskAccess = await ensureTaskAccess(request, reply, request.params.id);
+  if (!taskAccess) return;
   return await deleteTask(db, request.params.id, request.headers['x-client-id'] ?? null);
 });
 
-server.get('/tasks', async (request) => {
+server.get('/tasks', async (request, reply) => {
   const { workspace_id } = request.query;
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listTasks(db, workspace_id);
 });
 
-server.get('/task-dependencies', async (request) => {
+server.get('/task-dependencies', async (request, reply) => {
   const { workspace_id } = request.query;
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listTaskDependencies(db, workspace_id);
 });
 
@@ -1706,6 +2435,10 @@ server.post('/task-dependencies', async (request, reply) => {
   if (!task_id || !depends_on_id) {
     return reply.code(400).send({ error: 'task_id and depends_on_id required' });
   }
+  const taskAccess = await ensureTaskAccess(request, reply, task_id);
+  if (!taskAccess) return;
+  const dependsOnTaskAccess = await ensureTaskAccess(request, reply, depends_on_id);
+  if (!dependsOnTaskAccess) return;
   try {
     return await addTaskDependency(db, task_id, depends_on_id, request.headers['x-client-id'] ?? null);
   } catch (err) {
@@ -1714,6 +2447,10 @@ server.post('/task-dependencies', async (request, reply) => {
 });
 
 server.delete('/task-dependencies/:taskId/:dependsOnId', async (request, reply) => {
+  const taskAccess = await ensureTaskAccess(request, reply, request.params.taskId);
+  if (!taskAccess) return;
+  const dependsOnTaskAccess = await ensureTaskAccess(request, reply, request.params.dependsOnId);
+  if (!dependsOnTaskAccess) return;
   try {
     return await removeTaskDependency(
       db,
@@ -1726,13 +2463,21 @@ server.delete('/task-dependencies/:taskId/:dependsOnId', async (request, reply) 
   }
 });
 
-server.get('/tasks/tree', async (request) => {
+server.get('/tasks/tree', async (request, reply) => {
   const { workspace_id, root_id } = request.query;
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await getTaskTree(db, workspace_id, root_id ?? null);
 });
 
 server.post('/tasks/:id/reparent', async (request, reply) => {
   const { new_parent_id } = request.body ?? {};
+  const taskAccess = await ensureTaskAccess(request, reply, request.params.id);
+  if (!taskAccess) return;
+  if (new_parent_id) {
+    const parentAccess = await ensureTaskAccess(request, reply, new_parent_id);
+    if (!parentAccess) return;
+  }
   try {
     return await reparentTask(db, request.params.id, new_parent_id ?? null, request.headers['x-client-id'] ?? null);
   } catch (err) {
@@ -1742,6 +2487,8 @@ server.post('/tasks/:id/reparent', async (request, reply) => {
 
 server.post('/tasks/:id/checkin', async (request, reply) => {
   const { response } = request.body ?? {};
+  const taskAccess = await ensureTaskAccess(request, reply, request.params.id);
+  if (!taskAccess) return;
   try {
     const updated = await applyTaskCheckIn(db, request.params.id, response, request.headers['x-client-id'] ?? null);
     if (!updated) return reply.code(404).send({ error: 'not found' });
@@ -1754,11 +2501,15 @@ server.post('/tasks/:id/checkin', async (request, reply) => {
 server.post('/tasks/:id/reschedule', async (request, reply) => {
   const { deltaMs } = request.body ?? {};
   if (typeof deltaMs !== 'number') return reply.code(400).send({ error: 'deltaMs required' });
+  const taskAccess = await ensureTaskAccess(request, reply, request.params.id);
+  if (!taskAccess) return;
   return await rescheduleSubtree(db, request.params.id, deltaMs, request.headers['x-client-id'] ?? null);
 });
 
-server.post('/tasks/search', async (request) => {
+server.post('/tasks/search', async (request, reply) => {
   const { workspace_id, text, status, tag } = request.body ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await searchTasks(db, workspace_id, { text, status, tag });
 });
 

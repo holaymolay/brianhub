@@ -42,10 +42,18 @@ test('shared BrianHub API docs module documents the current resource model', () 
   assert.match(script, /GET \/shopping-lists\?workspace_id=<uuid>/);
   assert.match(script, /scheduled_for/);
   assert.match(script, /POST \/tasks\/:id\/convert-to-shopping-item/);
+  assert.match(script, /GET \/agent-events\?workspace_id=<uuid>/);
+  assert.match(script, /PATCH \/agent-events\/:id/);
+  assert.match(script, /service_account_auth: available-v1/);
+  assert.match(script, /Authorization: Bearer <token>/);
+  assert.match(script, /GET \/admin\/service-accounts/);
+  assert.match(script, /POST \/admin\/service-accounts\/:id\/tokens/);
+  assert.match(script, /telegram_group/);
+  assert.match(script, /tasks\.delete/);
   assert.match(script, /GET \/projects\?workspace_id=<uuid>/);
   assert.match(script, /GET \/notice-types\?workspace_id=<uuid>/);
   assert.match(script, /POST \/sync\/pull/);
-  assert.match(script, /GET \/admin\/info/);
+  assert.match(script, /principal_type/);
 });
 
 test('app wiring opens the in-app help hub and the dedicated API help url', () => {

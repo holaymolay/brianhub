@@ -19,6 +19,22 @@ const shoppingItemStateSchema = {
   type: 'string',
   enum: ['pending', 'bought', 'substituted', 'unavailable']
 };
+const agentEventStatusSchema = {
+  type: 'string',
+  enum: ['pending', 'handled', 'ignored', 'failed']
+};
+const agentEventPayloadSchema = {
+  type: 'object',
+  additionalProperties: true
+};
+const adminActionStatusSchema = {
+  type: 'string',
+  enum: ['requested', 'approved', 'rejected', 'executed', 'failed', 'canceled']
+};
+const adminActionApprovalModeSchema = {
+  type: 'string',
+  enum: ['explicit', 'auto']
+};
 
 function nonEmptyString(maxLength = 512) {
   return { type: 'string', minLength: 1, maxLength };
@@ -180,6 +196,50 @@ const taskListResponseSchema = {
   items: taskResponseSchema
 };
 
+const agentEventResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'workspace_id',
+    'source_agent',
+    'event_type',
+    'payload_json',
+    'status',
+    'priority',
+    'created_at',
+    'updated_at'
+  ],
+  properties: {
+    id: uuidSchema,
+    workspace_id: uuidSchema,
+    source_agent: nonEmptyString(128),
+    target_agent: nullableString(128),
+    event_type: nonEmptyString(128),
+    payload_json: agentEventPayloadSchema,
+    status: agentEventStatusSchema,
+    priority: nonEmptyString(32),
+    dedupe_key: nullableString(256),
+    created_at: dateTimeSchema,
+    updated_at: dateTimeSchema,
+    handled_at: nullableDateTimeSchema,
+    error_text: nullableString(4000)
+  }
+};
+
+const agentEventListResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['events', 'next_cursor'],
+  properties: {
+    events: {
+      type: 'array',
+      items: agentEventResponseSchema
+    },
+    next_cursor: nullableString(512)
+  }
+};
+
 const authUserResponseSchema = {
   type: 'object',
   additionalProperties: true,
@@ -206,15 +266,98 @@ const authWorkspaceResponseSchema = {
   }
 };
 
+const permissionKeyArraySchema = {
+  type: 'array',
+  uniqueItems: true,
+  items: nonEmptyString(128)
+};
+
+const nullablePermissionKeyArraySchema = {
+  anyOf: [permissionKeyArraySchema, { type: 'null' }]
+};
+
+const serviceAccountAliasResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'alias_type', 'alias_value', 'metadata'],
+  properties: {
+    id: uuidSchema,
+    alias_type: nonEmptyString(128),
+    alias_value: nonEmptyString(512),
+    metadata: {
+      type: 'object',
+      additionalProperties: true
+    },
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema
+  }
+};
+
+const authMachineResponseSchema = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['id', 'org_id', 'principal', 'display_name', 'org_role', 'all_workspaces'],
+  properties: {
+    id: uuidSchema,
+    org_id: uuidSchema,
+    principal: nonEmptyString(512),
+    display_name: nonEmptyString(256),
+    org_role: nullableString(64),
+    all_workspaces: integerSchema,
+    archived: nullableIntegerSchema,
+    token_id: nullableUuidSchema,
+    token_label: nullableString(256),
+    token_expires_at: nullableDateTimeSchema
+  }
+};
+
+const authServiceAccountResponseSchema = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['id', 'org_id', 'display_name', 'permissions', 'archived', 'aliases'],
+  properties: {
+    id: uuidSchema,
+    org_id: uuidSchema,
+    display_name: nonEmptyString(256),
+    description: nullableString(1024),
+    permissions: permissionKeyArraySchema,
+    archived: integerSchema,
+    aliases: {
+      type: 'array',
+      items: serviceAccountAliasResponseSchema
+    },
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema,
+    token_id: nullableUuidSchema,
+    token_label: nullableString(256),
+    token_expires_at: nullableDateTimeSchema
+  }
+};
+
 const authSessionResponseSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['authenticated', 'require_auth'],
+  required: ['authenticated', 'auth_type', 'require_auth'],
   properties: {
     authenticated: { type: 'boolean' },
+    auth_type: { type: 'string', enum: ['none', 'session', 'service_account', 'header'] },
     require_auth: { type: 'boolean' },
+    principal_type: {
+      anyOf: [
+        { type: 'string', enum: ['user', 'service_account'] },
+        { type: 'null' }
+      ]
+    },
+    principal_id: nullableUuidSchema,
+    org_id: nullableUuidSchema,
     user: {
       anyOf: [authUserResponseSchema, { type: 'null' }]
+    },
+    service_account: {
+      anyOf: [authServiceAccountResponseSchema, { type: 'null' }]
+    },
+    machine: {
+      anyOf: [authMachineResponseSchema, { type: 'null' }]
     },
     session: {
       anyOf: [
@@ -234,9 +377,162 @@ const authSessionResponseSchema = {
       type: 'array',
       items: authWorkspaceResponseSchema
     },
+    granted_permissions: permissionKeyArraySchema,
+    effective_permissions: permissionKeyArraySchema,
     owner_email: nullableString(320),
     is_owner: { type: 'boolean' },
     is_admin: { type: 'boolean' }
+  }
+};
+
+const machineActorResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'org_id', 'principal', 'display_name', 'org_role', 'all_workspaces', 'archived'],
+  properties: {
+    id: uuidSchema,
+    org_id: uuidSchema,
+    principal: nonEmptyString(512),
+    display_name: nonEmptyString(256),
+    org_role: nonEmptyString(64),
+    all_workspaces: integerSchema,
+    archived: integerSchema,
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema
+  }
+};
+
+const machineTokenResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'machine_actor_id'],
+  properties: {
+    id: uuidSchema,
+    machine_actor_id: uuidSchema,
+    label: nullableString(256),
+    token: nullableString(256),
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema,
+    expires_at: nullableDateTimeSchema,
+    revoked_at: nullableDateTimeSchema,
+    last_used_at: nullableDateTimeSchema
+  }
+};
+
+const machineWorkspaceGrantResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'machine_actor_id', 'workspace_id', 'role'],
+  properties: {
+    id: uuidSchema,
+    machine_actor_id: uuidSchema,
+    workspace_id: uuidSchema,
+    workspace_name: nullableString(256),
+    org_id: nullableUuidSchema,
+    role: nonEmptyString(64),
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema
+  }
+};
+
+const serviceAccountResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'org_id', 'display_name', 'permissions', 'archived', 'aliases'],
+  properties: {
+    id: uuidSchema,
+    org_id: uuidSchema,
+    display_name: nonEmptyString(256),
+    description: nullableString(1024),
+    permissions: permissionKeyArraySchema,
+    archived: integerSchema,
+    aliases: {
+      type: 'array',
+      items: serviceAccountAliasResponseSchema
+    },
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema
+  }
+};
+
+const apiTokenResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'owner_kind', 'owner_id', 'token_public_id'],
+  properties: {
+    id: uuidSchema,
+    owner_kind: nonEmptyString(64),
+    owner_id: uuidSchema,
+    label: nullableString(256),
+    token_public_id: nonEmptyString(64),
+    token: nullableString(256),
+    permission_constraints: nullablePermissionKeyArraySchema,
+    created_by_user_id: nullableUuidSchema,
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema,
+    expires_at: nullableDateTimeSchema,
+    revoked_at: nullableDateTimeSchema,
+    last_used_at: nullableDateTimeSchema,
+    rotated_from_token_id: nullableUuidSchema,
+    replaced_by_token_id: nullableUuidSchema
+  }
+};
+
+const serviceAccountWorkspaceGrantResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'service_account_id', 'workspace_id'],
+  properties: {
+    id: uuidSchema,
+    service_account_id: uuidSchema,
+    workspace_id: uuidSchema,
+    workspace_name: nullableString(256),
+    org_id: nullableUuidSchema,
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema
+  }
+};
+
+const adminActionResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'org_id',
+    'requested_by_type',
+    'requested_by_label',
+    'action_type',
+    'arguments_json',
+    'approval_mode',
+    'status',
+    'created_at',
+    'updated_at'
+  ],
+  properties: {
+    id: uuidSchema,
+    org_id: uuidSchema,
+    workspace_id: nullableUuidSchema,
+    requested_by_type: nonEmptyString(32),
+    requested_by_id: nullableString(128),
+    requested_by_label: nonEmptyString(256),
+    source_channel: nullableString(256),
+    source_principal: nullableString(512),
+    action_type: nonEmptyString(128),
+    target: nullableString(512),
+    arguments_json: agentEventPayloadSchema,
+    approval_mode: adminActionApprovalModeSchema,
+    status: adminActionStatusSchema,
+    approved_by_type: nullableString(32),
+    approved_by_id: nullableString(128),
+    approved_by_label: nullableString(256),
+    result_json: {
+      anyOf: [agentEventPayloadSchema, { type: 'null' }]
+    },
+    error_text: nullableString(4000),
+    created_at: dateTimeSchema,
+    updated_at: dateTimeSchema,
+    approved_at: nullableDateTimeSchema,
+    executed_at: nullableDateTimeSchema
   }
 };
 
@@ -471,6 +767,340 @@ const routeSchemas = new Map([
       200: authSessionResponseSchema
     }
   }],
+  ['GET /admin/info', {
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['owner_email', 'actor_email', 'is_owner', 'is_admin'],
+        properties: {
+          owner_email: nullableString(320),
+          actor_email: nullableString(320),
+          is_owner: { type: 'boolean' },
+          is_admin: { type: 'boolean' }
+        }
+      }
+    }
+  }],
+  ['GET /admin/service-accounts', {
+    querystring: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        org_id: uuidSchema,
+        include_archived: boolishSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['service_accounts', 'count'],
+        properties: {
+          service_accounts: {
+            type: 'array',
+            items: serviceAccountResponseSchema
+          },
+          count: integerSchema
+        }
+      }
+    }
+  }],
+  ['POST /admin/service-accounts', {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['display_name'],
+      properties: {
+        org_id: nullableUuidSchema,
+        display_name: nonEmptyString(256),
+        description: nullableString(1024),
+        permissions: permissionKeyArraySchema,
+        aliases: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['alias_type', 'alias_value'],
+            properties: {
+              alias_type: nonEmptyString(128),
+              alias_value: nonEmptyString(512),
+              metadata: {
+                type: 'object',
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['service_account'],
+        properties: {
+          service_account: serviceAccountResponseSchema
+        }
+      }
+    }
+  }],
+  ['PATCH /admin/service-accounts/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        display_name: nullableString(256),
+        description: nullableString(1024),
+        permissions: permissionKeyArraySchema,
+        aliases: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['alias_type', 'alias_value'],
+            properties: {
+              alias_type: nonEmptyString(128),
+              alias_value: nonEmptyString(512),
+              metadata: {
+                type: 'object',
+                additionalProperties: true
+              }
+            }
+          }
+        },
+        archived: boolishSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['service_account'],
+        properties: {
+          service_account: serviceAccountResponseSchema
+        }
+      }
+    }
+  }],
+  ['GET /admin/service-accounts/:id/tokens', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['tokens', 'count'],
+        properties: {
+          tokens: {
+            type: 'array',
+            items: apiTokenResponseSchema
+          },
+          count: integerSchema
+        }
+      }
+    }
+  }],
+  ['POST /admin/service-accounts/:id/tokens', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        label: nullableString(256),
+        permission_constraints: nullablePermissionKeyArraySchema,
+        expires_at: nullableDateTimeSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['service_account', 'token'],
+        properties: {
+          service_account: serviceAccountResponseSchema,
+          token: apiTokenResponseSchema
+        }
+      }
+    }
+  }],
+  ['PATCH /admin/service-account-tokens/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        label: nullableString(256),
+        permission_constraints: nullablePermissionKeyArraySchema,
+        expires_at: nullableDateTimeSchema,
+        revoked: boolishSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['token'],
+        properties: {
+          token: apiTokenResponseSchema
+        }
+      }
+    }
+  }],
+  ['POST /admin/service-account-tokens/:id/rotate', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        label: nullableString(256),
+        permission_constraints: nullablePermissionKeyArraySchema,
+        expires_at: nullableDateTimeSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['previous_token', 'token'],
+        properties: {
+          previous_token: apiTokenResponseSchema,
+          token: apiTokenResponseSchema
+        }
+      }
+    }
+  }],
+  ['DELETE /admin/service-account-tokens/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' }
+        }
+      }
+    }
+  }],
+  ['GET /admin/service-accounts/:id/workspace-grants', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['workspace_grants', 'count', 'effective_workspaces'],
+        properties: {
+          workspace_grants: {
+            type: 'array',
+            items: serviceAccountWorkspaceGrantResponseSchema
+          },
+          count: integerSchema,
+          effective_workspaces: {
+            type: 'array',
+            items: authWorkspaceResponseSchema
+          }
+        }
+      }
+    }
+  }],
+  ['POST /admin/service-accounts/:id/workspace-grants', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['workspace_id'],
+      properties: {
+        workspace_id: uuidSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['workspace_grant'],
+        properties: {
+          workspace_grant: serviceAccountWorkspaceGrantResponseSchema
+        }
+      }
+    }
+  }],
+  ['DELETE /admin/service-account-workspace-grants/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' }
+        }
+      }
+    }
+  }],
   ['GET /admin/invites', {
     querystring: {
       type: 'object',
@@ -660,6 +1290,175 @@ const routeSchemas = new Map([
       additionalProperties: false,
       required: ['id'],
       properties: { id: uuidSchema }
+    }
+  }],
+  ['GET /agent-events', {
+    querystring: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['workspace_id'],
+      properties: {
+        workspace_id: uuidSchema,
+        target_agent: nonEmptyString(128),
+        source_agent: nonEmptyString(128),
+        status: agentEventStatusSchema,
+        event_type: nonEmptyString(128),
+        limit: integerSchema,
+        cursor: nonEmptyString(512)
+      }
+    },
+    response: {
+      200: agentEventListResponseSchema
+    }
+  }],
+  ['GET /agent-events/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    response: {
+      200: agentEventResponseSchema
+    }
+  }],
+  ['POST /agent-events', {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['workspace_id', 'source_agent', 'event_type'],
+      properties: {
+        id: uuidSchema,
+        workspace_id: uuidSchema,
+        source_agent: nonEmptyString(128),
+        target_agent: nullableString(128),
+        event_type: nonEmptyString(128),
+        payload_json: agentEventPayloadSchema,
+        status: agentEventStatusSchema,
+        priority: nonEmptyString(32),
+        dedupe_key: nullableString(256),
+        handled_at: nullableDateTimeSchema,
+        error_text: nullableString(4000)
+      }
+    },
+    response: {
+      200: agentEventResponseSchema
+    }
+  }],
+  ['PATCH /agent-events/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        status: agentEventStatusSchema,
+        handled_at: nullableDateTimeSchema,
+        error_text: nullableString(4000)
+      },
+      anyOf: [
+        { required: ['status'] },
+        { required: ['handled_at'] },
+        { required: ['error_text'] }
+      ]
+    },
+    response: {
+      200: agentEventResponseSchema
+    }
+  }],
+  ['GET /admin-actions', {
+    querystring: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        org_id: uuidSchema,
+        workspace_id: uuidSchema,
+        status: adminActionStatusSchema,
+        action_type: nullableString(128),
+        requested_by_type: nullableString(32),
+        limit: integerSchema
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['actions'],
+        properties: {
+          actions: {
+            type: 'array',
+            items: adminActionResponseSchema
+          }
+        }
+      }
+    }
+  }],
+  ['GET /admin-actions/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    response: {
+      200: adminActionResponseSchema,
+      404: errorResponseSchema
+    }
+  }],
+  ['POST /admin-actions', {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['action_type'],
+      properties: {
+        org_id: nullableUuidSchema,
+        workspace_id: nullableUuidSchema,
+        source_channel: nullableString(256),
+        source_principal: nullableString(512),
+        action_type: nonEmptyString(128),
+        target: nullableString(512),
+        arguments_json: agentEventPayloadSchema,
+        approval_mode: adminActionApprovalModeSchema,
+        status: adminActionStatusSchema
+      }
+    },
+    response: {
+      200: adminActionResponseSchema,
+      400: errorResponseSchema
+    }
+  }],
+  ['PATCH /admin-actions/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        status: adminActionStatusSchema,
+        approval_mode: adminActionApprovalModeSchema,
+        approved_by_type: nullableString(32),
+        approved_by_id: nullableString(128),
+        approved_by_label: nullableString(256),
+        approved_at: nullableDateTimeSchema,
+        executed_at: nullableDateTimeSchema,
+        result_json: {
+          anyOf: [agentEventPayloadSchema, { type: 'null' }]
+        },
+        error_text: nullableString(4000)
+      }
+    },
+    response: {
+      200: adminActionResponseSchema,
+      400: errorResponseSchema,
+      404: errorResponseSchema
     }
   }],
   ['GET /projects', {

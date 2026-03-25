@@ -357,6 +357,41 @@ export function deleteWorkspace(id) {
   return request(`/workspaces/${id}`, { method: 'DELETE' });
 }
 
+export function listAgentEvents({
+  workspaceId,
+  targetAgent = null,
+  sourceAgent = null,
+  status = null,
+  eventType = null,
+  limit = null,
+  cursor = null
+} = {}) {
+  const params = new URLSearchParams();
+  if (workspaceId) params.set('workspace_id', workspaceId);
+  if (targetAgent) params.set('target_agent', targetAgent);
+  if (sourceAgent) params.set('source_agent', sourceAgent);
+  if (status) params.set('status', status);
+  if (eventType) params.set('event_type', eventType);
+  if (limit !== null && limit !== undefined) params.set('limit', String(limit));
+  if (cursor) params.set('cursor', cursor);
+  return request(`/agent-events?${params.toString()}`);
+}
+
+export function getAgentEvent(id) {
+  return request(`/agent-events/${encodeURIComponent(id)}`);
+}
+
+export function createAgentEvent(data) {
+  return request('/agent-events', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateAgentEvent(id, patch) {
+  return request(`/agent-events/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch)
+  });
+}
+
 export function listProjects(workspaceId) {
   return request(`/projects?workspace_id=${encodeURIComponent(workspaceId)}`);
 }

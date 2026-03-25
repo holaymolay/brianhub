@@ -32,8 +32,8 @@ export function buildBrianhubApiHelpMarkdown({ origin = 'https://brianhub.com', 
     `base_url: ${baseUrl}`,
     `current_workspace_id: ${currentWorkspaceId}`,
     `docs_path: ${BRIANHUB_API_HELP_PATH}`,
-    'auth_model: session-cookie',
-    'machine_auth: not-yet-available',
+    'auth_model: session-cookie-plus-bearer-service-account',
+    'service_account_auth: available-v1',
     '---',
     '',
     '# BrianHub API',
@@ -44,9 +44,48 @@ export function buildBrianhubApiHelpMarkdown({ origin = 'https://brianhub.com', 
     '- Use JSON request and response bodies.',
     '- In production, product routes use session-cookie authentication.',
     '- Do not use `X-Actor-Email` in production.',
-    '- Bearer tokens and service-account auth are not active yet.',
+    '- Bearer tokens are available for owner-provisioned service accounts only.',
+    '- Telegram or another chat surface is the request channel, not the auth boundary.',
     '- Most resource families are scoped by `workspace_id`.',
     '- Errors use a normalized envelope with `code`, `message`, and `requestId`.',
+    '',
+    '## Service account auth',
+    '- Owner-only provisioning routes:',
+    '- `GET /admin/service-accounts`',
+    '- `POST /admin/service-accounts`',
+    '- `PATCH /admin/service-accounts/:id`',
+    '- `GET /admin/service-accounts/:id/tokens`',
+    '- `POST /admin/service-accounts/:id/tokens`',
+    '- `PATCH /admin/service-account-tokens/:id`',
+    '- `POST /admin/service-account-tokens/:id/rotate`',
+    '- `DELETE /admin/service-account-tokens/:id`',
+    '- `GET /admin/service-accounts/:id/workspace-grants`',
+    '- `POST /admin/service-accounts/:id/workspace-grants`',
+    '- `DELETE /admin/service-account-workspace-grants/:id`',
+    '',
+    'Example Roger service account:',
+    formatJsonBlock({
+      display_name: 'Roger - Ops',
+      permissions: [
+        'workspaces.read',
+        'tasks.read',
+        'tasks.create',
+        'tasks.update',
+        'projects.read'
+      ],
+      aliases: [
+        {
+          alias_type: 'telegram_group',
+          alias_value: 'agent:main:telegram:group:-5130223325',
+          metadata: {
+            channel: 'telegram',
+            group_id: '-5130223325'
+          }
+        }
+      ]
+    }),
+    '',
+    'Service accounts authenticate with `Authorization: Bearer <token>` and are constrained by explicit permissions, explicit workspace grants, and route-level policy checks.',
     '',
     '## Critical modeling rule for My Tasks sections',
     '- Sections are represented by `task.group_label`.',
@@ -73,6 +112,41 @@ export function buildBrianhubApiHelpMarkdown({ origin = 'https://brianhub.com', 
     formatJsonBlock({
       name: 'Shared Ops',
       type: 'shared'
+    }),
+    '',
+    '## Inter-agent events',
+    '- `GET /agent-events?workspace_id=<uuid>`',
+    '- `GET /agent-events/:id`',
+    '- `POST /agent-events`',
+    '- `PATCH /agent-events/:id`',
+    '',
+    'This is a deterministic inter-agent event bus, not a chat system.',
+    '',
+    'Minimal create event request:',
+    formatJsonBlock({
+      workspace_id: currentWorkspaceId,
+      source_agent: 'roger',
+      target_agent: 'codex',
+      event_type: 'task.request',
+      payload_json: {
+        title: 'Add authenticated trading bot project page',
+        acceptance_criteria: [
+          'Login required',
+          '403 if unauthorized'
+        ],
+        metadata: {
+          origin: 'telegram',
+          requested_by: 'Brian'
+        }
+      },
+      priority: 'normal',
+      dedupe_key: 'telegram-req-123'
+    }),
+    '',
+    'Mark an event handled:',
+    formatJsonBlock({
+      status: 'handled',
+      handled_at: tomorrow
     }),
     '',
     '## Tasks',
@@ -215,28 +289,62 @@ export function buildBrianhubApiHelpMarkdown({ origin = 'https://brianhub.com', 
       password: 'secret'
     }),
     '',
-    '`GET /auth/me` returns user/session/workspace context. Example shape:',
+    '`GET /auth/me` returns normalized principal, workspace, and permission context. Example shape:',
     formatJsonBlock({
       authenticated: true,
+      auth_type: 'service_account',
       require_auth: true,
-      user: {
-        id: '<user-id>',
+      principal_type: 'service_account',
+      principal_id: '<service-account-id>',
+      org_id: '<org-id>',
+      user: null,
+      service_account: {
+        id: '<service-account-id>',
         org_id: '<org-id>',
-        display_name: 'Brian',
-        email: 'brianjason@gmail.com',
-        org_role: 'admin'
+        display_name: 'Roger - Ops',
+        permissions: [
+          'workspaces.read',
+          'tasks.read',
+          'tasks.create',
+          'tasks.update',
+          'projects.read'
+        ],
+        aliases: [
+          {
+            id: '<alias-id>',
+            alias_type: 'telegram_group',
+            alias_value: 'agent:main:telegram:group:-5130223325',
+            metadata: {
+              channel: 'telegram'
+            }
+          }
+        ],
+        token_id: '<token-id>',
+        token_label: 'Roger primary token',
+        token_expires_at: null
       },
-      session: {
-        id: '<session-id>',
-        expires_at: '<iso-datetime>'
-      },
+      session: null,
       workspaces: [
         {
           id: currentWorkspaceId,
           name: 'Personal',
           type: 'personal',
-          role: 'owner'
+          role: 'member'
         }
+      ],
+      granted_permissions: [
+        'workspaces.read',
+        'tasks.read',
+        'tasks.create',
+        'tasks.update',
+        'projects.read'
+      ],
+      effective_permissions: [
+        'workspaces.read',
+        'tasks.read',
+        'tasks.create',
+        'tasks.update',
+        'projects.read'
       ]
     }),
     '',
@@ -249,7 +357,9 @@ export function buildBrianhubApiHelpMarkdown({ origin = 'https://brianhub.com', 
     '',
     '## Automation guardrails',
     '- Roger is approved for server operations over Tailscale + SSH.',
-    '- Until machine auth exists, treat product API automation as human-session-only.',
+    '- Roger uses an owner-provisioned service account with explicit workspace grants.',
+    '- Roger default scope excludes destructive task authority until `tasks.delete` is explicitly granted.',
+    '- Do not turn a chat or channel identifier into the canonical service-account identity; store it as an alias.',
     '- Use `group_label` for sections and true parent/child hierarchy only for actual subtasks.',
     '- Do not invent fake parent tasks as section placeholders.',
     '',

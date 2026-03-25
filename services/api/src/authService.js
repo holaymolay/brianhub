@@ -27,12 +27,52 @@ function normalizeOrgRole(value) {
   return role === 'admin' ? 'admin' : 'member';
 }
 
+function normalizeText(value, fieldName, { maxLength = 512, required = false } = {}) {
+  if (value === undefined) {
+    if (required) throw new Error(`${fieldName} is required`);
+    return undefined;
+  }
+  const text = String(value ?? '').trim();
+  if (!text) {
+    if (required) throw new Error(`${fieldName} is required`);
+    return null;
+  }
+  if (text.length > maxLength) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return text;
+}
+
+function normalizeBoolean(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
+}
+
+function normalizeDateTime(value, fieldName) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const timestamp = Date.parse(String(value));
+  if (!Number.isFinite(timestamp)) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return new Date(timestamp).toISOString();
+}
+
 function hashToken(value) {
   return createHash('sha256').update(String(value ?? '')).digest('hex');
 }
 
 function createSessionToken() {
   return randomBytes(32).toString('base64url');
+}
+
+function createMachineToken() {
+  return `bhm_${randomBytes(32).toString('base64url')}`;
 }
 
 function assertValidPassword(password) {
@@ -223,6 +263,403 @@ export async function revokeSessionByToken(db, sessionToken) {
   if (!existing) return false;
   await db.exec('UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE id = ?', [timestamp, timestamp, existing.id]);
   return true;
+}
+
+function sanitizeMachineActor(machineActor) {
+  if (!machineActor) return null;
+  return {
+    id: machineActor.id,
+    org_id: machineActor.org_id,
+    principal: machineActor.principal,
+    display_name: machineActor.display_name,
+    org_role: normalizeOrgRole(machineActor.org_role),
+    all_workspaces: Number(machineActor.all_workspaces) ? 1 : 0,
+    archived: Number(machineActor.archived) ? 1 : 0,
+    created_at: machineActor.created_at ?? null,
+    updated_at: machineActor.updated_at ?? null
+  };
+}
+
+function sanitizeMachineToken(machineToken, { includeToken = false } = {}) {
+  if (!machineToken) return null;
+  return {
+    id: machineToken.id,
+    machine_actor_id: machineToken.machine_actor_id,
+    label: machineToken.label ?? null,
+    created_at: machineToken.created_at ?? null,
+    updated_at: machineToken.updated_at ?? null,
+    expires_at: machineToken.expires_at ?? null,
+    revoked_at: machineToken.revoked_at ?? null,
+    last_used_at: machineToken.last_used_at ?? null,
+    ...(includeToken && machineToken.token ? { token: machineToken.token } : {})
+  };
+}
+
+function sanitizeMachineWorkspaceGrant(grant) {
+  if (!grant) return null;
+  return {
+    id: grant.id,
+    machine_actor_id: grant.machine_actor_id,
+    workspace_id: grant.workspace_id,
+    workspace_name: grant.workspace_name ?? null,
+    org_id: grant.org_id ?? null,
+    role: grant.role ?? 'member',
+    created_at: grant.created_at ?? null,
+    updated_at: grant.updated_at ?? null
+  };
+}
+
+async function getMachineActorById(db, machineActorId) {
+  return db.queryOne(
+    'SELECT * FROM auth_machine_actors WHERE id = ? LIMIT 1',
+    [String(machineActorId ?? '').trim()]
+  );
+}
+
+async function getMachineActorByPrincipal(db, orgId, principal) {
+  return db.queryOne(
+    'SELECT * FROM auth_machine_actors WHERE org_id = ? AND principal = ? LIMIT 1',
+    [orgId, principal]
+  );
+}
+
+async function getMachineTokenById(db, tokenId) {
+  return db.queryOne(
+    'SELECT * FROM auth_machine_tokens WHERE id = ? LIMIT 1',
+    [String(tokenId ?? '').trim()]
+  );
+}
+
+async function getActiveMachineTokenByToken(db, token) {
+  const safeToken = String(token ?? '').trim();
+  if (!safeToken) return null;
+  const tokenHash = hashToken(safeToken);
+  const row = await db.queryOne(
+    `SELECT t.*, a.org_id, a.principal, a.display_name, a.org_role, a.all_workspaces, a.archived AS actor_archived
+       FROM auth_machine_tokens t
+       JOIN auth_machine_actors a ON a.id = t.machine_actor_id
+      WHERE t.token_hash = ?
+      LIMIT 1`,
+    [tokenHash]
+  );
+  if (!row) return null;
+  if (row.revoked_at) return null;
+  if (Number(row.actor_archived)) return null;
+  if (row.expires_at) {
+    const expiresAtMs = Date.parse(row.expires_at);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) return null;
+  }
+  return row;
+}
+
+export async function listMachineActorWorkspaces(db, machineActorId) {
+  const actor = await getMachineActorById(db, machineActorId);
+  if (!actor || Number(actor.archived)) return [];
+  if (Number(actor.all_workspaces)) {
+    return db.query(
+      `SELECT w.*, COALESCE(g.role, ?) AS role
+         FROM workspaces w
+         LEFT JOIN auth_machine_workspace_grants g
+           ON g.workspace_id = w.id AND g.machine_actor_id = ?
+        WHERE w.org_id = ? AND w.archived = 0
+        ORDER BY w.created_at ASC`,
+      [normalizeOrgRole(actor.org_role), actor.id, actor.org_id]
+    );
+  }
+  return db.query(
+    `SELECT w.*, g.role
+       FROM auth_machine_workspace_grants g
+       JOIN workspaces w ON w.id = g.workspace_id
+      WHERE g.machine_actor_id = ? AND w.archived = 0
+      ORDER BY w.created_at ASC`,
+    [actor.id]
+  );
+}
+
+export async function resolveMachineActor(db, bearerToken) {
+  const tokenRow = await getActiveMachineTokenByToken(db, bearerToken);
+  if (!tokenRow) return null;
+  const timestamp = nowIso();
+  await db.exec('UPDATE auth_machine_tokens SET last_used_at = ?, updated_at = ? WHERE id = ?', [timestamp, timestamp, tokenRow.id]);
+  const workspaces = await listMachineActorWorkspaces(db, tokenRow.machine_actor_id);
+  return {
+    machine: sanitizeMachineActor({
+      id: tokenRow.machine_actor_id,
+      org_id: tokenRow.org_id,
+      principal: tokenRow.principal,
+      display_name: tokenRow.display_name,
+      org_role: tokenRow.org_role,
+      all_workspaces: tokenRow.all_workspaces,
+      archived: tokenRow.actor_archived
+    }),
+    token: sanitizeMachineToken({
+      id: tokenRow.id,
+      machine_actor_id: tokenRow.machine_actor_id,
+      label: tokenRow.label,
+      created_at: tokenRow.created_at,
+      updated_at: timestamp,
+      expires_at: tokenRow.expires_at,
+      revoked_at: tokenRow.revoked_at,
+      last_used_at: timestamp
+    }),
+    workspaces
+  };
+}
+
+export async function listMachineActors(db, { orgId, includeArchived = true } = {}) {
+  const safeOrgId = normalizeText(orgId, 'org_id', { required: true, maxLength: 64 });
+  const rows = await db.query(
+    `SELECT *
+       FROM auth_machine_actors
+      WHERE org_id = ?
+      ORDER BY archived ASC, created_at ASC`,
+    [safeOrgId]
+  );
+  return rows
+    .filter((row) => includeArchived || !Number(row.archived))
+    .map(sanitizeMachineActor);
+}
+
+export async function createMachineActor(
+  db,
+  { org_id: orgId, principal, display_name: displayName, org_role: orgRole = 'member', all_workspaces: allWorkspaces = false } = {}
+) {
+  const safeOrgId = normalizeText(orgId, 'org_id', { required: true, maxLength: 64 });
+  const safePrincipal = normalizeText(principal, 'principal', { required: true, maxLength: 512 });
+  const safeDisplayName = normalizeText(displayName, 'display_name', { required: true, maxLength: 256 });
+  const existing = await getMachineActorByPrincipal(db, safeOrgId, safePrincipal);
+  if (existing) {
+    return sanitizeMachineActor(existing);
+  }
+  const timestamp = nowIso();
+  const actor = {
+    id: randomUUID(),
+    org_id: safeOrgId,
+    principal: safePrincipal,
+    display_name: safeDisplayName,
+    org_role: normalizeOrgRole(orgRole),
+    all_workspaces: normalizeBoolean(allWorkspaces, false) ? 1 : 0,
+    archived: 0,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+  await db.exec(
+    `INSERT INTO auth_machine_actors (
+      id, org_id, principal, display_name, org_role, all_workspaces, archived, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      actor.id,
+      actor.org_id,
+      actor.principal,
+      actor.display_name,
+      actor.org_role,
+      actor.all_workspaces,
+      actor.archived,
+      actor.created_at,
+      actor.updated_at
+    ]
+  );
+  return sanitizeMachineActor(actor);
+}
+
+export async function updateMachineActor(db, machineActorId, patch = {}) {
+  const existing = await getMachineActorById(db, machineActorId);
+  if (!existing) return null;
+  const next = {
+    ...existing,
+    display_name: patch.display_name !== undefined
+      ? normalizeText(patch.display_name, 'display_name', { required: true, maxLength: 256 })
+      : existing.display_name,
+    org_role: patch.org_role !== undefined
+      ? normalizeOrgRole(patch.org_role)
+      : normalizeOrgRole(existing.org_role),
+    all_workspaces: patch.all_workspaces !== undefined
+      ? (normalizeBoolean(patch.all_workspaces, Number(existing.all_workspaces) === 1) ? 1 : 0)
+      : (Number(existing.all_workspaces) ? 1 : 0),
+    archived: patch.archived !== undefined
+      ? (normalizeBoolean(patch.archived, Number(existing.archived) === 1) ? 1 : 0)
+      : (Number(existing.archived) ? 1 : 0),
+    updated_at: nowIso()
+  };
+  await db.exec(
+    `UPDATE auth_machine_actors
+        SET display_name = ?, org_role = ?, all_workspaces = ?, archived = ?, updated_at = ?
+      WHERE id = ?`,
+    [next.display_name, next.org_role, next.all_workspaces, next.archived, next.updated_at, existing.id]
+  );
+  return sanitizeMachineActor(next);
+}
+
+export async function listMachineTokens(db, machineActorId) {
+  const actor = await getMachineActorById(db, machineActorId);
+  if (!actor) return [];
+  const rows = await db.query(
+    `SELECT *
+       FROM auth_machine_tokens
+      WHERE machine_actor_id = ?
+      ORDER BY created_at DESC`,
+    [actor.id]
+  );
+  return rows.map((row) => sanitizeMachineToken(row));
+}
+
+export async function createMachineActorToken(
+  db,
+  machineActorId,
+  { label = null, expires_at: expiresAt = null } = {}
+) {
+  const actor = await getMachineActorById(db, machineActorId);
+  if (!actor || Number(actor.archived)) {
+    throw new Error('Machine actor not found');
+  }
+  const token = createMachineToken();
+  const timestamp = nowIso();
+  const row = {
+    id: randomUUID(),
+    machine_actor_id: actor.id,
+    label: normalizeText(label, 'label', { required: false, maxLength: 256 }) ?? null,
+    token_hash: hashToken(token),
+    created_at: timestamp,
+    updated_at: timestamp,
+    expires_at: normalizeDateTime(expiresAt, 'expires_at'),
+    revoked_at: null,
+    last_used_at: null
+  };
+  await db.exec(
+    `INSERT INTO auth_machine_tokens (
+      id, machine_actor_id, label, token_hash, created_at, updated_at, expires_at, revoked_at, last_used_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      row.id,
+      row.machine_actor_id,
+      row.label,
+      row.token_hash,
+      row.created_at,
+      row.updated_at,
+      row.expires_at,
+      row.revoked_at,
+      row.last_used_at
+    ]
+  );
+  return {
+    machine: sanitizeMachineActor(actor),
+    token: sanitizeMachineToken({ ...row, token }, { includeToken: true })
+  };
+}
+
+export async function revokeMachineToken(db, tokenId) {
+  const existing = await getMachineTokenById(db, tokenId);
+  if (!existing || existing.revoked_at) return false;
+  const timestamp = nowIso();
+  await db.exec(
+    'UPDATE auth_machine_tokens SET revoked_at = ?, updated_at = ? WHERE id = ?',
+    [timestamp, timestamp, existing.id]
+  );
+  return true;
+}
+
+export async function listMachineWorkspaceGrants(db, machineActorId) {
+  const actor = await getMachineActorById(db, machineActorId);
+  if (!actor) return [];
+  const rows = await db.query(
+    `SELECT g.*, w.name AS workspace_name, w.org_id
+       FROM auth_machine_workspace_grants g
+       JOIN workspaces w ON w.id = g.workspace_id
+      WHERE g.machine_actor_id = ?
+      ORDER BY w.created_at ASC`,
+    [actor.id]
+  );
+  return rows.map(sanitizeMachineWorkspaceGrant);
+}
+
+export async function createMachineWorkspaceGrant(
+  db,
+  machineActorId,
+  { workspace_id: workspaceId, role = 'member' } = {}
+) {
+  const actor = await getMachineActorById(db, machineActorId);
+  if (!actor || Number(actor.archived)) {
+    throw new Error('Machine actor not found');
+  }
+  const workspace = await db.queryOne(
+    'SELECT id, org_id, name FROM workspaces WHERE id = ? LIMIT 1',
+    [normalizeText(workspaceId, 'workspace_id', { required: true, maxLength: 64 })]
+  );
+  if (!workspace) {
+    throw new Error('Workspace not found');
+  }
+  if (workspace.org_id !== actor.org_id) {
+    throw new Error('Workspace must belong to the same organization');
+  }
+  const existing = await db.queryOne(
+    `SELECT g.*, w.name AS workspace_name, w.org_id
+       FROM auth_machine_workspace_grants g
+       JOIN workspaces w ON w.id = g.workspace_id
+      WHERE g.machine_actor_id = ? AND g.workspace_id = ?
+      LIMIT 1`,
+    [actor.id, workspace.id]
+  );
+  if (existing) {
+    return sanitizeMachineWorkspaceGrant(existing);
+  }
+  const timestamp = nowIso();
+  const grant = {
+    id: randomUUID(),
+    machine_actor_id: actor.id,
+    workspace_id: workspace.id,
+    role: normalizeOrgRole(role),
+    created_at: timestamp,
+    updated_at: timestamp,
+    workspace_name: workspace.name,
+    org_id: workspace.org_id
+  };
+  await db.exec(
+    `INSERT INTO auth_machine_workspace_grants (
+      id, machine_actor_id, workspace_id, role, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      grant.id,
+      grant.machine_actor_id,
+      grant.workspace_id,
+      grant.role,
+      grant.created_at,
+      grant.updated_at
+    ]
+  );
+  return sanitizeMachineWorkspaceGrant(grant);
+}
+
+export async function revokeMachineWorkspaceGrant(db, grantId) {
+  const existing = await db.queryOne(
+    'SELECT id FROM auth_machine_workspace_grants WHERE id = ? LIMIT 1',
+    [String(grantId ?? '').trim()]
+  );
+  if (!existing) return false;
+  await db.exec('DELETE FROM auth_machine_workspace_grants WHERE id = ?', [existing.id]);
+  return true;
+}
+
+export async function machineActorHasWorkspaceAccess(db, machineActorId, workspaceId) {
+  const actor = await getMachineActorById(db, machineActorId);
+  if (!actor || Number(actor.archived)) return false;
+  const safeWorkspaceId = String(workspaceId ?? '').trim();
+  if (!safeWorkspaceId) return false;
+  if (Number(actor.all_workspaces)) {
+    const workspace = await db.queryOne(
+      'SELECT id FROM workspaces WHERE id = ? AND org_id = ? AND archived = 0 LIMIT 1',
+      [safeWorkspaceId, actor.org_id]
+    );
+    return Boolean(workspace);
+  }
+  const grant = await db.queryOne(
+    `SELECT g.id
+       FROM auth_machine_workspace_grants g
+       JOIN workspaces w ON w.id = g.workspace_id
+      WHERE g.machine_actor_id = ? AND g.workspace_id = ? AND w.archived = 0
+      LIMIT 1`,
+    [actor.id, safeWorkspaceId]
+  );
+  return Boolean(grant);
 }
 
 export async function loginWithPassword(db, { email, password, ttlDays = 30, userAgent = null, ipAddress = null } = {}) {
