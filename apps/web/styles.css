@@ -1488,6 +1488,10 @@ body.api-help-body {
   grid-column: span 2;
 }
 
+.admin-service-account-controls-span2 {
+  grid-column: span 2;
+}
+
 @media (max-width: 1400px) {
   .admin-page-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1498,6 +1502,10 @@ body.api-help-body {
   }
 
   .admin-user-controls-span2 {
+    grid-column: auto;
+  }
+
+  .admin-service-account-controls-span2 {
     grid-column: auto;
   }
 }
@@ -1678,6 +1686,71 @@ body.api-help-body {
 .admin-users-panel .workspace-list {
   align-content: start;
   grid-auto-rows: max-content;
+}
+
+.admin-permission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.admin-permission-option {
+  display: grid;
+  gap: 0.18rem;
+  align-items: start;
+  border: 1px solid rgba(154, 166, 186, 0.24);
+  border-radius: 0.6rem;
+  background: rgba(13, 21, 34, 0.45);
+  padding: 0.55rem 0.65rem;
+}
+
+.admin-permission-option input {
+  margin: 0;
+}
+
+.admin-permission-option-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.admin-permission-option-description {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.admin-service-token-toggle {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.admin-service-token-toggle-input {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text);
+}
+
+.admin-service-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.admin-service-row-actions .subtle-button {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.45rem;
+}
+
+#admin-service-token-reveal-wrap {
+  justify-content: flex-start;
 }
 
 .admin-user-row {

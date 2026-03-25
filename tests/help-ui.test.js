@@ -65,3 +65,32 @@ test('app wiring opens the in-app help hub and the dedicated API help url', () =
   assert.match(script, /helpOpenUrl\?\.addEventListener\('click', openBrianhubApiHelpPage\);/);
   assert.match(script, /helpApiUrl\.textContent = helpUrl;/);
 });
+
+test('admin console exposes service-account, token, and workspace-grant controls', () => {
+  const html = readRepoFile('apps/web/index.html');
+  assert.match(html, /<h3>Service accounts<\/h3>/);
+  assert.match(html, /id="admin-service-account-roger-preset"/);
+  assert.match(html, /id="admin-service-account-permissions"/);
+  assert.match(html, /<h3>Token access<\/h3>/);
+  assert.match(html, /id="admin-service-token-inherit"/);
+  assert.match(html, /id="admin-service-token-reveal"/);
+  assert.match(html, /<h3>Workspace grants<\/h3>/);
+  assert.match(html, /id="admin-service-grant-workspace"/);
+  assert.match(html, /id="admin-service-grants-list"/);
+});
+
+test('admin console wiring includes service-account API helpers and event handlers', () => {
+  const apiScript = readRepoFile('apps/web/api.js');
+  assert.match(apiScript, /export function listAdminServiceAccounts/);
+  assert.match(apiScript, /export function createAdminServiceAccountToken/);
+  assert.match(apiScript, /export function deleteAdminServiceAccountWorkspaceGrant/);
+
+  const appScript = readRepoFile('apps/web/app.js');
+  assert.match(appScript, /async function refreshAdminServiceAccounts/);
+  assert.match(appScript, /async function createAdminServiceToken/);
+  assert.match(appScript, /async function addAdminServiceWorkspaceGrant/);
+  assert.match(appScript, /void refreshAdminServiceAccounts\(\);/);
+  assert.match(appScript, /adminServiceAccountRogerPreset\?\.addEventListener\('click'/);
+  assert.match(appScript, /adminServiceTokenRotate\?\.addEventListener\('click'/);
+  assert.match(appScript, /adminServiceGrantAdd\?\.addEventListener\('click'/);
+});

@@ -104,6 +104,62 @@ const DEFAULT_SCHEDULE_EVENT_DURATION_MINUTES = 60;
 const MIN_SCHEDULE_EVENT_DURATION_MINUTES = 5;
 const MAX_SCHEDULE_EVENT_DURATION_MINUTES = 1440;
 const DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000001';
+const ROGER_SERVICE_ACCOUNT_ALIAS = 'agent:main:telegram:group:-5130223325';
+const SERVICE_ACCOUNT_PERMISSION_OPTIONS = Object.freeze([
+  {
+    key: 'workspaces.read',
+    label: 'Read workspaces',
+    description: 'List and inspect the workspaces granted to this account.'
+  },
+  {
+    key: 'tasks.read',
+    label: 'Read tasks',
+    description: 'List and inspect tasks inside granted workspaces.'
+  },
+  {
+    key: 'tasks.create',
+    label: 'Create tasks',
+    description: 'Create new tasks inside granted workspaces.'
+  },
+  {
+    key: 'tasks.update',
+    label: 'Update tasks',
+    description: 'Update non-destructive task state and relationships.'
+  },
+  {
+    key: 'tasks.delete',
+    label: 'Delete tasks',
+    description: 'Delete tasks or convert them into another resource.'
+  },
+  {
+    key: 'projects.read',
+    label: 'Read projects',
+    description: 'List and inspect projects inside granted workspaces.'
+  },
+  {
+    key: 'projects.create',
+    label: 'Create projects',
+    description: 'Create new projects inside granted workspaces.'
+  },
+  {
+    key: 'projects.update',
+    label: 'Update projects',
+    description: 'Update project metadata inside granted workspaces.'
+  },
+  {
+    key: 'projects.delete',
+    label: 'Delete projects',
+    description: 'Delete projects inside granted workspaces.'
+  }
+]);
+const SERVICE_ACCOUNT_PERMISSION_OPTION_KEYS = new Set(SERVICE_ACCOUNT_PERMISSION_OPTIONS.map((option) => option.key));
+const ROGER_V1_DEFAULT_SERVICE_ACCOUNT_PERMISSIONS = Object.freeze([
+  'workspaces.read',
+  'tasks.read',
+  'tasks.create',
+  'tasks.update',
+  'projects.read'
+]);
 const TASK_FILTER_UNASSIGNED = 'unassigned';
 const TASK_FILTER_INBOX = '__inbox__';
 const PROJECT_KIND_PROJECT = 'project';
@@ -615,6 +671,36 @@ const adminUserPasswordReset = document.getElementById('admin-user-password-rese
 const adminUserExport = document.getElementById('admin-user-export');
 const adminUserDelete = document.getElementById('admin-user-delete');
 const adminOwnershipTransfer = document.getElementById('admin-ownership-transfer');
+const adminServiceAccountsStatus = document.getElementById('admin-service-accounts-status');
+const adminServiceAccountsRefresh = document.getElementById('admin-service-accounts-refresh');
+const adminServiceAccountNew = document.getElementById('admin-service-account-new');
+const adminServiceAccountRogerPreset = document.getElementById('admin-service-account-roger-preset');
+const adminServiceAccountSelect = document.getElementById('admin-service-account-select');
+const adminServiceAccountName = document.getElementById('admin-service-account-name');
+const adminServiceAccountArchived = document.getElementById('admin-service-account-archived');
+const adminServiceAccountDescription = document.getElementById('admin-service-account-description');
+const adminServiceAccountAliases = document.getElementById('admin-service-account-aliases');
+const adminServiceAccountPermissions = document.getElementById('admin-service-account-permissions');
+const adminServiceAccountSave = document.getElementById('admin-service-account-save');
+const adminServiceAccountsList = document.getElementById('admin-service-accounts-list');
+const adminServiceTokenStatus = document.getElementById('admin-service-token-status');
+const adminServiceTokenNew = document.getElementById('admin-service-token-new');
+const adminServiceTokenLabel = document.getElementById('admin-service-token-label');
+const adminServiceTokenExpiresAt = document.getElementById('admin-service-token-expires-at');
+const adminServiceTokenInherit = document.getElementById('admin-service-token-inherit');
+const adminServiceTokenPermissions = document.getElementById('admin-service-token-permissions');
+const adminServiceTokenRevealWrap = document.getElementById('admin-service-token-reveal-wrap');
+const adminServiceTokenReveal = document.getElementById('admin-service-token-reveal');
+const adminServiceTokenCopy = document.getElementById('admin-service-token-copy');
+const adminServiceTokenCreate = document.getElementById('admin-service-token-create');
+const adminServiceTokenSave = document.getElementById('admin-service-token-save');
+const adminServiceTokenRotate = document.getElementById('admin-service-token-rotate');
+const adminServiceTokenRevoke = document.getElementById('admin-service-token-revoke');
+const adminServiceTokensList = document.getElementById('admin-service-tokens-list');
+const adminServiceGrantsStatus = document.getElementById('admin-service-grants-status');
+const adminServiceGrantWorkspace = document.getElementById('admin-service-grant-workspace');
+const adminServiceGrantAdd = document.getElementById('admin-service-grant-add');
+const adminServiceGrantsList = document.getElementById('admin-service-grants-list');
 const profilePageBack = document.getElementById('profile-page-back');
 const profilePageSave = document.getElementById('profile-page-save');
 const profilePageAvatar = document.getElementById('profile-page-avatar');
@@ -15964,18 +16050,36 @@ function getAdminState() {
   const adminState = state.ui.admin;
   if (!Array.isArray(adminState.invites)) adminState.invites = [];
   if (!Array.isArray(adminState.users)) adminState.users = [];
+  if (!Array.isArray(adminState.serviceAccounts)) adminState.serviceAccounts = [];
+  if (!Array.isArray(adminState.serviceAccountTokens)) adminState.serviceAccountTokens = [];
+  if (!Array.isArray(adminState.serviceAccountWorkspaceGrants)) adminState.serviceAccountWorkspaceGrants = [];
   if (typeof adminState.invitesLoading !== 'boolean') adminState.invitesLoading = false;
   if (typeof adminState.usersLoading !== 'boolean') adminState.usersLoading = false;
+  if (typeof adminState.serviceAccountsLoading !== 'boolean') adminState.serviceAccountsLoading = false;
+  if (typeof adminState.serviceAccountTokensLoading !== 'boolean') adminState.serviceAccountTokensLoading = false;
+  if (typeof adminState.serviceAccountWorkspaceGrantsLoading !== 'boolean') adminState.serviceAccountWorkspaceGrantsLoading = false;
   if (typeof adminState.invitesError !== 'string') adminState.invitesError = '';
   if (typeof adminState.usersError !== 'string') adminState.usersError = '';
+  if (typeof adminState.serviceAccountsError !== 'string') adminState.serviceAccountsError = '';
+  if (typeof adminState.serviceAccountTokensError !== 'string') adminState.serviceAccountTokensError = '';
+  if (typeof adminState.serviceAccountWorkspaceGrantsError !== 'string') adminState.serviceAccountWorkspaceGrantsError = '';
   if (typeof adminState.invitesLoaded !== 'boolean') adminState.invitesLoaded = false;
   if (typeof adminState.usersLoaded !== 'boolean') adminState.usersLoaded = false;
+  if (typeof adminState.serviceAccountsLoaded !== 'boolean') adminState.serviceAccountsLoaded = false;
+  if (typeof adminState.serviceAccountTokensLoaded !== 'boolean') adminState.serviceAccountTokensLoaded = false;
+  if (typeof adminState.serviceAccountWorkspaceGrantsLoaded !== 'boolean') adminState.serviceAccountWorkspaceGrantsLoaded = false;
   if (!Number.isFinite(Number(adminState.invitesRequestedAt))) adminState.invitesRequestedAt = 0;
   if (!Number.isFinite(Number(adminState.usersRequestedAt))) adminState.usersRequestedAt = 0;
+  if (!Number.isFinite(Number(adminState.serviceAccountsRequestedAt))) adminState.serviceAccountsRequestedAt = 0;
+  if (!Number.isFinite(Number(adminState.serviceAccountTokensRequestedAt))) adminState.serviceAccountTokensRequestedAt = 0;
+  if (!Number.isFinite(Number(adminState.serviceAccountWorkspaceGrantsRequestedAt))) adminState.serviceAccountWorkspaceGrantsRequestedAt = 0;
   if (typeof adminState.ownerEmail !== 'string') adminState.ownerEmail = getCurrentOwnerEmail();
   if (typeof adminState.statusMessage !== 'string') adminState.statusMessage = '';
   if (typeof adminState.statusTone !== 'string') adminState.statusTone = 'info';
   if (typeof adminState.selectedUserId !== 'string') adminState.selectedUserId = '';
+  if (typeof adminState.selectedServiceAccountId !== 'string') adminState.selectedServiceAccountId = '';
+  if (typeof adminState.selectedServiceAccountTokenId !== 'string') adminState.selectedServiceAccountTokenId = '';
+  if (typeof adminState.revealedServiceToken !== 'string') adminState.revealedServiceToken = '';
   return adminState;
 }
 
@@ -15995,6 +16099,193 @@ function getSelectedAdminUser() {
   const adminState = getAdminState();
   if (!adminState.selectedUserId) return null;
   return adminState.users.find((user) => user.id === adminState.selectedUserId) ?? null;
+}
+
+function normalizeServiceAccountPermissionKeys(values = []) {
+  if (!Array.isArray(values)) return [];
+  return Array.from(new Set(values
+    .map((value) => String(value ?? '').trim())
+    .filter((value) => SERVICE_ACCOUNT_PERMISSION_OPTION_KEYS.has(value))));
+}
+
+function normalizeServiceAccountAliases(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .map((entry) => {
+      const aliasType = String(entry.alias_type ?? '').trim();
+      const aliasValue = String(entry.alias_value ?? '').trim();
+      return {
+        id: String(entry.id ?? '').trim() || null,
+        alias_type: aliasType,
+        alias_value: aliasValue,
+        metadata: entry.metadata && typeof entry.metadata === 'object' && !Array.isArray(entry.metadata)
+          ? entry.metadata
+          : {}
+      };
+    })
+    .filter((entry) => entry.alias_type && entry.alias_value);
+}
+
+function normalizeServiceAccountRecord(account) {
+  if (!account || typeof account !== 'object') return null;
+  return {
+    ...account,
+    display_name: String(account.display_name ?? '').trim(),
+    description: account.description ? String(account.description) : '',
+    permissions: normalizeServiceAccountPermissionKeys(account.permissions ?? []),
+    aliases: normalizeServiceAccountAliases(account.aliases ?? []),
+    archived: Number(account.archived) ? 1 : 0
+  };
+}
+
+function normalizeServiceAccountTokenRecord(token) {
+  if (!token || typeof token !== 'object') return null;
+  return {
+    ...token,
+    label: token.label ? String(token.label) : '',
+    permission_constraints: token.permission_constraints === null
+      ? null
+      : normalizeServiceAccountPermissionKeys(token.permission_constraints ?? []),
+    revoked_at: token.revoked_at ? String(token.revoked_at) : null,
+    expires_at: token.expires_at ? String(token.expires_at) : null,
+    last_used_at: token.last_used_at ? String(token.last_used_at) : null
+  };
+}
+
+function normalizeServiceAccountWorkspaceGrantRecord(grant) {
+  if (!grant || typeof grant !== 'object') return null;
+  return {
+    ...grant,
+    workspace_name: String(grant.workspace_name ?? '').trim() || 'Unnamed workspace'
+  };
+}
+
+function buildRogerServiceAccountAliasPreset() {
+  return [
+    {
+      alias_type: 'telegram_group',
+      alias_value: ROGER_SERVICE_ACCOUNT_ALIAS,
+      metadata: {
+        channel: 'telegram',
+        group_id: '-5130223325'
+      }
+    }
+  ];
+}
+
+function buildRogerServiceAccountDraft() {
+  return {
+    display_name: 'Roger - Ops',
+    description: 'Workspace-scoped automation account for the Roger Telegram operator flow.',
+    permissions: [...ROGER_V1_DEFAULT_SERVICE_ACCOUNT_PERMISSIONS],
+    aliases: buildRogerServiceAccountAliasPreset(),
+    archived: 0
+  };
+}
+
+function parseServiceAccountAliasesText(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('Aliases must be valid JSON.');
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('Aliases must be a JSON array.');
+  }
+  const aliases = normalizeServiceAccountAliases(parsed);
+  if (parsed.length && !aliases.length) {
+    throw new Error('Aliases must include alias_type and alias_value.');
+  }
+  return aliases;
+}
+
+function formatServiceAccountAliasesText(aliases = []) {
+  return JSON.stringify(normalizeServiceAccountAliases(aliases), null, 2);
+}
+
+function getSelectedAdminServiceAccount() {
+  const adminState = getAdminState();
+  if (!adminState.selectedServiceAccountId) return null;
+  return adminState.serviceAccounts.find((account) => account.id === adminState.selectedServiceAccountId) ?? null;
+}
+
+function getSelectedAdminServiceAccountToken() {
+  const adminState = getAdminState();
+  if (!adminState.selectedServiceAccountTokenId) return null;
+  return adminState.serviceAccountTokens.find((token) => token.id === adminState.selectedServiceAccountTokenId) ?? null;
+}
+
+function setAdminServiceAccountsStatus(message, tone = 'info') {
+  if (!adminServiceAccountsStatus) return;
+  adminServiceAccountsStatus.textContent = String(message ?? '');
+  if (tone) {
+    adminServiceAccountsStatus.dataset.tone = tone;
+  } else {
+    delete adminServiceAccountsStatus.dataset.tone;
+  }
+}
+
+function setAdminServiceTokenStatus(message, tone = 'info') {
+  if (!adminServiceTokenStatus) return;
+  adminServiceTokenStatus.textContent = String(message ?? '');
+  if (tone) {
+    adminServiceTokenStatus.dataset.tone = tone;
+  } else {
+    delete adminServiceTokenStatus.dataset.tone;
+  }
+}
+
+function setAdminServiceGrantsStatus(message, tone = 'info') {
+  if (!adminServiceGrantsStatus) return;
+  adminServiceGrantsStatus.textContent = String(message ?? '');
+  if (tone) {
+    adminServiceGrantsStatus.dataset.tone = tone;
+  } else {
+    delete adminServiceGrantsStatus.dataset.tone;
+  }
+}
+
+function setAdminServiceTokenReveal(token = '') {
+  const safeToken = String(token ?? '').trim();
+  if (adminServiceTokenReveal) {
+    adminServiceTokenReveal.value = safeToken;
+  }
+  adminServiceTokenRevealWrap?.classList.toggle('hidden', !safeToken);
+  getAdminState().revealedServiceToken = safeToken;
+}
+
+function getAdminOrgId() {
+  return state.workspace?.org_id ?? getAuthState().user?.org_id ?? DEFAULT_ORG_ID;
+}
+
+function getAvailableGrantWorkspaces(serviceAccount = null) {
+  const orgId = serviceAccount?.org_id ?? getAdminOrgId();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  const grantedWorkspaceIds = selectedAccount && serviceAccount?.id === selectedAccount.id
+    ? new Set((getAdminState().serviceAccountWorkspaceGrants ?? []).map((grant) => grant.workspace_id))
+    : new Set();
+  return (state.workspaces ?? [])
+    .filter((workspace) =>
+      workspace
+      && workspace.org_id === orgId
+      && !workspace.archived
+      && !grantedWorkspaceIds.has(workspace.id)
+    )
+    .sort((left, right) => String(left.name ?? '').localeCompare(String(right.name ?? '')));
+}
+
+function formatApiTokenStatus(token) {
+  if (!token) return 'unknown';
+  if (token.revoked_at) return 'revoked';
+  if (token.expires_at) {
+    const expiresAt = Date.parse(token.expires_at);
+    if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) return 'expired';
+  }
+  return 'active';
 }
 
 function setAdminInviteToken(token = '') {
@@ -16239,6 +16530,419 @@ function renderAdminUserEditor() {
   }
 }
 
+function getCheckedPermissionKeys(container) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('input[type="checkbox"][data-permission-key]:checked'))
+    .map((input) => String(input.dataset.permissionKey ?? '').trim())
+    .filter((key) => SERVICE_ACCOUNT_PERMISSION_OPTION_KEYS.has(key));
+}
+
+function renderPermissionOptions(container, selectedKeys = [], { disabled = false } = {}) {
+  if (!container) return;
+  const selected = new Set(normalizeServiceAccountPermissionKeys(selectedKeys));
+  container.innerHTML = '';
+  SERVICE_ACCOUNT_PERMISSION_OPTIONS.forEach((option) => {
+    const label = document.createElement('label');
+    label.className = 'admin-permission-option';
+    const title = document.createElement('span');
+    title.className = 'admin-permission-option-title';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.permissionKey = option.key;
+    input.checked = selected.has(option.key);
+    input.disabled = disabled;
+    const text = document.createElement('span');
+    text.textContent = option.label;
+    title.appendChild(input);
+    title.appendChild(text);
+    const description = document.createElement('span');
+    description.className = 'admin-permission-option-description';
+    description.textContent = option.description;
+    label.appendChild(title);
+    label.appendChild(description);
+    container.appendChild(label);
+  });
+}
+
+function resetAdminServiceAccountForm(draft = null) {
+  const source = draft && typeof draft === 'object' ? draft : {
+    display_name: '',
+    description: '',
+    aliases: [],
+    permissions: [...ROGER_V1_DEFAULT_SERVICE_ACCOUNT_PERMISSIONS],
+    archived: 0
+  };
+  if (adminServiceAccountSelect) adminServiceAccountSelect.value = '';
+  if (adminServiceAccountName) adminServiceAccountName.value = String(source.display_name ?? '');
+  if (adminServiceAccountDescription) adminServiceAccountDescription.value = String(source.description ?? '');
+  if (adminServiceAccountAliases) adminServiceAccountAliases.value = formatServiceAccountAliasesText(source.aliases ?? []);
+  if (adminServiceAccountArchived) adminServiceAccountArchived.value = Number(source.archived) ? '1' : '0';
+  renderPermissionOptions(adminServiceAccountPermissions, source.permissions ?? [], {
+    disabled: !isCurrentActorOwnerSuperAdmin()
+  });
+}
+
+function resetAdminServiceTokenForm(token = null) {
+  const source = token && typeof token === 'object' ? token : null;
+  if (adminServiceTokenLabel) adminServiceTokenLabel.value = String(source?.label ?? '');
+  if (adminServiceTokenExpiresAt) adminServiceTokenExpiresAt.value = toDatetimeLocal(source?.expires_at ?? '');
+  const inheritPermissions = source?.permission_constraints === null || source?.permission_constraints === undefined;
+  if (adminServiceTokenInherit) adminServiceTokenInherit.checked = inheritPermissions;
+  renderPermissionOptions(adminServiceTokenPermissions, inheritPermissions ? [] : (source?.permission_constraints ?? []), {
+    disabled: !isCurrentActorOwnerSuperAdmin() || Boolean(inheritPermissions)
+  });
+}
+
+function renderAdminServiceAccountsList() {
+  if (!adminServiceAccountsList) return;
+  const adminState = getAdminState();
+  adminServiceAccountsList.innerHTML = '';
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Owner access required to manage service accounts.';
+    adminServiceAccountsList.appendChild(note);
+    return;
+  }
+  if (adminState.serviceAccountsLoading) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Loading service accounts...';
+    adminServiceAccountsList.appendChild(note);
+    return;
+  }
+  if (adminState.serviceAccountsError) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = adminState.serviceAccountsError;
+    adminServiceAccountsList.appendChild(note);
+    return;
+  }
+  if (!adminState.serviceAccounts.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No service accounts yet.';
+    adminServiceAccountsList.appendChild(note);
+    return;
+  }
+  adminState.serviceAccounts.forEach((account) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'workspace-row notice-row admin-user-row';
+    row.classList.toggle('active', account.id === adminState.selectedServiceAccountId);
+    row.addEventListener('click', () => {
+      if (adminState.selectedServiceAccountId === account.id) return;
+      adminState.selectedServiceAccountId = account.id;
+      adminState.selectedServiceAccountTokenId = '';
+      setAdminServiceTokenReveal('');
+      renderAdminServiceAccountsList();
+      renderAdminServiceAccountEditor();
+      renderAdminServiceAccountTokensList();
+      renderAdminServiceTokenEditor();
+      renderAdminServiceWorkspaceGrantEditor();
+      renderAdminServiceWorkspaceGrantsList();
+      void refreshAdminServiceAccountTokens();
+      void refreshAdminServiceAccountWorkspaceGrants();
+    });
+    const info = document.createElement('div');
+    info.className = 'notice-row-info';
+    const title = document.createElement('div');
+    title.className = 'notice-row-title';
+    title.textContent = account.display_name || 'Untitled service account';
+    const meta = document.createElement('div');
+    meta.className = 'notice-row-meta';
+    const aliasSummary = account.aliases.length
+      ? `${account.aliases.length} alias${account.aliases.length === 1 ? '' : 'es'}`
+      : 'no aliases';
+    meta.textContent = `${Number(account.archived) ? 'disabled' : 'active'} • ${account.permissions.length} permission${account.permissions.length === 1 ? '' : 's'} • ${aliasSummary}`;
+    info.appendChild(title);
+    info.appendChild(meta);
+    row.appendChild(info);
+    adminServiceAccountsList.appendChild(row);
+  });
+}
+
+function renderAdminServiceAccountEditor() {
+  const adminState = getAdminState();
+  const isOwnerActor = isCurrentActorOwnerSuperAdmin();
+  const accounts = adminState.serviceAccounts ?? [];
+  if (adminServiceAccountSelect) {
+    const currentOptionsKey = accounts.map((account) => `${account.id}:${account.display_name}`).join('|');
+    if (adminServiceAccountSelect.dataset.optionsKey !== currentOptionsKey) {
+      adminServiceAccountSelect.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'New service account';
+      adminServiceAccountSelect.appendChild(placeholder);
+      accounts.forEach((account) => {
+        const option = document.createElement('option');
+        option.value = account.id;
+        option.textContent = account.display_name || account.id;
+        adminServiceAccountSelect.appendChild(option);
+      });
+      adminServiceAccountSelect.dataset.optionsKey = currentOptionsKey;
+    }
+    adminServiceAccountSelect.value = adminState.selectedServiceAccountId || '';
+    adminServiceAccountSelect.disabled = !isOwnerActor;
+  }
+  const selected = getSelectedAdminServiceAccount();
+  if (selected) {
+    if (adminServiceAccountName && document.activeElement !== adminServiceAccountName) {
+      adminServiceAccountName.value = selected.display_name ?? '';
+    }
+    if (adminServiceAccountDescription && document.activeElement !== adminServiceAccountDescription) {
+      adminServiceAccountDescription.value = selected.description ?? '';
+    }
+    if (adminServiceAccountAliases && document.activeElement !== adminServiceAccountAliases) {
+      adminServiceAccountAliases.value = formatServiceAccountAliasesText(selected.aliases ?? []);
+    }
+    if (adminServiceAccountArchived) {
+      adminServiceAccountArchived.value = Number(selected.archived) ? '1' : '0';
+    }
+    renderPermissionOptions(adminServiceAccountPermissions, selected.permissions ?? [], {
+      disabled: !isOwnerActor
+    });
+  } else if (!adminServiceAccountPermissions?.children.length) {
+    resetAdminServiceAccountForm();
+  } else {
+    if (adminServiceAccountArchived && !adminServiceAccountArchived.value) {
+      adminServiceAccountArchived.value = '0';
+    }
+    renderPermissionOptions(adminServiceAccountPermissions, getCheckedPermissionKeys(adminServiceAccountPermissions), {
+      disabled: !isOwnerActor
+    });
+  }
+  if (adminServiceAccountName) adminServiceAccountName.disabled = !isOwnerActor;
+  if (adminServiceAccountDescription) adminServiceAccountDescription.disabled = !isOwnerActor;
+  if (adminServiceAccountAliases) adminServiceAccountAliases.disabled = !isOwnerActor;
+  if (adminServiceAccountArchived) adminServiceAccountArchived.disabled = !isOwnerActor;
+  if (adminServiceAccountSave) adminServiceAccountSave.disabled = !isOwnerActor;
+  if (adminServiceAccountNew) adminServiceAccountNew.disabled = !isOwnerActor;
+  if (adminServiceAccountRogerPreset) adminServiceAccountRogerPreset.disabled = !isOwnerActor;
+  if (adminServiceAccountsRefresh) adminServiceAccountsRefresh.disabled = !isOwnerActor;
+  if (!adminServiceAccountsStatus?.dataset.tone) {
+    setAdminServiceAccountsStatus(
+      isOwnerActor
+        ? 'Owner console for service accounts, bearer tokens, and workspace grants.'
+        : 'Owner access required to manage service accounts.'
+    );
+  }
+}
+
+function renderAdminServiceAccountTokensList() {
+  if (!adminServiceTokensList) return;
+  const adminState = getAdminState();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  adminServiceTokensList.innerHTML = '';
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Owner access required to manage service-account tokens.';
+    adminServiceTokensList.appendChild(note);
+    return;
+  }
+  if (!selectedAccount) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Select a service account first.';
+    adminServiceTokensList.appendChild(note);
+    return;
+  }
+  if (adminState.serviceAccountTokensLoading) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Loading tokens...';
+    adminServiceTokensList.appendChild(note);
+    return;
+  }
+  if (adminState.serviceAccountTokensError) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = adminState.serviceAccountTokensError;
+    adminServiceTokensList.appendChild(note);
+    return;
+  }
+  if (!adminState.serviceAccountTokens.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No tokens created yet.';
+    adminServiceTokensList.appendChild(note);
+    return;
+  }
+  adminState.serviceAccountTokens.forEach((token) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'workspace-row notice-row admin-user-row';
+    row.classList.toggle('active', token.id === adminState.selectedServiceAccountTokenId);
+    row.addEventListener('click', () => {
+      adminState.selectedServiceAccountTokenId = token.id;
+      setAdminServiceTokenReveal('');
+      renderAdminServiceAccountTokensList();
+      renderAdminServiceTokenEditor();
+    });
+    const info = document.createElement('div');
+    info.className = 'notice-row-info';
+    const title = document.createElement('div');
+    title.className = 'notice-row-title';
+    title.textContent = token.label || `Token ${token.token_public_id}`;
+    const meta = document.createElement('div');
+    meta.className = 'notice-row-meta';
+    const statusLabel = formatApiTokenStatus(token);
+    const lastUsed = token.last_used_at ? ` • last used ${formatNoticeDateTimeDisplay(token.last_used_at)}` : '';
+    meta.textContent = `${statusLabel} • ${token.token_public_id}${lastUsed}`;
+    info.appendChild(title);
+    info.appendChild(meta);
+    row.appendChild(info);
+    adminServiceTokensList.appendChild(row);
+  });
+}
+
+function renderAdminServiceTokenEditor() {
+  const isOwnerActor = isCurrentActorOwnerSuperAdmin();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  const selectedToken = getSelectedAdminServiceAccountToken();
+  if (selectedToken) {
+    if (adminServiceTokenLabel && document.activeElement !== adminServiceTokenLabel) {
+      adminServiceTokenLabel.value = selectedToken.label ?? '';
+    }
+    if (adminServiceTokenExpiresAt && document.activeElement !== adminServiceTokenExpiresAt) {
+      adminServiceTokenExpiresAt.value = toDatetimeLocal(selectedToken.expires_at ?? '');
+    }
+    const inheritPermissions = selectedToken.permission_constraints === null;
+    if (adminServiceTokenInherit) adminServiceTokenInherit.checked = inheritPermissions;
+    renderPermissionOptions(adminServiceTokenPermissions, inheritPermissions ? [] : (selectedToken.permission_constraints ?? []), {
+      disabled: !isOwnerActor || inheritPermissions
+    });
+  } else if (!adminServiceTokenPermissions?.children.length) {
+    resetAdminServiceTokenForm();
+  } else {
+    const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
+    renderPermissionOptions(adminServiceTokenPermissions, inheritPermissions ? [] : getCheckedPermissionKeys(adminServiceTokenPermissions), {
+      disabled: !isOwnerActor || inheritPermissions
+    });
+  }
+  if (adminServiceTokenLabel) adminServiceTokenLabel.disabled = !isOwnerActor || !selectedAccount;
+  if (adminServiceTokenExpiresAt) adminServiceTokenExpiresAt.disabled = !isOwnerActor || !selectedAccount;
+  if (adminServiceTokenInherit) adminServiceTokenInherit.disabled = !isOwnerActor || !selectedAccount;
+  if (adminServiceTokenCreate) adminServiceTokenCreate.disabled = !isOwnerActor || !selectedAccount;
+  if (adminServiceTokenNew) adminServiceTokenNew.disabled = !isOwnerActor || !selectedAccount;
+  if (adminServiceTokenSave) adminServiceTokenSave.disabled = !isOwnerActor || !selectedToken;
+  if (adminServiceTokenRotate) adminServiceTokenRotate.disabled = !isOwnerActor || !selectedToken || Boolean(selectedToken?.revoked_at);
+  if (adminServiceTokenRevoke) adminServiceTokenRevoke.disabled = !isOwnerActor || !selectedToken || Boolean(selectedToken?.revoked_at);
+  if (adminServiceTokenCopy) adminServiceTokenCopy.disabled = !getAdminState().revealedServiceToken;
+  if (!adminServiceTokenStatus?.dataset.tone) {
+    setAdminServiceTokenStatus(
+      selectedAccount
+        ? 'Create a new bearer token or rotate an existing one. Raw tokens are shown only once.'
+        : 'Select a service account first to manage tokens.'
+    );
+  }
+}
+
+function renderAdminServiceWorkspaceGrantEditor() {
+  const isOwnerActor = isCurrentActorOwnerSuperAdmin();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  const workspaces = getAvailableGrantWorkspaces(selectedAccount);
+  if (adminServiceGrantWorkspace) {
+    const currentOptionsKey = workspaces.map((workspace) => `${workspace.id}:${workspace.name}`).join('|');
+    if (adminServiceGrantWorkspace.dataset.optionsKey !== currentOptionsKey) {
+      const previousValue = adminServiceGrantWorkspace.value;
+      adminServiceGrantWorkspace.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = selectedAccount ? 'Select workspace' : 'Select service account first';
+      adminServiceGrantWorkspace.appendChild(placeholder);
+      workspaces.forEach((workspace) => {
+        const option = document.createElement('option');
+        option.value = workspace.id;
+        option.textContent = workspace.name || workspace.id;
+        adminServiceGrantWorkspace.appendChild(option);
+      });
+      adminServiceGrantWorkspace.dataset.optionsKey = currentOptionsKey;
+      adminServiceGrantWorkspace.value = workspaces.some((workspace) => workspace.id === previousValue) ? previousValue : '';
+    }
+    adminServiceGrantWorkspace.disabled = !isOwnerActor || !selectedAccount;
+  }
+  if (adminServiceGrantAdd) adminServiceGrantAdd.disabled = !isOwnerActor || !selectedAccount;
+  if (!adminServiceGrantsStatus?.dataset.tone) {
+    setAdminServiceGrantsStatus(
+      selectedAccount
+        ? 'Grant only the workspaces this service account should see.'
+        : 'Select a service account first to manage workspace grants.'
+    );
+  }
+}
+
+function renderAdminServiceWorkspaceGrantsList() {
+  if (!adminServiceGrantsList) return;
+  const adminState = getAdminState();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  adminServiceGrantsList.innerHTML = '';
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Owner access required to manage workspace grants.';
+    adminServiceGrantsList.appendChild(note);
+    return;
+  }
+  if (!selectedAccount) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Select a service account first.';
+    adminServiceGrantsList.appendChild(note);
+    return;
+  }
+  if (adminState.serviceAccountWorkspaceGrantsLoading) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Loading workspace grants...';
+    adminServiceGrantsList.appendChild(note);
+    return;
+  }
+  if (adminState.serviceAccountWorkspaceGrantsError) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = adminState.serviceAccountWorkspaceGrantsError;
+    adminServiceGrantsList.appendChild(note);
+    return;
+  }
+  if (!adminState.serviceAccountWorkspaceGrants.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No workspace grants yet.';
+    adminServiceGrantsList.appendChild(note);
+    return;
+  }
+  adminState.serviceAccountWorkspaceGrants.forEach((grant) => {
+    const row = document.createElement('div');
+    row.className = 'workspace-row notice-row';
+    const info = document.createElement('div');
+    info.className = 'notice-row-info';
+    const title = document.createElement('div');
+    title.className = 'notice-row-title';
+    title.textContent = grant.workspace_name;
+    const meta = document.createElement('div');
+    meta.className = 'notice-row-meta';
+    meta.textContent = grant.workspace_id;
+    info.appendChild(title);
+    info.appendChild(meta);
+    row.appendChild(info);
+    const actions = document.createElement('div');
+    actions.className = 'admin-service-row-actions';
+    const revokeBtn = document.createElement('button');
+    revokeBtn.type = 'button';
+    revokeBtn.className = 'subtle-button';
+    revokeBtn.textContent = 'Remove';
+    revokeBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await deleteAdminServiceWorkspaceGrant(grant);
+    });
+    actions.appendChild(revokeBtn);
+    row.appendChild(actions);
+    adminServiceGrantsList.appendChild(row);
+  });
+}
+
 function renderAdminPage() {
   if (!adminPage) return;
   if (adminInviteRole) {
@@ -16262,6 +16966,12 @@ function renderAdminPage() {
   renderAdminInvitesList();
   renderAdminUsersList();
   renderAdminUserEditor();
+  renderAdminServiceAccountsList();
+  renderAdminServiceAccountEditor();
+  renderAdminServiceAccountTokensList();
+  renderAdminServiceTokenEditor();
+  renderAdminServiceWorkspaceGrantEditor();
+  renderAdminServiceWorkspaceGrantsList();
 
   if (getActiveView() !== 'admin') return;
   const adminState = getAdminState();
@@ -16271,6 +16981,477 @@ function renderAdminPage() {
   }
   if (!adminState.usersLoading && (!adminState.usersLoaded || now - Number(adminState.usersRequestedAt ?? 0) > ADMIN_USERS_AUTO_REFRESH_MS)) {
     void refreshAdminUsers();
+  }
+  if (!adminState.serviceAccountsLoading && (!adminState.serviceAccountsLoaded || now - Number(adminState.serviceAccountsRequestedAt ?? 0) > ADMIN_USERS_AUTO_REFRESH_MS)) {
+    void refreshAdminServiceAccounts();
+  }
+  if (
+    adminState.selectedServiceAccountId
+    && !adminState.serviceAccountTokensLoading
+    && (!adminState.serviceAccountTokensLoaded || now - Number(adminState.serviceAccountTokensRequestedAt ?? 0) > ADMIN_USERS_AUTO_REFRESH_MS)
+  ) {
+    void refreshAdminServiceAccountTokens();
+  }
+  if (
+    adminState.selectedServiceAccountId
+    && !adminState.serviceAccountWorkspaceGrantsLoading
+    && (!adminState.serviceAccountWorkspaceGrantsLoaded || now - Number(adminState.serviceAccountWorkspaceGrantsRequestedAt ?? 0) > ADMIN_USERS_AUTO_REFRESH_MS)
+  ) {
+    void refreshAdminServiceAccountWorkspaceGrants();
+  }
+}
+
+async function refreshAdminServiceAccounts({ preferredServiceAccountId = null } = {}) {
+  const adminState = getAdminState();
+  if (adminState.serviceAccountsLoading) return;
+  const hadLoaded = Boolean(adminState.serviceAccountsLoaded);
+  const previousSelection = String(preferredServiceAccountId ?? adminState.selectedServiceAccountId ?? '').trim();
+  adminState.serviceAccountsRequestedAt = Date.now();
+  adminState.serviceAccountsLoading = true;
+  adminState.serviceAccountsError = '';
+  renderAdminServiceAccountsList();
+  renderAdminServiceAccountEditor();
+  try {
+    const response = await api.listAdminServiceAccounts({
+      orgId: getAdminOrgId(),
+      includeArchived: true
+    });
+    const serviceAccounts = Array.isArray(response?.service_accounts)
+      ? response.service_accounts
+        .map((account) => normalizeServiceAccountRecord(account))
+        .filter(Boolean)
+        .sort((left, right) => String(left.display_name ?? '').localeCompare(String(right.display_name ?? '')))
+      : [];
+    adminState.serviceAccounts = serviceAccounts;
+    if (previousSelection && serviceAccounts.some((account) => account.id === previousSelection)) {
+      adminState.selectedServiceAccountId = previousSelection;
+    } else if (previousSelection && !serviceAccounts.length) {
+      adminState.selectedServiceAccountId = '';
+    } else if (previousSelection) {
+      adminState.selectedServiceAccountId = serviceAccounts[0]?.id ?? '';
+    } else if (!hadLoaded) {
+      adminState.selectedServiceAccountId = serviceAccounts[0]?.id ?? '';
+    }
+    setAdminServiceAccountsStatus(
+      serviceAccounts.length
+        ? `Loaded ${serviceAccounts.length} service account${serviceAccounts.length === 1 ? '' : 's'}.`
+        : 'No service accounts yet.'
+    );
+  } catch (err) {
+    adminState.serviceAccounts = [];
+    adminState.serviceAccountsError = err?.message ?? 'Unable to load service accounts.';
+  } finally {
+    adminState.serviceAccountsLoading = false;
+    adminState.serviceAccountsLoaded = true;
+    renderAdminServiceAccountsList();
+    renderAdminServiceAccountEditor();
+  }
+  if (adminState.selectedServiceAccountId) {
+    await Promise.all([
+      refreshAdminServiceAccountTokens(),
+      refreshAdminServiceAccountWorkspaceGrants()
+    ]);
+  } else {
+    adminState.serviceAccountTokens = [];
+    adminState.serviceAccountTokensError = '';
+    adminState.serviceAccountTokensLoading = false;
+    adminState.serviceAccountTokensLoaded = false;
+    adminState.serviceAccountWorkspaceGrants = [];
+    adminState.serviceAccountWorkspaceGrantsError = '';
+    adminState.serviceAccountWorkspaceGrantsLoading = false;
+    adminState.serviceAccountWorkspaceGrantsLoaded = false;
+    adminState.selectedServiceAccountTokenId = '';
+    setAdminServiceTokenReveal('');
+    resetAdminServiceTokenForm();
+    renderAdminServiceAccountTokensList();
+    renderAdminServiceTokenEditor();
+    renderAdminServiceWorkspaceGrantEditor();
+    renderAdminServiceWorkspaceGrantsList();
+  }
+}
+
+async function refreshAdminServiceAccountTokens({ preferredTokenId = null } = {}) {
+  const adminState = getAdminState();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  if (!selectedAccount) {
+    adminState.serviceAccountTokens = [];
+    adminState.serviceAccountTokensError = '';
+    adminState.serviceAccountTokensLoading = false;
+    adminState.serviceAccountTokensLoaded = false;
+    adminState.selectedServiceAccountTokenId = '';
+    renderAdminServiceAccountTokensList();
+    renderAdminServiceTokenEditor();
+    return;
+  }
+  if (adminState.serviceAccountTokensLoading) return;
+  const hadLoaded = Boolean(adminState.serviceAccountTokensLoaded);
+  const previousSelection = String(preferredTokenId ?? adminState.selectedServiceAccountTokenId ?? '').trim();
+  adminState.serviceAccountTokensRequestedAt = Date.now();
+  adminState.serviceAccountTokensLoading = true;
+  adminState.serviceAccountTokensError = '';
+  renderAdminServiceAccountTokensList();
+  renderAdminServiceTokenEditor();
+  try {
+    const response = await api.listAdminServiceAccountTokens(selectedAccount.id);
+    const tokens = Array.isArray(response?.tokens)
+      ? response.tokens
+        .map((token) => normalizeServiceAccountTokenRecord(token))
+        .filter(Boolean)
+        .sort((left, right) => {
+          const leftTime = Date.parse(left?.created_at ?? '') || 0;
+          const rightTime = Date.parse(right?.created_at ?? '') || 0;
+          return rightTime - leftTime;
+        })
+      : [];
+    adminState.serviceAccountTokens = tokens;
+    if (previousSelection && tokens.some((token) => token.id === previousSelection)) {
+      adminState.selectedServiceAccountTokenId = previousSelection;
+    } else if (previousSelection && !tokens.length) {
+      adminState.selectedServiceAccountTokenId = '';
+    } else if (previousSelection) {
+      adminState.selectedServiceAccountTokenId = tokens[0]?.id ?? '';
+    } else if (!hadLoaded) {
+      adminState.selectedServiceAccountTokenId = tokens[0]?.id ?? '';
+    }
+    setAdminServiceTokenStatus(
+      tokens.length
+        ? `Loaded ${tokens.length} token${tokens.length === 1 ? '' : 's'} for ${selectedAccount.display_name}.`
+        : `No tokens yet for ${selectedAccount.display_name}.`
+    );
+  } catch (err) {
+    adminState.serviceAccountTokens = [];
+    adminState.serviceAccountTokensError = err?.message ?? 'Unable to load service-account tokens.';
+  } finally {
+    adminState.serviceAccountTokensLoading = false;
+    adminState.serviceAccountTokensLoaded = true;
+    renderAdminServiceAccountTokensList();
+    renderAdminServiceTokenEditor();
+  }
+}
+
+async function refreshAdminServiceAccountWorkspaceGrants() {
+  const adminState = getAdminState();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  if (!selectedAccount) {
+    adminState.serviceAccountWorkspaceGrants = [];
+    adminState.serviceAccountWorkspaceGrantsError = '';
+    adminState.serviceAccountWorkspaceGrantsLoading = false;
+    adminState.serviceAccountWorkspaceGrantsLoaded = false;
+    renderAdminServiceWorkspaceGrantEditor();
+    renderAdminServiceWorkspaceGrantsList();
+    return;
+  }
+  if (adminState.serviceAccountWorkspaceGrantsLoading) return;
+  adminState.serviceAccountWorkspaceGrantsRequestedAt = Date.now();
+  adminState.serviceAccountWorkspaceGrantsLoading = true;
+  adminState.serviceAccountWorkspaceGrantsError = '';
+  renderAdminServiceWorkspaceGrantEditor();
+  renderAdminServiceWorkspaceGrantsList();
+  try {
+    const response = await api.listAdminServiceAccountWorkspaceGrants(selectedAccount.id);
+    adminState.serviceAccountWorkspaceGrants = Array.isArray(response?.workspace_grants)
+      ? response.workspace_grants
+        .map((grant) => normalizeServiceAccountWorkspaceGrantRecord(grant))
+        .filter(Boolean)
+        .sort((left, right) => String(left.workspace_name ?? '').localeCompare(String(right.workspace_name ?? '')))
+      : [];
+    setAdminServiceGrantsStatus(
+      adminState.serviceAccountWorkspaceGrants.length
+        ? `Loaded ${adminState.serviceAccountWorkspaceGrants.length} workspace grant${adminState.serviceAccountWorkspaceGrants.length === 1 ? '' : 's'} for ${selectedAccount.display_name}.`
+        : `No workspace grants yet for ${selectedAccount.display_name}.`
+    );
+  } catch (err) {
+    adminState.serviceAccountWorkspaceGrants = [];
+    adminState.serviceAccountWorkspaceGrantsError = err?.message ?? 'Unable to load workspace grants.';
+  } finally {
+    adminState.serviceAccountWorkspaceGrantsLoading = false;
+    adminState.serviceAccountWorkspaceGrantsLoaded = true;
+    renderAdminServiceWorkspaceGrantEditor();
+    renderAdminServiceWorkspaceGrantsList();
+  }
+}
+
+function startNewAdminServiceAccountDraft(draft = null) {
+  const adminState = getAdminState();
+  adminState.selectedServiceAccountId = '';
+  adminState.selectedServiceAccountTokenId = '';
+  adminState.serviceAccountTokens = [];
+  adminState.serviceAccountTokensError = '';
+  adminState.serviceAccountTokensLoading = false;
+  adminState.serviceAccountTokensLoaded = false;
+  adminState.serviceAccountWorkspaceGrants = [];
+  adminState.serviceAccountWorkspaceGrantsError = '';
+  adminState.serviceAccountWorkspaceGrantsLoading = false;
+  adminState.serviceAccountWorkspaceGrantsLoaded = false;
+  setAdminServiceTokenReveal('');
+  resetAdminServiceAccountForm(draft);
+  resetAdminServiceTokenForm();
+  renderAdminServiceAccountsList();
+  renderAdminServiceAccountEditor();
+  renderAdminServiceAccountTokensList();
+  renderAdminServiceTokenEditor();
+  renderAdminServiceWorkspaceGrantEditor();
+  renderAdminServiceWorkspaceGrantsList();
+}
+
+async function submitAdminServiceAccountSave() {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminServiceAccountsStatus('Owner access required to manage service accounts.', 'error');
+    return;
+  }
+  const selected = getSelectedAdminServiceAccount();
+  const displayName = normalizeTitleInput(adminServiceAccountName?.value ?? '');
+  if (!displayName) {
+    setAdminServiceAccountsStatus('Display name is required.', 'error');
+    adminServiceAccountName?.focus();
+    return;
+  }
+  let aliases = [];
+  try {
+    aliases = parseServiceAccountAliasesText(adminServiceAccountAliases?.value ?? '[]');
+  } catch (err) {
+    setAdminServiceAccountsStatus(err?.message ?? 'Invalid aliases JSON.', 'error');
+    adminServiceAccountAliases?.focus();
+    return;
+  }
+  const payload = {
+    display_name: displayName,
+    description: String(adminServiceAccountDescription?.value ?? '').trim() || null,
+    permissions: getCheckedPermissionKeys(adminServiceAccountPermissions),
+    aliases
+  };
+  if (selected) {
+    payload.archived = adminServiceAccountArchived?.value === '1' ? 1 : 0;
+  } else {
+    payload.org_id = getAdminOrgId();
+  }
+  adminServiceAccountSave?.setAttribute('disabled', 'true');
+  try {
+    const response = selected
+      ? await api.updateAdminServiceAccount(selected.id, payload)
+      : await api.createAdminServiceAccount(payload);
+    const saved = normalizeServiceAccountRecord(response?.service_account);
+    const accountId = String(saved?.id ?? '').trim();
+    await refreshAdminServiceAccounts({ preferredServiceAccountId: accountId });
+    setAdminServiceAccountsStatus(selected ? 'Service account updated.' : 'Service account created.');
+    showToast({
+      type: 'success',
+      message: selected
+        ? `Updated ${saved?.display_name || displayName}.`
+        : `Created ${saved?.display_name || displayName}.`
+    });
+  } catch (err) {
+    const message = err?.message ?? 'Unable to save service account.';
+    setAdminServiceAccountsStatus(message, 'error');
+    showToast({ type: 'error', message });
+  } finally {
+    adminServiceAccountSave?.removeAttribute('disabled');
+  }
+}
+
+async function createAdminServiceToken() {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminServiceTokenStatus('Owner access required to create tokens.', 'error');
+    return;
+  }
+  const selectedAccount = getSelectedAdminServiceAccount();
+  if (!selectedAccount) {
+    setAdminServiceTokenStatus('Select a service account first.', 'error');
+    return;
+  }
+  const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
+  const payload = {
+    label: String(adminServiceTokenLabel?.value ?? '').trim() || null,
+    expires_at: fromDatetimeLocal(adminServiceTokenExpiresAt?.value ?? ''),
+    permission_constraints: inheritPermissions ? null : getCheckedPermissionKeys(adminServiceTokenPermissions)
+  };
+  adminServiceTokenCreate?.setAttribute('disabled', 'true');
+  try {
+    const response = await api.createAdminServiceAccountToken(selectedAccount.id, payload);
+    const created = normalizeServiceAccountTokenRecord(response?.token);
+    setAdminServiceTokenReveal(response?.token?.token ?? '');
+    await refreshAdminServiceAccountTokens({ preferredTokenId: created?.id ?? '' });
+    setAdminServiceTokenStatus('Token created. Copy it now because the raw secret will not be shown again.');
+    showToast({ type: 'success', message: `Created token for ${selectedAccount.display_name}.` });
+  } catch (err) {
+    const message = err?.message ?? 'Unable to create token.';
+    setAdminServiceTokenStatus(message, 'error');
+    showToast({ type: 'error', message });
+  } finally {
+    adminServiceTokenCreate?.removeAttribute('disabled');
+  }
+}
+
+async function updateAdminSelectedServiceToken() {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminServiceTokenStatus('Owner access required to update tokens.', 'error');
+    return;
+  }
+  const selectedToken = getSelectedAdminServiceAccountToken();
+  if (!selectedToken) {
+    setAdminServiceTokenStatus('Select a token first.', 'error');
+    return;
+  }
+  const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
+  const payload = {
+    label: String(adminServiceTokenLabel?.value ?? '').trim() || null,
+    expires_at: fromDatetimeLocal(adminServiceTokenExpiresAt?.value ?? ''),
+    permission_constraints: inheritPermissions ? null : getCheckedPermissionKeys(adminServiceTokenPermissions)
+  };
+  adminServiceTokenSave?.setAttribute('disabled', 'true');
+  try {
+    const response = await api.updateAdminServiceAccountToken(selectedToken.id, payload);
+    const updated = normalizeServiceAccountTokenRecord(response?.token);
+    await refreshAdminServiceAccountTokens({ preferredTokenId: updated?.id ?? selectedToken.id });
+    setAdminServiceTokenStatus('Token settings updated.');
+    showToast({ type: 'success', message: `Updated ${updated?.label || selectedToken.label || 'token'}.` });
+  } catch (err) {
+    const message = err?.message ?? 'Unable to update token.';
+    setAdminServiceTokenStatus(message, 'error');
+    showToast({ type: 'error', message });
+  } finally {
+    adminServiceTokenSave?.removeAttribute('disabled');
+  }
+}
+
+async function rotateAdminSelectedServiceToken() {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminServiceTokenStatus('Owner access required to rotate tokens.', 'error');
+    return;
+  }
+  const selectedToken = getSelectedAdminServiceAccountToken();
+  if (!selectedToken) {
+    setAdminServiceTokenStatus('Select a token first.', 'error');
+    return;
+  }
+  const confirmed = confirm(`Rotate token "${selectedToken.label || selectedToken.token_public_id}"? The old secret will stop working immediately.`);
+  if (!confirmed) return;
+  const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
+  const payload = {
+    label: String(adminServiceTokenLabel?.value ?? '').trim() || null,
+    expires_at: fromDatetimeLocal(adminServiceTokenExpiresAt?.value ?? ''),
+    permission_constraints: inheritPermissions ? null : getCheckedPermissionKeys(adminServiceTokenPermissions)
+  };
+  adminServiceTokenRotate?.setAttribute('disabled', 'true');
+  try {
+    const response = await api.rotateAdminServiceAccountToken(selectedToken.id, payload);
+    const rotated = normalizeServiceAccountTokenRecord(response?.token);
+    setAdminServiceTokenReveal(response?.token?.token ?? '');
+    await refreshAdminServiceAccountTokens({ preferredTokenId: rotated?.id ?? '' });
+    setAdminServiceTokenStatus('Token rotated. Copy the new raw secret now.');
+    showToast({ type: 'success', message: `Rotated ${selectedToken.label || selectedToken.token_public_id}.` });
+  } catch (err) {
+    const message = err?.message ?? 'Unable to rotate token.';
+    setAdminServiceTokenStatus(message, 'error');
+    showToast({ type: 'error', message });
+  } finally {
+    adminServiceTokenRotate?.removeAttribute('disabled');
+  }
+}
+
+async function revokeAdminSelectedServiceToken() {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminServiceTokenStatus('Owner access required to revoke tokens.', 'error');
+    return;
+  }
+  const selectedToken = getSelectedAdminServiceAccountToken();
+  if (!selectedToken) {
+    setAdminServiceTokenStatus('Select a token first.', 'error');
+    return;
+  }
+  const confirmed = confirm(`Revoke token "${selectedToken.label || selectedToken.token_public_id}"?`);
+  if (!confirmed) return;
+  adminServiceTokenRevoke?.setAttribute('disabled', 'true');
+  try {
+    await api.deleteAdminServiceAccountToken(selectedToken.id);
+    await refreshAdminServiceAccountTokens({ preferredTokenId: selectedToken.id });
+    setAdminServiceTokenStatus('Token revoked.');
+    showToast({ type: 'success', message: `Revoked ${selectedToken.label || selectedToken.token_public_id}.` });
+  } catch (err) {
+    const message = err?.message ?? 'Unable to revoke token.';
+    setAdminServiceTokenStatus(message, 'error');
+    showToast({ type: 'error', message });
+  } finally {
+    adminServiceTokenRevoke?.removeAttribute('disabled');
+  }
+}
+
+async function copyAdminServiceTokenToClipboard() {
+  const token = String(getAdminState().revealedServiceToken ?? '').trim();
+  if (!token) {
+    setAdminServiceTokenStatus('No raw token is available to copy.', 'error');
+    return;
+  }
+  try {
+    await copyTextToClipboard(token);
+    setAdminServiceTokenStatus('Raw token copied to clipboard.');
+    showToast({ type: 'success', message: 'Raw token copied to clipboard.' });
+  } catch (err) {
+    const message = err?.message ?? 'Could not copy token.';
+    setAdminServiceTokenStatus(message, 'error');
+    showToast({ type: 'error', message });
+  }
+}
+
+async function addAdminServiceWorkspaceGrant() {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminServiceGrantsStatus('Owner access required to grant workspaces.', 'error');
+    return;
+  }
+  const selectedAccount = getSelectedAdminServiceAccount();
+  if (!selectedAccount) {
+    setAdminServiceGrantsStatus('Select a service account first.', 'error');
+    return;
+  }
+  const workspaceId = String(adminServiceGrantWorkspace?.value ?? '').trim();
+  if (!workspaceId) {
+    setAdminServiceGrantsStatus('Select a workspace first.', 'error');
+    adminServiceGrantWorkspace?.focus();
+    return;
+  }
+  const existingGrant = (getAdminState().serviceAccountWorkspaceGrants ?? []).find((grant) => grant.workspace_id === workspaceId);
+  if (existingGrant) {
+    setAdminServiceGrantsStatus('That workspace is already granted.', 'error');
+    return;
+  }
+  adminServiceGrantAdd?.setAttribute('disabled', 'true');
+  try {
+    await api.createAdminServiceAccountWorkspaceGrant(selectedAccount.id, { workspace_id: workspaceId });
+    if (adminServiceGrantWorkspace) adminServiceGrantWorkspace.value = '';
+    await refreshAdminServiceAccountWorkspaceGrants();
+    setAdminServiceGrantsStatus('Workspace granted.');
+    showToast({ type: 'success', message: `Granted workspace access to ${selectedAccount.display_name}.` });
+  } catch (err) {
+    const message = err?.message ?? 'Unable to grant workspace.';
+    setAdminServiceGrantsStatus(message, 'error');
+    showToast({ type: 'error', message });
+  } finally {
+    adminServiceGrantAdd?.removeAttribute('disabled');
+  }
+}
+
+async function deleteAdminServiceWorkspaceGrant(grant) {
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminServiceGrantsStatus('Owner access required to revoke workspace grants.', 'error');
+    return;
+  }
+  const grantId = String(grant?.id ?? '').trim();
+  if (!grantId) {
+    setAdminServiceGrantsStatus('Workspace grant is missing a valid id.', 'error');
+    return;
+  }
+  const label = String(grant?.workspace_name ?? grant?.workspace_id ?? 'this workspace').trim() || 'this workspace';
+  const confirmed = confirm(`Remove workspace grant for ${label}?`);
+  if (!confirmed) return;
+  try {
+    await api.deleteAdminServiceAccountWorkspaceGrant(grantId);
+    await refreshAdminServiceAccountWorkspaceGrants();
+    setAdminServiceGrantsStatus(`Removed workspace grant for ${label}.`);
+    showToast({ type: 'success', message: `Removed workspace grant for ${label}.` });
+  } catch (err) {
+    const message = err?.message ?? 'Unable to remove workspace grant.';
+    setAdminServiceGrantsStatus(message, 'error');
+    showToast({ type: 'error', message });
   }
 }
 
@@ -23472,6 +24653,7 @@ function openAdminConsole() {
   render();
   void refreshAdminInvites();
   void refreshAdminUsers();
+  void refreshAdminServiceAccounts();
   startAdminInvitesAutoRefresh();
   startAdminUsersAutoRefresh();
 }
@@ -26648,6 +27830,91 @@ adminUserDelete?.addEventListener('click', () => {
 });
 adminOwnershipTransfer?.addEventListener('click', () => {
   void transferOwnershipToSelectedUser();
+});
+adminServiceAccountsRefresh?.addEventListener('click', () => {
+  void refreshAdminServiceAccounts();
+});
+adminServiceAccountNew?.addEventListener('click', () => {
+  setAdminServiceAccountsStatus('Creating a new service account.');
+  startNewAdminServiceAccountDraft();
+});
+adminServiceAccountRogerPreset?.addEventListener('click', () => {
+  setAdminServiceAccountsStatus('Loaded the Roger preset. Save to create the service account.');
+  startNewAdminServiceAccountDraft(buildRogerServiceAccountDraft());
+});
+adminServiceAccountSelect?.addEventListener('change', () => {
+  const adminState = getAdminState();
+  const nextId = String(adminServiceAccountSelect.value ?? '').trim();
+  adminState.selectedServiceAccountId = nextId;
+  adminState.selectedServiceAccountTokenId = '';
+  setAdminServiceTokenReveal('');
+  if (!nextId) {
+    adminState.serviceAccountTokens = [];
+    adminState.serviceAccountTokensError = '';
+    adminState.serviceAccountTokensLoading = false;
+    adminState.serviceAccountTokensLoaded = false;
+    adminState.serviceAccountWorkspaceGrants = [];
+    adminState.serviceAccountWorkspaceGrantsError = '';
+    adminState.serviceAccountWorkspaceGrantsLoading = false;
+    adminState.serviceAccountWorkspaceGrantsLoaded = false;
+    resetAdminServiceAccountForm();
+    resetAdminServiceTokenForm();
+    renderAdminServiceAccountsList();
+    renderAdminServiceAccountEditor();
+    renderAdminServiceAccountTokensList();
+    renderAdminServiceTokenEditor();
+    renderAdminServiceWorkspaceGrantEditor();
+    renderAdminServiceWorkspaceGrantsList();
+    return;
+  }
+  renderAdminServiceAccountsList();
+  renderAdminServiceAccountEditor();
+  renderAdminServiceAccountTokensList();
+  renderAdminServiceTokenEditor();
+  renderAdminServiceWorkspaceGrantEditor();
+  renderAdminServiceWorkspaceGrantsList();
+  void refreshAdminServiceAccountTokens();
+  void refreshAdminServiceAccountWorkspaceGrants();
+});
+adminServiceAccountSave?.addEventListener('click', () => {
+  void submitAdminServiceAccountSave();
+});
+adminServiceTokenNew?.addEventListener('click', () => {
+  const adminState = getAdminState();
+  adminState.selectedServiceAccountTokenId = '';
+  setAdminServiceTokenReveal('');
+  resetAdminServiceTokenForm();
+  renderAdminServiceAccountTokensList();
+  renderAdminServiceTokenEditor();
+  setAdminServiceTokenStatus('Creating a new token.');
+});
+adminServiceTokenInherit?.addEventListener('change', () => {
+  const selectedToken = getSelectedAdminServiceAccountToken();
+  const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
+  const selectedKeys = inheritPermissions
+    ? []
+    : (selectedToken?.permission_constraints ?? getCheckedPermissionKeys(adminServiceTokenPermissions));
+  renderPermissionOptions(adminServiceTokenPermissions, selectedKeys, {
+    disabled: !isCurrentActorOwnerSuperAdmin() || inheritPermissions
+  });
+});
+adminServiceTokenCreate?.addEventListener('click', () => {
+  void createAdminServiceToken();
+});
+adminServiceTokenSave?.addEventListener('click', () => {
+  void updateAdminSelectedServiceToken();
+});
+adminServiceTokenRotate?.addEventListener('click', () => {
+  void rotateAdminSelectedServiceToken();
+});
+adminServiceTokenRevoke?.addEventListener('click', () => {
+  void revokeAdminSelectedServiceToken();
+});
+adminServiceTokenCopy?.addEventListener('click', () => {
+  void copyAdminServiceTokenToClipboard();
+});
+adminServiceGrantAdd?.addEventListener('click', () => {
+  void addAdminServiceWorkspaceGrant();
 });
 taskTypesOpen?.addEventListener('click', openTaskTypesModal);
 taskTypesClose?.addEventListener('click', closeTaskTypesModal);

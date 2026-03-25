@@ -581,9 +581,9 @@
                   <div id="admin-invites-list" class="workspace-list"></div>
                 </div>
               </div>
-              <div class="settings-page-grid admin-page-grid">
-                <div class="settings-section admin-user-controls-span2">
-                  <h3>User controls</h3>
+	              <div class="settings-page-grid admin-page-grid">
+	                <div class="settings-section admin-user-controls-span2">
+	                  <h3>User controls</h3>
                   <label>
                     User
                     <select id="admin-user-select" class="setting-input admin-invite-input">
@@ -642,11 +642,133 @@
                     <button id="admin-users-refresh" class="subtle-button" type="button">Refresh</button>
                   </div>
                   <div id="admin-users-status" class="sidebar-note"></div>
-                  <div id="admin-users-list" class="workspace-list"></div>
-                </div>
-              </div>
-            </div>
-          </section>
+	                  <div id="admin-users-list" class="workspace-list"></div>
+	                </div>
+	              </div>
+	              <div class="settings-page-grid admin-page-grid">
+	                <div class="settings-section admin-user-controls-span2">
+	                  <div class="setting-row admin-users-header">
+	                    <h3>Service accounts</h3>
+	                    <div class="setting-row">
+	                      <button id="admin-service-account-new" class="subtle-button" type="button">New account</button>
+	                      <button id="admin-service-account-roger-preset" class="subtle-button" type="button">Roger preset</button>
+	                      <button id="admin-service-accounts-refresh" class="subtle-button" type="button">Refresh</button>
+	                    </div>
+	                  </div>
+	                  <div id="admin-service-accounts-status" class="sidebar-note"></div>
+	                  <label>
+	                    Service account
+	                    <select id="admin-service-account-select" class="setting-input admin-invite-input">
+	                      <option value="">New service account</option>
+	                    </select>
+	                  </label>
+	                  <div class="profile-form-grid">
+	                    <label>
+	                      Display name
+	                      <input id="admin-service-account-name" class="setting-input" type="text" placeholder="Roger - Ops" />
+	                    </label>
+	                    <label>
+	                      Account status
+	                      <select id="admin-service-account-archived" class="setting-input">
+	                        <option value="0">Active</option>
+	                        <option value="1">Disabled</option>
+	                      </select>
+	                    </label>
+	                  </div>
+	                  <label>
+	                    Description
+	                    <textarea id="admin-service-account-description" class="automation-input" rows="3" placeholder="Workspace-scoped automation account for Roger."></textarea>
+	                  </label>
+	                  <label>
+	                    Aliases (JSON)
+	                    <textarea id="admin-service-account-aliases" class="automation-input" rows="5" placeholder='[{"alias_type":"telegram_group","alias_value":"agent:main:telegram:group:-5130223325","metadata":{"channel":"telegram","group_id":"-5130223325"}}]'></textarea>
+	                  </label>
+	                  <div class="setting-row setting-row-stack">
+	                    <div class="setting-label">Permissions</div>
+	                    <div id="admin-service-account-permissions" class="admin-permission-grid" role="group" aria-label="Service account permissions"></div>
+	                  </div>
+	                  <div class="modal-actions profile-actions">
+	                    <button id="admin-service-account-save" type="button">Save account</button>
+	                  </div>
+	                </div>
+	                <div class="settings-section admin-users-panel">
+	                  <div class="setting-row admin-users-header">
+	                    <h3>Accounts</h3>
+	                  </div>
+	                  <div id="admin-service-accounts-list" class="workspace-list"></div>
+	                </div>
+	              </div>
+	              <div class="settings-page-grid admin-page-grid">
+	                <div class="settings-section admin-user-controls-span2">
+	                  <div class="setting-row admin-users-header">
+	                    <h3>Token access</h3>
+	                    <button id="admin-service-token-new" class="subtle-button" type="button">New token</button>
+	                  </div>
+	                  <div id="admin-service-token-status" class="sidebar-note"></div>
+	                  <label>
+	                    Label
+	                    <input id="admin-service-token-label" class="setting-input admin-invite-input" type="text" placeholder="Roger primary token" />
+	                  </label>
+	                  <div class="profile-form-grid">
+	                    <label>
+	                      Expires at
+	                      <input id="admin-service-token-expires-at" class="setting-input admin-invite-input" type="datetime-local" />
+	                    </label>
+	                    <label class="admin-service-token-toggle">
+	                      <span>Permission mode</span>
+	                      <span class="admin-service-token-toggle-input">
+	                        <input id="admin-service-token-inherit" type="checkbox" checked />
+	                        <span>Inherit account permissions</span>
+	                      </span>
+	                    </label>
+	                  </div>
+	                  <div class="setting-row setting-row-stack">
+	                    <div class="setting-label">Token permission constraints</div>
+	                    <div id="admin-service-token-permissions" class="admin-permission-grid" role="group" aria-label="Token permission constraints"></div>
+	                  </div>
+	                  <div id="admin-service-token-reveal-wrap" class="setting-row hidden">
+	                    <input id="admin-service-token-reveal" class="setting-input admin-invite-input" type="text" readonly placeholder="New token is shown once here" />
+	                    <button id="admin-service-token-copy" class="subtle-button" type="button">Copy token</button>
+	                  </div>
+	                  <div class="setting-row audit-controls">
+	                    <button id="admin-service-token-create" type="button">Create token</button>
+	                    <button id="admin-service-token-save" class="subtle-button" type="button">Save token</button>
+	                    <button id="admin-service-token-rotate" class="subtle-button" type="button">Rotate token</button>
+	                    <button id="admin-service-token-revoke" class="subtle-button" type="button">Revoke token</button>
+	                  </div>
+	                </div>
+	                <div class="settings-section admin-users-panel">
+	                  <div class="setting-row admin-users-header">
+	                    <h3>Tokens</h3>
+	                  </div>
+	                  <div id="admin-service-tokens-list" class="workspace-list"></div>
+	                </div>
+	              </div>
+	              <div class="settings-page-grid admin-page-grid">
+	                <div class="settings-section admin-user-controls-span2">
+	                  <div class="setting-row admin-users-header">
+	                    <h3>Workspace grants</h3>
+	                  </div>
+	                  <div id="admin-service-grants-status" class="sidebar-note"></div>
+	                  <label>
+	                    Workspace
+	                    <select id="admin-service-grant-workspace" class="setting-input admin-invite-input">
+	                      <option value="">Select workspace</option>
+	                    </select>
+	                  </label>
+	                  <div class="modal-actions profile-actions">
+	                    <button id="admin-service-grant-add" type="button">Grant workspace</button>
+	                  </div>
+	                </div>
+	                <div class="settings-section admin-users-panel">
+	                  <div class="setting-row admin-users-header">
+	                    <h3>Granted workspaces</h3>
+	                  </div>
+	                  <div id="admin-service-grants-list" class="workspace-list"></div>
+	                </div>
+	              </div>
+	            </div>
+	          </section>
           <section id="profile-page" class="panel hidden">
             <div class="panel-header">
               <h2>Profile</h2>

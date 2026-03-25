@@ -333,6 +333,75 @@ export function transferOwnership(data) {
   return request('/admin/ownership/transfer', { method: 'POST', body: JSON.stringify(data) });
 }
 
+export function listAdminServiceAccounts({ orgId = null, includeArchived = true } = {}) {
+  const params = new URLSearchParams();
+  if (orgId) params.set('org_id', orgId);
+  params.set('include_archived', includeArchived ? '1' : '0');
+  return request(`/admin/service-accounts?${params.toString()}`);
+}
+
+export function createAdminServiceAccount(data) {
+  return request('/admin/service-accounts', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export function updateAdminServiceAccount(id, patch) {
+  return request(`/admin/service-accounts/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch)
+  });
+}
+
+export function listAdminServiceAccountTokens(serviceAccountId) {
+  return request(`/admin/service-accounts/${encodeURIComponent(serviceAccountId)}/tokens`);
+}
+
+export function createAdminServiceAccountToken(serviceAccountId, data) {
+  return request(`/admin/service-accounts/${encodeURIComponent(serviceAccountId)}/tokens`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export function updateAdminServiceAccountToken(tokenId, patch) {
+  return request(`/admin/service-account-tokens/${encodeURIComponent(tokenId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch)
+  });
+}
+
+export function rotateAdminServiceAccountToken(tokenId, data) {
+  return request(`/admin/service-account-tokens/${encodeURIComponent(tokenId)}/rotate`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export function deleteAdminServiceAccountToken(tokenId) {
+  return request(`/admin/service-account-tokens/${encodeURIComponent(tokenId)}`, {
+    method: 'DELETE'
+  });
+}
+
+export function listAdminServiceAccountWorkspaceGrants(serviceAccountId) {
+  return request(`/admin/service-accounts/${encodeURIComponent(serviceAccountId)}/workspace-grants`);
+}
+
+export function createAdminServiceAccountWorkspaceGrant(serviceAccountId, data) {
+  return request(`/admin/service-accounts/${encodeURIComponent(serviceAccountId)}/workspace-grants`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export function deleteAdminServiceAccountWorkspaceGrant(grantId) {
+  return request(`/admin/service-account-workspace-grants/${encodeURIComponent(grantId)}`, {
+    method: 'DELETE'
+  });
+}
+
 export function listWorkspaceMemberships(workspaceId) {
   return request(`/workspace-memberships?workspace_id=${encodeURIComponent(workspaceId)}`);
 }
