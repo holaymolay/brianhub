@@ -7207,6 +7207,36 @@ function registerSyncFailure() {
   }
 }
 
+async function handleSyncAccessFailure(error) {
+  const status = Number(error?.status ?? error?.statusCode ?? 0);
+  if (!isWorkspaceDataResetStatus(status)) return false;
+  const failedWorkspaceId = state.workspace?.id ?? null;
+  clearWorkspaceDomainData({
+    preserveWorkspaces: status !== 401,
+    clearPendingChanges: true,
+    resetAdminState: true
+  });
+  resetSyncBackoff();
+  syncErrorCount = 0;
+  lastSyncAttentionMutationId = null;
+  if (syncStatus) {
+    syncStatus.textContent = status === 401
+      ? 'Authentication changed · reload required'
+      : 'Workspace access changed · reloading';
+  }
+  if (status !== 401) {
+    await loadWorkspaces();
+    if (state.workspace?.id && state.workspace.id !== failedWorkspaceId) {
+      await loadWorkspaceData();
+    } else {
+      render();
+    }
+  } else {
+    render();
+  }
+  return true;
+}
+
 async function reloadWorkspacesAndData() {
   await loadWorkspaces();
   if (state.workspace) {
@@ -7248,6 +7278,9 @@ async function autoRefreshOnChanges() {
       if (pushResult.error || pushResult.remaining.length) {
         const blocked = pushResult.remaining.find(change => change?.needs_attention);
         if (blocked) {
+          if (await handleSyncAccessFailure({ status: blocked.last_error_code })) {
+            return;
+          }
           if (syncStatus) syncStatus.textContent = 'Sync blocked · action required';
           if (blocked.client_mutation_id && blocked.client_mutation_id !== lastSyncAttentionMutationId) {
             lastSyncAttentionMutationId = blocked.client_mutation_id;
@@ -7262,7 +7295,12 @@ async function autoRefreshOnChanges() {
               details: blocked.last_error ?? 'Open tasks and resolve the conflicting change.'
             });
           }
-        } else if (syncStatus) {
+          return;
+        }
+        if (pushResult.error && await handleSyncAccessFailure(pushResult.error)) {
+          return;
+        }
+        if (syncStatus) {
           syncStatus.textContent = `Queued ${(pushResult.remaining ?? []).length} · retry pending`;
         }
         registerSyncFailure();
@@ -7303,7 +7341,11 @@ async function autoRefreshOnChanges() {
       syncStatus.textContent = `Online · synced ${formatSyncTime(syncLastSuccessAt)} · errors ${syncErrorCount}`;
     }
     updateSyncOfflineNotice(false);
-  } catch {
+  } catch (error) {
+    if (await handleSyncAccessFailure(error)) {
+      updateSyncOfflineNotice();
+      return;
+    }
     registerSyncFailure();
     updateSyncOfflineNotice();
   } finally {
@@ -8614,7 +8656,11 @@ async function loadWorkspaces() {
         createdWorkspace = created ? normalizeWorkspace(created) : null;
         workspaces = created ? [created] : [];
       }
-    } catch {
+    } catch (err) {
+      if (isWorkspaceDataResetStatus(err?.status)) {
+        clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true });
+        return;
+      }
       // offline: keep local workspaces
     }
   }
@@ -8652,6 +8698,11 @@ async function loadWorkspaces() {
   persistLocalData();
 }
 
+function isWorkspaceDataResetStatus(status) {
+  const candidate = Number(status);
+  return candidate === 401 || candidate === 403 || candidate === 404;
+}
+
 async function loadWorkspaceData() {
   if (isAuthGateEnabled() && !isAuthenticatedActor()) {
     clearWorkspaceDomainData();
@@ -8676,7 +8727,23 @@ async function loadWorkspaceData() {
       state.shoppingLists = (await api.listShoppingLists(state.workspace.id)).map(normalizeShoppingList);
       const shoppingItems = await api.listShoppingItems(state.workspace.id);
       state.shoppingItems = Object.fromEntries(shoppingItems.map(item => [item.id, normalizeShoppingItem(item)]));
-    } catch {
+    } catch (err) {
+      if (isWorkspaceDataResetStatus(err?.status)) {
+        const failedWorkspaceId = state.workspace?.id ?? null;
+        const errStatus = Number(err?.status);
+        clearWorkspaceDomainData({
+          preserveWorkspaces: errStatus !== 401,
+          clearPendingChanges: true,
+          resetAdminState: true
+        });
+        if (errStatus !== 401) {
+          await loadWorkspaces();
+          if (state.workspace?.id && state.workspace.id !== failedWorkspaceId) {
+            await loadWorkspaceData();
+          }
+        }
+        return;
+      }
       // offline: keep local data
     }
   }
@@ -15635,23 +15702,57 @@ function queueUserSettingsSave({ immediate = false } = {}) {
   }, USER_SETTINGS_SAVE_DEBOUNCE_MS);
 }
 
-function clearWorkspaceDomainData() {
-  // Keep local domain data intact; auth gating should hide UI, not erase local state.
-  state.workspace = null;
-  if (activeTaskId) {
-    closeTaskEditor();
+function clearWorkspaceDomainData({
+  preserveWorkspaces = false,
+  clearPendingChanges = true,
+  resetAdminState = true
+} = {}) {
+  if (taskEditorAutosaveTimer) {
+    clearTimeout(taskEditorAutosaveTimer);
+    taskEditorAutosaveTimer = null;
   }
+  if (taskEditorSwapTimer) {
+    clearTimeout(taskEditorSwapTimer);
+    taskEditorSwapTimer = null;
+  }
+  taskEditor?.classList.remove('is-open');
+  taskEditorScrollbar?.classList.add('hidden');
+  activeTaskId = null;
+  const cleared = prepareLocalDataForStorage({
+    localSeq: clearPendingChanges ? 0 : (state.local?.localSeq ?? 0),
+    pendingChanges: clearPendingChanges ? [] : (state.local?.pendingChanges ?? []),
+    auditLog: [],
+    workspaces: preserveWorkspaces ? (state.workspaces ?? []) : []
+  });
+  applyLocalDataSnapshot(cleared);
+  state.workspaces = (cleared.workspaces ?? []).map(normalizeWorkspace);
+  state.local.localSeq = cleared.localSeq ?? 0;
+  state.local.pendingChanges = cleared.pendingChanges ?? [];
+  state.workspace = null;
+  clearActiveWorkflowChecklistInstanceId();
   state.ui = state.ui ?? {};
+  if (resetAdminState) {
+    state.ui.admin = {};
+  }
   state.ui.activeWorkspaceId = null;
   state.ui.activeProjectId = null;
   state.ui.activeShoppingListId = null;
   state.ui.activeWorkflowId = null;
   state.ui.activeNoticeId = null;
+  state.ui.syncCursor = 0;
+  state.ui.aiSuggestions = [];
+  state.ui.aiSuggestionNotes = '';
+  persistLocalData();
 }
 
 async function hydrateAuthSession() {
+  const persistedProfileEmail = normalizeActorEmail(state.ui?.profile?.email ?? null);
   try {
     const session = await api.getAuthMe();
+    const nextSessionEmail = normalizeActorEmail(session?.user?.email ?? null);
+    if (persistedProfileEmail && nextSessionEmail && persistedProfileEmail !== nextSessionEmail) {
+      clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true });
+    }
     applyAuthPayload(session, { persistProfile: true });
     await hydrateUserSettingsFromServer();
   } catch {
@@ -15661,6 +15762,7 @@ async function hydrateAuthSession() {
 }
 
 async function reloadWorkspaceAfterAuthChange() {
+  clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true });
   await hydrateUserSettingsFromServer();
   await loadWorkspaces();
   await refreshWorkspace();
@@ -16369,7 +16471,7 @@ function setAdminServiceTokenReveal(token = '') {
 }
 
 function getAdminOrgId() {
-  return state.workspace?.org_id ?? getAuthState().user?.org_id ?? DEFAULT_ORG_ID;
+  return getAuthState().user?.org_id ?? DEFAULT_ORG_ID;
 }
 
 function getAvailableGrantWorkspaces(serviceAccount = null) {

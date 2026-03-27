@@ -112,6 +112,7 @@ test('admin console wiring includes service-account API helpers and event handle
 
 test('admin console auto-selects existing service accounts and surfaces summary counts', () => {
   const appScript = readRepoFile('apps/web/app.js');
+  assert.match(appScript, /function getAdminOrgId\(\)\s*\{\s*return getAuthState\(\)\.user\?\.org_id \?\? DEFAULT_ORG_ID;\s*\}/);
   assert.match(appScript, /function normalizeServiceAccountSummary\(/);
   assert.match(appScript, /function resetAdminServiceAccountDetailState\(/);
   assert.match(appScript, /summary\.active_token_count/);

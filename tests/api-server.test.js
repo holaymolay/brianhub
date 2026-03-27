@@ -504,6 +504,51 @@ test('invite accept creates credentials and session, then login/logout cycle wor
   assert.ok(loginCookie);
 });
 
+test('authenticated users only list workspaces they belong to', async () => {
+  const userA = await createAcceptedUser({
+    workspaceName: 'Scoped workspace A',
+    email: 'workspace.scope.a@example.com',
+    displayName: 'Workspace Scope A',
+    password: 'Passw0rd!ScopeA'
+  });
+  const userB = await createAcceptedUser({
+    workspaceName: 'Scoped workspace B',
+    email: 'workspace.scope.b@example.com',
+    displayName: 'Workspace Scope B',
+    password: 'Passw0rd!ScopeB'
+  });
+
+  const listA = await server.inject({
+    method: 'GET',
+    url: '/workspaces',
+    headers: {
+      cookie: userA.cookie
+    }
+  });
+  assert.equal(listA.statusCode, 200);
+  assert.deepEqual(listA.json().map((workspace) => workspace.id), [userA.workspaceId]);
+
+  const meA = await server.inject({
+    method: 'GET',
+    url: '/auth/me',
+    headers: {
+      cookie: userA.cookie
+    }
+  });
+  assert.equal(meA.statusCode, 200);
+  assert.deepEqual(meA.json().workspaces.map((workspace) => workspace.id), [userA.workspaceId]);
+
+  const listB = await server.inject({
+    method: 'GET',
+    url: '/workspaces',
+    headers: {
+      cookie: userB.cookie
+    }
+  });
+  assert.equal(listB.statusCode, 200);
+  assert.deepEqual(listB.json().map((workspace) => workspace.id), [userB.workspaceId]);
+});
+
 test('invite accept rejects email that does not match the invite', async () => {
   const inviteeEmail = 'mismatch.user@example.com';
   const workspaceRes = await server.inject({

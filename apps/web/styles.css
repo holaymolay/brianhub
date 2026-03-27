@@ -2805,8 +2805,8 @@ body.api-help-body {
 #tasks-panel .task-view-toggle {
   margin-left: auto;
   display: flex;
-  flex: 1 1 34rem;
-  width: min(100%, 34rem);
+  flex: 0 1 auto;
+  width: auto;
   max-width: 100%;
 }
 
@@ -3075,6 +3075,22 @@ body.api-help-body {
   gap: 0.28rem;
   min-width: 0;
   flex: 1 1 0;
+}
+
+#tasks-panel .task-toolbar-field {
+  flex: 0 0 auto;
+}
+
+#tasks-panel .task-sort {
+  width: 10.5rem;
+}
+
+#tasks-panel .task-group {
+  width: 11rem;
+}
+
+#tasks-panel .task-view-toggle > .task-toolbar-field:last-of-type {
+  width: 10rem;
 }
 
 #task-columns-button {

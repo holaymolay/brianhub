@@ -3,14 +3,17 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-test('settings expose an organization summary and shared workspace actions', () => {
+test('settings expose a workspace collaboration section and a separate organizations placeholder', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
-  assert.match(html, /<span class="settings-accordion-title">Organization<\/span>/);
+  assert.match(html, /<span class="settings-accordion-title">Workspaces<\/span>/);
+  assert.match(html, /This section is workspace-scoped\. It does not create or manage organizations\./);
   assert.match(html, /id="organization-workspace-name"/);
   assert.match(html, /id="organization-workspace-type"/);
   assert.match(html, /id="organization-member-count"/);
   assert.match(html, /id="organization-create-personal"/);
   assert.match(html, /id="organization-create-shared"/);
+  assert.match(html, /<span class="settings-accordion-title">Organizations<\/span>/);
+  assert.match(html, /Organization creation, membership, and org settings are being rebuilt as a separate surface\./);
 });
 
 test('workspace creation uses a dedicated modal with personal and shared types', () => {

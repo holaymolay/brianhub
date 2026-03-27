@@ -1565,8 +1565,8 @@
             <details class="settings-section settings-accordion">
               <summary class="settings-accordion-summary">
                 <span class="settings-accordion-copy">
-                  <span class="settings-accordion-title">Organization</span>
-                  <span class="settings-accordion-subtitle">Create shared workspaces, invite collaborators, and assign work in one place.</span>
+                  <span class="settings-accordion-title">Workspaces</span>
+                  <span class="settings-accordion-subtitle">Manage personal and shared workspaces and the collaborators inside the active workspace.</span>
                 </span>
                 <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
               </summary>
@@ -1583,6 +1583,7 @@
                     <div class="sidebar-note">Active members in this workspace appear in task assignee menus.</div>
                   </div>
                 </div>
+                <div class="sidebar-note organization-callout">This section is workspace-scoped. It does not create or manage organizations.</div>
                 <div class="sidebar-note organization-callout">Shared workspaces are the point of intersection where people can share tasks, assign work, and collaborate together.</div>
                 <div class="organization-actions">
                   <button id="organization-create-personal" class="subtle-button" type="button">New personal workspace</button>
@@ -1604,6 +1605,19 @@
                   <button id="organization-invite-copy" class="subtle-button" type="button">Copy invite link</button>
                 </div>
                 <div id="team-member-list" class="workspace-list"></div>
+              </div>
+            </details>
+            <details class="settings-section settings-accordion">
+              <summary class="settings-accordion-summary">
+                <span class="settings-accordion-copy">
+                  <span class="settings-accordion-title">Organizations</span>
+                  <span class="settings-accordion-subtitle">Organizations are separate operating entities, not workspaces.</span>
+                </span>
+                <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="settings-accordion-content">
+                <div class="sidebar-note organization-callout">Organization creation, membership, and org settings are being rebuilt as a separate surface.</div>
+                <div class="sidebar-note organization-callout">For now, keep using workspaces for personal and shared work while the real organization model is implemented.</div>
               </div>
             </details>
             <div class="settings-section">

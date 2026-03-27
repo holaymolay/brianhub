@@ -1079,6 +1079,11 @@ server.get('/workspaces', async (request, reply) => {
     if (!org_id) return grantedWorkspaces;
     return grantedWorkspaces.filter((workspace) => workspace.org_id === org_id);
   }
+  if (security?.user?.id) {
+    const userWorkspaces = await listUserWorkspaces(db, security.user.id);
+    if (!org_id) return userWorkspaces;
+    return userWorkspaces.filter((workspace) => workspace.org_id === org_id);
+  }
   return await listWorkspaces(db, org_id);
 });
 
@@ -2578,8 +2583,10 @@ server.post('/tasks/search', async (request, reply) => {
   return await searchTasks(db, workspace_id, { text, status, tag });
 });
 
-server.post('/sync/push', async (request) => {
+server.post('/sync/push', async (request, reply) => {
   const { workspace_id, client_id, changes } = request.body ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   const applied = [];
   const deduped = [];
   if (Array.isArray(changes)) {
@@ -2603,8 +2610,10 @@ server.post('/sync/push', async (request) => {
   return { applied: applied.length, deduped: deduped.length };
 });
 
-server.post('/sync/pull', async (request) => {
+server.post('/sync/pull', async (request, reply) => {
   const { workspace_id, cursor } = request.body ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   const rows = await db.query(
     'SELECT seq, entity_type, entity_id, action, payload, client_id, created_at FROM change_log WHERE workspace_id = ? AND seq > ? ORDER BY seq ASC',
     [workspace_id, cursor ?? 0]

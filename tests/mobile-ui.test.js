@@ -31,9 +31,13 @@ test('desktop task toolbar uses the same select controls for sort, group by, and
   assert.match(html, /id="task-columns-button"/);
   assert.doesNotMatch(html, /id="task-sort-button"/);
   assert.doesNotMatch(html, /id="task-group-button"/);
-  assert.match(css, /#tasks-panel \.task-view-toggle \{[\s\S]*display: flex;[\s\S]*flex: 1 1 34rem;[\s\S]*width: min\(100%, 34rem\);/);
+  assert.match(css, /#tasks-panel \.task-view-toggle \{[\s\S]*display: flex;[\s\S]*flex: 0 1 auto;[\s\S]*width: auto;/);
   assert.match(css, /\.task-view-toggle \{[\s\S]*display: flex;[\s\S]*flex-wrap: nowrap;[\s\S]*min-width: 0;[\s\S]*max-width: 100%;/);
   assert.match(css, /\.task-toolbar-field \{[\s\S]*flex: 1 1 0;/);
+  assert.match(css, /#tasks-panel \.task-toolbar-field \{[\s\S]*flex: 0 0 auto;/);
+  assert.match(css, /#tasks-panel \.task-sort \{[\s\S]*width: 10\.5rem;/);
+  assert.match(css, /#tasks-panel \.task-group \{[\s\S]*width: 11rem;/);
+  assert.match(css, /#tasks-panel \.task-view-toggle > \.task-toolbar-field:last-of-type \{[\s\S]*width: 10rem;/);
   assert.match(css, /\.task-view-select \{[\s\S]*min-width: 0;/);
   assert.match(css, /#task-columns-button \{[\s\S]*flex: 0 0 auto;[\s\S]*align-self: flex-end;/);
 });
