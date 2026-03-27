@@ -266,6 +266,41 @@ const authWorkspaceResponseSchema = {
   }
 };
 
+const orgResponseSchema = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['id', 'name'],
+  properties: {
+    id: uuidSchema,
+    name: nonEmptyString(256),
+    owner_user_id: nullableUuidSchema,
+    owner_display_name: nullableString(256),
+    owner_email: nullableString(320),
+    current_user_role: nullableString(64),
+    member_count: integerSchema,
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema
+  }
+};
+
+const orgMemberResponseSchema = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['org_id', 'user_id', 'role'],
+  properties: {
+    membership_id: nullableUuidSchema,
+    org_id: uuidSchema,
+    user_id: uuidSchema,
+    role: nonEmptyString(64),
+    archived: integerSchema,
+    created_at: nullableDateTimeSchema,
+    updated_at: nullableDateTimeSchema,
+    display_name: nullableString(256),
+    email: nullableString(320),
+    user_archived: nullableIntegerSchema
+  }
+};
+
 const permissionKeyArraySchema = {
   type: 'array',
   uniqueItems: true,
@@ -672,6 +707,115 @@ const routeSchemas = new Map([
         id: uuidSchema,
         name: nonEmptyString(256),
         workspace_id: nullableUuidSchema
+      }
+    }
+  }],
+  ['GET /orgs/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    response: {
+      200: orgResponseSchema
+    }
+  }],
+  ['PATCH /orgs/:id', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        name: nonEmptyString(256)
+      },
+      required: ['name']
+    },
+    response: {
+      200: orgResponseSchema
+    }
+  }],
+  ['GET /orgs/:id/members', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    querystring: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        include_archived: boolishSchema
+      }
+    }
+  }],
+  ['POST /orgs/:id/members', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        user_id: uuidSchema,
+        email: nonEmptyString(320),
+        role: nullableString(64)
+      },
+      anyOf: [{ required: ['user_id'] }, { required: ['email'] }]
+    }
+  }],
+  ['PATCH /orgs/:id/members/:userId', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'userId'],
+      properties: {
+        id: uuidSchema,
+        userId: uuidSchema
+      }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        role: nullableString(64),
+        archived: boolishSchema
+      }
+    }
+  }],
+  ['DELETE /orgs/:id/members/:userId', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'userId'],
+      properties: {
+        id: uuidSchema,
+        userId: uuidSchema
+      }
+    }
+  }],
+  ['POST /orgs/:id/transfer-ownership', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: { id: uuidSchema }
+    },
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['target_user_id'],
+      properties: {
+        target_user_id: uuidSchema
       }
     }
   }],

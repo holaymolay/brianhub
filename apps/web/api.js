@@ -226,6 +226,50 @@ export function createOrg(data) {
   return request('/orgs', { method: 'POST', body: JSON.stringify(data) });
 }
 
+export function getOrg(orgId) {
+  return request(`/orgs/${encodeURIComponent(orgId)}`);
+}
+
+export function updateOrg(orgId, patch) {
+  return request(`/orgs/${encodeURIComponent(orgId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch)
+  });
+}
+
+export function listOrgMembers(orgId, { includeArchived = false } = {}) {
+  const params = new URLSearchParams();
+  params.set('include_archived', includeArchived ? '1' : '0');
+  return request(`/orgs/${encodeURIComponent(orgId)}/members?${params.toString()}`);
+}
+
+export function addOrgMember(orgId, data) {
+  return request(`/orgs/${encodeURIComponent(orgId)}/members`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export function updateOrgMember(orgId, userId, patch) {
+  return request(`/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteOrgMember(orgId, userId) {
+  return request(`/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`, {
+    method: 'DELETE'
+  });
+}
+
+export function transferOrgOwnership(orgId, data) {
+  return request(`/orgs/${encodeURIComponent(orgId)}/transfer-ownership`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
 export function listUsers({ orgId = null, workspaceId = null } = {}) {
   const params = new URLSearchParams();
   if (orgId) params.set('org_id', orgId);

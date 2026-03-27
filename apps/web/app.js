@@ -320,6 +320,25 @@ const organizationInviteStatus = document.getElementById('organization-invite-st
 const organizationInviteTokenWrap = document.getElementById('organization-invite-token-wrap');
 const organizationInviteToken = document.getElementById('organization-invite-token');
 const organizationInviteCopy = document.getElementById('organization-invite-copy');
+const settingsOrgName = document.getElementById('settings-org-name');
+const settingsOrgRole = document.getElementById('settings-org-role');
+const settingsOrgOwner = document.getElementById('settings-org-owner');
+const settingsOrgMemberCount = document.getElementById('settings-org-member-count');
+const settingsOrgCreateName = document.getElementById('settings-org-create-name');
+const settingsOrgCreateButton = document.getElementById('settings-org-create-button');
+const settingsOrgStatus = document.getElementById('settings-org-status');
+const settingsOrgList = document.getElementById('settings-org-list');
+const settingsOrgEmpty = document.getElementById('settings-org-empty');
+const settingsOrgDetail = document.getElementById('settings-org-detail');
+const settingsOrgEditName = document.getElementById('settings-org-edit-name');
+const settingsOrgSaveButton = document.getElementById('settings-org-save-button');
+const settingsOrgMemberEmail = document.getElementById('settings-org-member-email');
+const settingsOrgMemberRole = document.getElementById('settings-org-member-role');
+const settingsOrgMemberAdd = document.getElementById('settings-org-member-add');
+const settingsOrgMemberStatus = document.getElementById('settings-org-member-status');
+const settingsOrgMemberList = document.getElementById('settings-org-member-list');
+const settingsOrgTransferOwner = document.getElementById('settings-org-transfer-owner');
+const settingsOrgTransferButton = document.getElementById('settings-org-transfer-button');
 const taskTypeListEl = document.getElementById('task-type-list');
 const taskTypeNameInput = document.getElementById('task-type-name');
 const taskTypeAddBtn = document.getElementById('task-type-add');
@@ -13476,6 +13495,7 @@ function render() {
   renderAccountMenu();
   renderProfilePage();
   renderOrganizationPanel();
+  renderOrganizationsSettings();
   renderAdminPage();
   renderTaskSidebarList();
   renderProjectList();
@@ -15734,6 +15754,7 @@ function clearWorkspaceDomainData({
   if (resetAdminState) {
     state.ui.admin = {};
   }
+  state.ui.organizations = {};
   state.ui.activeWorkspaceId = null;
   state.ui.activeProjectId = null;
   state.ui.activeShoppingListId = null;
@@ -15952,6 +15973,391 @@ function setOrganizationInviteToken(token = '') {
   organizationInviteTokenWrap.classList.toggle('hidden', !safeToken);
 }
 
+function normalizeOrganizationRole(value) {
+  const role = String(value ?? '').trim().toLowerCase();
+  if (role === 'owner' || role === 'admin') return role;
+  return 'member';
+}
+
+function getOrganizationRoleLabel(role) {
+  const normalized = normalizeOrganizationRole(role);
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function normalizeOrganizationRecord(org) {
+  if (!org || typeof org !== 'object') return null;
+  return {
+    ...org,
+    current_user_role: normalizeOrganizationRole(org.current_user_role),
+    member_count: Number.isFinite(Number(org.member_count)) ? Number(org.member_count) : 0
+  };
+}
+
+function normalizeOrganizationMemberRecord(member) {
+  if (!member || typeof member !== 'object') return null;
+  return {
+    ...member,
+    role: normalizeOrganizationRole(member.role),
+    archived: Number(member.archived) ? 1 : 0,
+    user_archived: Number(member.user_archived) ? 1 : 0
+  };
+}
+
+function getOrganizationSettingsState() {
+  state.ui = state.ui ?? {};
+  if (!state.ui.organizations || typeof state.ui.organizations !== 'object') {
+    state.ui.organizations = {};
+  }
+  const orgState = state.ui.organizations;
+  orgState.items = Array.isArray(orgState.items) ? orgState.items : [];
+  orgState.loading = Boolean(orgState.loading);
+  orgState.loaded = Boolean(orgState.loaded);
+  orgState.error = String(orgState.error ?? '');
+  orgState.selectedOrgId = String(orgState.selectedOrgId ?? '').trim();
+  orgState.membersByOrgId = orgState.membersByOrgId && typeof orgState.membersByOrgId === 'object'
+    ? orgState.membersByOrgId
+    : {};
+  orgState.membersLoadingByOrgId = orgState.membersLoadingByOrgId && typeof orgState.membersLoadingByOrgId === 'object'
+    ? orgState.membersLoadingByOrgId
+    : {};
+  orgState.membersLoadedByOrgId = orgState.membersLoadedByOrgId && typeof orgState.membersLoadedByOrgId === 'object'
+    ? orgState.membersLoadedByOrgId
+    : {};
+  orgState.membersErrorByOrgId = orgState.membersErrorByOrgId && typeof orgState.membersErrorByOrgId === 'object'
+    ? orgState.membersErrorByOrgId
+    : {};
+  return orgState;
+}
+
+function isVisibleOrganizationRecord(org) {
+  return Boolean(org?.id) && org.id !== DEFAULT_ORG_ID;
+}
+
+function getVisibleOrganizations() {
+  return getOrganizationSettingsState().items.filter(isVisibleOrganizationRecord);
+}
+
+function getSelectedSettingsOrganization() {
+  const orgState = getOrganizationSettingsState();
+  const organizations = getVisibleOrganizations();
+  if (!organizations.length) {
+    orgState.selectedOrgId = '';
+    return null;
+  }
+  const selected = organizations.find((org) => org.id === orgState.selectedOrgId) ?? organizations[0];
+  orgState.selectedOrgId = selected.id;
+  return selected;
+}
+
+function getSelectedOrganizationMembers() {
+  const selected = getSelectedSettingsOrganization();
+  if (!selected) return [];
+  const orgState = getOrganizationSettingsState();
+  return Array.isArray(orgState.membersByOrgId[selected.id]) ? orgState.membersByOrgId[selected.id] : [];
+}
+
+function setOrganizationStatusNode(node, message = '', tone = '') {
+  if (!node) return;
+  node.textContent = String(message ?? '');
+  if (tone) {
+    node.dataset.tone = tone;
+  } else {
+    delete node.dataset.tone;
+  }
+}
+
+function setOrganizationSettingsStatus(message = '', tone = '') {
+  setOrganizationStatusNode(settingsOrgStatus, message, tone);
+}
+
+function setOrganizationMemberStatus(message = '', tone = '') {
+  setOrganizationStatusNode(settingsOrgMemberStatus, message, tone);
+}
+
+async function refreshOrganizations({ preserveSelection = true } = {}) {
+  const orgState = getOrganizationSettingsState();
+  if (orgState.loading) return;
+  if (!isAuthenticatedActor()) {
+    state.ui.organizations = {};
+    renderOrganizationsSettings();
+    return;
+  }
+  orgState.loading = true;
+  orgState.error = '';
+  renderOrganizationsSettings();
+  try {
+    const response = await api.listOrgs();
+    const organizations = (Array.isArray(response) ? response : response?.orgs ?? [])
+      .map(normalizeOrganizationRecord)
+      .filter(Boolean);
+    const previousSelection = preserveSelection ? orgState.selectedOrgId : '';
+    orgState.items = organizations;
+    orgState.loaded = true;
+    orgState.selectedOrgId = previousSelection;
+    const selected = getSelectedSettingsOrganization();
+    if (selected?.id) {
+      orgState.selectedOrgId = selected.id;
+    }
+  } catch (err) {
+    orgState.error = err?.message ?? 'Unable to load organizations.';
+  } finally {
+    orgState.loading = false;
+    renderOrganizationsSettings();
+  }
+  const selected = getSelectedSettingsOrganization();
+  if (selected?.id) {
+    void refreshSelectedOrganizationMembers(selected.id);
+  }
+}
+
+async function refreshSelectedOrganizationMembers(orgId = getSelectedSettingsOrganization()?.id ?? '') {
+  const safeOrgId = String(orgId ?? '').trim();
+  const orgState = getOrganizationSettingsState();
+  if (!safeOrgId) {
+    renderOrganizationsSettings();
+    return;
+  }
+  if (orgState.membersLoadingByOrgId[safeOrgId]) return;
+  orgState.membersLoadingByOrgId[safeOrgId] = true;
+  orgState.membersErrorByOrgId[safeOrgId] = '';
+  renderOrganizationsSettings();
+  try {
+    const response = await api.listOrgMembers(safeOrgId);
+    orgState.membersByOrgId[safeOrgId] = Array.isArray(response?.members)
+      ? response.members.map(normalizeOrganizationMemberRecord).filter(Boolean)
+      : [];
+    orgState.membersLoadedByOrgId[safeOrgId] = true;
+    const selected = getSelectedSettingsOrganization();
+    if (selected?.id === safeOrgId && response?.org) {
+      orgState.items = orgState.items.map((org) =>
+        org.id === safeOrgId
+          ? normalizeOrganizationRecord({
+            ...org,
+            ...response.org,
+            current_user_role: org.current_user_role
+          })
+          : org
+      );
+    }
+  } catch (err) {
+    orgState.membersErrorByOrgId[safeOrgId] = err?.message ?? 'Unable to load organization members.';
+  } finally {
+    orgState.membersLoadingByOrgId[safeOrgId] = false;
+    renderOrganizationsSettings();
+  }
+}
+
+function renderOrganizationsSettings() {
+  const orgState = getOrganizationSettingsState();
+  const authenticated = isAuthenticatedActor();
+  const organizations = getVisibleOrganizations();
+  const selected = getSelectedSettingsOrganization();
+  const selectedMembers = selected ? getSelectedOrganizationMembers() : [];
+  const selectedRole = normalizeOrganizationRole(selected?.current_user_role);
+  const canManageSelected = Boolean(selected && (selectedRole === 'owner' || selectedRole === 'admin'));
+  const canTransferSelected = Boolean(selected && selectedRole === 'owner');
+
+  if (settingsOrgName) {
+    settingsOrgName.textContent = selected?.name ?? 'No organization selected';
+  }
+  if (settingsOrgRole) {
+    settingsOrgRole.textContent = selected
+      ? `${getOrganizationRoleLabel(selectedRole)} access`
+      : 'Create an organization to start collaborating.';
+  }
+  if (settingsOrgOwner) {
+    settingsOrgOwner.textContent = selected
+      ? (selected.owner_display_name?.trim() || selected.owner_email?.trim() || 'Unknown owner')
+      : '—';
+  }
+  if (settingsOrgMemberCount) {
+    const count = selected?.member_count ?? selectedMembers.length;
+    settingsOrgMemberCount.textContent = `${count} member${count === 1 ? '' : 's'}`;
+  }
+  if (settingsOrgCreateName) {
+    settingsOrgCreateName.disabled = !authenticated;
+  }
+  if (settingsOrgCreateButton) {
+    settingsOrgCreateButton.disabled = !authenticated;
+  }
+
+  if (settingsOrgList) {
+    settingsOrgList.innerHTML = '';
+    if (orgState.loading && !organizations.length) {
+      const loading = document.createElement('div');
+      loading.className = 'sidebar-note';
+      loading.textContent = 'Loading organizations...';
+      settingsOrgList.appendChild(loading);
+    } else if (orgState.error) {
+      const error = document.createElement('div');
+      error.className = 'sidebar-note';
+      error.dataset.tone = 'error';
+      error.textContent = orgState.error;
+      settingsOrgList.appendChild(error);
+    } else if (!organizations.length) {
+      const empty = document.createElement('div');
+      empty.className = 'sidebar-note';
+      empty.textContent = 'No organizations yet.';
+      settingsOrgList.appendChild(empty);
+    } else {
+      organizations.forEach((org) => {
+        const row = document.createElement('div');
+        row.className = 'workspace-row';
+        if (selected?.id === org.id) {
+          row.classList.add('active');
+        }
+        const selectBtn = document.createElement('button');
+        selectBtn.type = 'button';
+        selectBtn.className = 'workspace-select';
+        const roleText = getOrganizationRoleLabel(org.current_user_role);
+        const count = Number.isFinite(Number(org.member_count)) ? Number(org.member_count) : 0;
+        selectBtn.textContent = `${org.name} · ${roleText} · ${count} member${count === 1 ? '' : 's'}`;
+        selectBtn.addEventListener('click', () => {
+          orgState.selectedOrgId = org.id;
+          setOrganizationSettingsStatus('');
+          setOrganizationMemberStatus('');
+          renderOrganizationsSettings();
+          void refreshSelectedOrganizationMembers(org.id);
+        });
+        row.appendChild(selectBtn);
+        settingsOrgList.appendChild(row);
+      });
+    }
+  }
+
+  if (settingsOrgEmpty) {
+    settingsOrgEmpty.classList.toggle('hidden', Boolean(selected));
+  }
+  if (settingsOrgDetail) {
+    settingsOrgDetail.classList.toggle('hidden', !selected);
+  }
+  if (settingsOrgEditName) {
+    settingsOrgEditName.disabled = !selected || !canManageSelected;
+    if (document.activeElement !== settingsOrgEditName) {
+      settingsOrgEditName.value = selected?.name ?? '';
+    }
+  }
+  if (settingsOrgSaveButton) {
+    settingsOrgSaveButton.disabled = !selected || !canManageSelected;
+  }
+  if (settingsOrgMemberEmail) {
+    settingsOrgMemberEmail.disabled = !selected || !canManageSelected;
+  }
+  if (settingsOrgMemberRole) {
+    settingsOrgMemberRole.disabled = !selected || !canManageSelected;
+  }
+  if (settingsOrgMemberAdd) {
+    settingsOrgMemberAdd.disabled = !selected || !canManageSelected;
+  }
+
+  if (settingsOrgMemberList) {
+    settingsOrgMemberList.innerHTML = '';
+    if (!selected) {
+      // Nothing to render.
+    } else if (orgState.membersLoadingByOrgId[selected.id] && !selectedMembers.length) {
+      const loading = document.createElement('div');
+      loading.className = 'sidebar-note';
+      loading.textContent = 'Loading members...';
+      settingsOrgMemberList.appendChild(loading);
+    } else if (orgState.membersErrorByOrgId[selected.id]) {
+      const error = document.createElement('div');
+      error.className = 'sidebar-note';
+      error.dataset.tone = 'error';
+      error.textContent = orgState.membersErrorByOrgId[selected.id];
+      settingsOrgMemberList.appendChild(error);
+    } else if (!selectedMembers.length) {
+      const empty = document.createElement('div');
+      empty.className = 'sidebar-note';
+      empty.textContent = 'No members yet.';
+      settingsOrgMemberList.appendChild(empty);
+    } else {
+      selectedMembers.forEach((member) => {
+        const row = document.createElement('div');
+        row.className = 'workspace-row';
+
+        const summary = document.createElement('div');
+        summary.className = 'workspace-select';
+        const emailText = member.email ? ` · ${member.email}` : '';
+        summary.textContent = `${member.display_name || member.email || member.user_id}${emailText}`;
+
+        row.appendChild(summary);
+
+        if (member.role === 'owner') {
+          const ownerLabel = document.createElement('div');
+          ownerLabel.className = 'sidebar-note';
+          ownerLabel.textContent = 'Owner';
+          row.appendChild(ownerLabel);
+        } else {
+          const roleSelect = document.createElement('select');
+          roleSelect.className = 'setting-input';
+          roleSelect.innerHTML = [
+            '<option value="member">Member</option>',
+            '<option value="admin">Admin</option>'
+          ].join('');
+          roleSelect.value = member.role;
+          roleSelect.disabled = !canManageSelected;
+          roleSelect.addEventListener('change', async () => {
+            try {
+              await api.updateOrgMember(selected.id, member.user_id, { role: roleSelect.value });
+              setOrganizationMemberStatus(`${member.display_name || member.email} updated.`);
+              await refreshSelectedOrganizationMembers(selected.id);
+              await refreshOrganizations();
+            } catch (err) {
+              roleSelect.value = member.role;
+              setOrganizationMemberStatus(err?.message ?? 'Unable to update member role.', 'error');
+            }
+          });
+          row.appendChild(roleSelect);
+
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'icon-button';
+          removeBtn.textContent = '✕';
+          removeBtn.title = 'Remove member';
+          removeBtn.disabled = !canManageSelected;
+          removeBtn.addEventListener('click', async () => {
+            const confirmed = confirm(`Remove ${member.display_name || member.email || 'this member'} from ${selected.name}?`);
+            if (!confirmed) return;
+            try {
+              await api.deleteOrgMember(selected.id, member.user_id);
+              setOrganizationMemberStatus(`${member.display_name || member.email} removed.`);
+              await refreshSelectedOrganizationMembers(selected.id);
+              await refreshOrganizations();
+            } catch (err) {
+              setOrganizationMemberStatus(err?.message ?? 'Unable to remove organization member.', 'error');
+            }
+          });
+          row.appendChild(removeBtn);
+        }
+
+        settingsOrgMemberList.appendChild(row);
+      });
+    }
+  }
+
+  if (settingsOrgTransferOwner) {
+    settingsOrgTransferOwner.innerHTML = '';
+    const transferCandidates = selectedMembers.filter((member) => member.role !== 'owner' && !member.archived && !member.user_archived);
+    if (!transferCandidates.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'No eligible members';
+      settingsOrgTransferOwner.appendChild(option);
+    } else {
+      transferCandidates.forEach((member) => {
+        const option = document.createElement('option');
+        option.value = member.user_id;
+        option.textContent = member.display_name || member.email || member.user_id;
+        settingsOrgTransferOwner.appendChild(option);
+      });
+    }
+    settingsOrgTransferOwner.disabled = !canTransferSelected || !transferCandidates.length;
+  }
+  if (settingsOrgTransferButton) {
+    settingsOrgTransferButton.disabled = !canTransferSelected || !selectedMembers.some((member) => member.role !== 'owner' && !member.archived && !member.user_archived);
+  }
+}
+
 function syncWorkspaceCreateTypeNote() {
   if (!workspaceCreateTypeNote) return;
   const type = normalizeWorkspaceType(workspaceCreateType?.value ?? 'personal');
@@ -16115,6 +16521,126 @@ function renderOrganizationPanel() {
   }
   if (organizationCreateSharedBtn) {
     organizationCreateSharedBtn.disabled = shouldShowAuthGatePage();
+  }
+}
+
+async function createOrganizationFromSettings() {
+  const name = normalizeTitleInput(settingsOrgCreateName?.value ?? '');
+  if (!name) {
+    setOrganizationSettingsStatus('Organization name is required.', 'error');
+    settingsOrgCreateName?.focus();
+    return;
+  }
+  settingsOrgCreateButton?.setAttribute('disabled', 'true');
+  try {
+    const created = normalizeOrganizationRecord(await api.createOrg({ name }));
+    if (settingsOrgCreateName) settingsOrgCreateName.value = '';
+    const orgState = getOrganizationSettingsState();
+    if (created) {
+      const existingIndex = orgState.items.findIndex((org) => org.id === created.id);
+      if (existingIndex >= 0) {
+        orgState.items[existingIndex] = created;
+      } else {
+        orgState.items = [...orgState.items, created];
+      }
+      orgState.selectedOrgId = created.id;
+    }
+    setOrganizationSettingsStatus(`Created ${created?.name ?? 'organization'}.`);
+    setOrganizationMemberStatus('');
+    renderOrganizationsSettings();
+    await refreshOrganizations();
+    if (created?.id) {
+      await refreshSelectedOrganizationMembers(created.id);
+    }
+  } catch (err) {
+    setOrganizationSettingsStatus(err?.message ?? 'Unable to create organization.', 'error');
+  } finally {
+    settingsOrgCreateButton?.removeAttribute('disabled');
+  }
+}
+
+async function saveSelectedOrganizationFromSettings() {
+  const selected = getSelectedSettingsOrganization();
+  if (!selected) {
+    setOrganizationSettingsStatus('Select an organization first.', 'error');
+    return;
+  }
+  const name = normalizeTitleInput(settingsOrgEditName?.value ?? selected.name);
+  if (!name) {
+    setOrganizationSettingsStatus('Organization name is required.', 'error');
+    settingsOrgEditName?.focus();
+    return;
+  }
+  settingsOrgSaveButton?.setAttribute('disabled', 'true');
+  try {
+    const updated = normalizeOrganizationRecord(await api.updateOrg(selected.id, { name }));
+    const orgState = getOrganizationSettingsState();
+    orgState.items = orgState.items.map((org) => (org.id === updated?.id ? updated : org));
+    setOrganizationSettingsStatus(`Updated ${updated?.name ?? 'organization'}.`);
+    renderOrganizationsSettings();
+  } catch (err) {
+    setOrganizationSettingsStatus(err?.message ?? 'Unable to update organization.', 'error');
+  } finally {
+    settingsOrgSaveButton?.removeAttribute('disabled');
+  }
+}
+
+async function addOrganizationMemberFromSettings() {
+  const selected = getSelectedSettingsOrganization();
+  if (!selected) {
+    setOrganizationMemberStatus('Select an organization first.', 'error');
+    return;
+  }
+  const email = normalizeActorEmail(settingsOrgMemberEmail?.value ?? '');
+  if (!email) {
+    setOrganizationMemberStatus('Enter the existing user email to add.', 'error');
+    settingsOrgMemberEmail?.focus();
+    return;
+  }
+  const role = normalizeOrganizationRole(settingsOrgMemberRole?.value ?? 'member');
+  settingsOrgMemberAdd?.setAttribute('disabled', 'true');
+  try {
+    await api.addOrgMember(selected.id, { email, role });
+    if (settingsOrgMemberEmail) settingsOrgMemberEmail.value = '';
+    if (settingsOrgMemberRole) settingsOrgMemberRole.value = 'member';
+    setOrganizationMemberStatus(`Added ${email} to ${selected.name}.`);
+    await refreshSelectedOrganizationMembers(selected.id);
+    await refreshOrganizations();
+  } catch (err) {
+    setOrganizationMemberStatus(err?.message ?? 'Unable to add organization member.', 'error');
+  } finally {
+    settingsOrgMemberAdd?.removeAttribute('disabled');
+  }
+}
+
+async function transferSelectedOrganizationOwnership() {
+  const selected = getSelectedSettingsOrganization();
+  if (!selected) {
+    setOrganizationMemberStatus('Select an organization first.', 'error');
+    return;
+  }
+  const targetUserId = String(settingsOrgTransferOwner?.value ?? '').trim();
+  if (!targetUserId) {
+    setOrganizationMemberStatus('Select the next owner first.', 'error');
+    settingsOrgTransferOwner?.focus();
+    return;
+  }
+  const targetMember = getSelectedOrganizationMembers().find((member) => member.user_id === targetUserId);
+  const confirmed = confirm(`Transfer ownership of ${selected.name} to ${targetMember?.display_name || targetMember?.email || 'this member'}?`);
+  if (!confirmed) return;
+  settingsOrgTransferButton?.setAttribute('disabled', 'true');
+  try {
+    const response = await api.transferOrgOwnership(selected.id, { target_user_id: targetUserId });
+    const updated = normalizeOrganizationRecord(response?.org);
+    const orgState = getOrganizationSettingsState();
+    orgState.items = orgState.items.map((org) => (org.id === updated?.id ? updated : org));
+    setOrganizationMemberStatus(`Ownership transferred to ${targetMember?.display_name || targetMember?.email || 'the selected member'}.`);
+    await refreshOrganizations();
+    await refreshSelectedOrganizationMembers(selected.id);
+  } catch (err) {
+    setOrganizationMemberStatus(err?.message ?? 'Unable to transfer organization ownership.', 'error');
+  } finally {
+    settingsOrgTransferButton?.removeAttribute('disabled');
   }
 }
 
@@ -25162,6 +25688,7 @@ function openSettings(preferredTab = null) {
   settingsModal?.classList.remove('hidden');
   renderSettingsTabs();
   renderAuditLogOutput();
+  void refreshOrganizations();
 }
 
 function closeSettings() {
@@ -28172,6 +28699,33 @@ settingsOpenAutomation?.addEventListener('click', () => {
 });
 settingsOpenHelp?.addEventListener('click', () => {
   openSettingsLinkedPage('help');
+});
+settingsOrgCreateButton?.addEventListener('click', () => {
+  void createOrganizationFromSettings();
+});
+settingsOrgCreateName?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  void createOrganizationFromSettings();
+});
+settingsOrgSaveButton?.addEventListener('click', () => {
+  void saveSelectedOrganizationFromSettings();
+});
+settingsOrgEditName?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  void saveSelectedOrganizationFromSettings();
+});
+settingsOrgMemberAdd?.addEventListener('click', () => {
+  void addOrganizationMemberFromSettings();
+});
+settingsOrgMemberEmail?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  void addOrganizationMemberFromSettings();
+});
+settingsOrgTransferButton?.addEventListener('click', () => {
+  void transferSelectedOrganizationOwnership();
 });
 organizationCreatePersonalBtn?.addEventListener('click', () => {
   openWorkspaceCreateModal('personal');

@@ -951,3 +951,156 @@ test('owner/admin permissions enforce role guardrails and ownership transfer', a
   });
   assert.equal(ownerPasswordResetByAdmin.statusCode, 403);
 });
+
+test('organization settings support create, membership management, and ownership transfer', async () => {
+  const orgOwner = await createAcceptedUser({
+    workspaceName: 'Org owner home workspace',
+    email: 'org.owner@example.com',
+    displayName: 'Org Owner',
+    password: 'Passw0rd!OrgOwner'
+  });
+  const orgAdmin = await createAcceptedUser({
+    workspaceName: 'Org admin home workspace',
+    email: 'org.admin@example.com',
+    displayName: 'Org Admin',
+    password: 'Passw0rd!OrgAdmin'
+  });
+  const orgMember = await createAcceptedUser({
+    workspaceName: 'Org member home workspace',
+    email: 'org.member@example.com',
+    displayName: 'Org Member',
+    password: 'Passw0rd!OrgMember'
+  });
+
+  const createOrgRes = await server.inject({
+    method: 'POST',
+    url: '/orgs',
+    headers: {
+      cookie: orgOwner.cookie
+    },
+    payload: {
+      name: 'Pipe Cam'
+    }
+  });
+  assert.equal(createOrgRes.statusCode, 200);
+  const createdOrg = createOrgRes.json();
+  assert.equal(createdOrg.name, 'Pipe Cam');
+  assert.equal(createdOrg.owner_user_id, orgOwner.auth.user.id);
+
+  const ownerOrgsRes = await server.inject({
+    method: 'GET',
+    url: '/orgs',
+    headers: {
+      cookie: orgOwner.cookie
+    }
+  });
+  assert.equal(ownerOrgsRes.statusCode, 200);
+  const ownerOrgEntry = ownerOrgsRes.json().find((org) => org.id === createdOrg.id);
+  assert.equal(ownerOrgEntry.current_user_role, 'owner');
+
+  const addAdminRes = await server.inject({
+    method: 'POST',
+    url: `/orgs/${createdOrg.id}/members`,
+    headers: {
+      cookie: orgOwner.cookie
+    },
+    payload: {
+      email: orgAdmin.auth.user.email,
+      role: 'admin'
+    }
+  });
+  assert.equal(addAdminRes.statusCode, 200);
+  assert.equal(addAdminRes.json().member.role, 'admin');
+
+  const addMemberRes = await server.inject({
+    method: 'POST',
+    url: `/orgs/${createdOrg.id}/members`,
+    headers: {
+      cookie: orgOwner.cookie
+    },
+    payload: {
+      email: orgMember.auth.user.email,
+      role: 'member'
+    }
+  });
+  assert.equal(addMemberRes.statusCode, 200);
+  assert.equal(addMemberRes.json().member.role, 'member');
+
+  const adminMembersRes = await server.inject({
+    method: 'GET',
+    url: `/orgs/${createdOrg.id}/members`,
+    headers: {
+      cookie: orgAdmin.cookie
+    }
+  });
+  assert.equal(adminMembersRes.statusCode, 200);
+  assert.equal(adminMembersRes.json().count, 3);
+
+  const promoteMemberRes = await server.inject({
+    method: 'PATCH',
+    url: `/orgs/${createdOrg.id}/members/${orgMember.auth.user.id}`,
+    headers: {
+      cookie: orgAdmin.cookie
+    },
+    payload: {
+      role: 'admin'
+    }
+  });
+  assert.equal(promoteMemberRes.statusCode, 200);
+  assert.equal(promoteMemberRes.json().member.role, 'admin');
+
+  const transferRes = await server.inject({
+    method: 'POST',
+    url: `/orgs/${createdOrg.id}/transfer-ownership`,
+    headers: {
+      cookie: orgOwner.cookie
+    },
+    payload: {
+      target_user_id: orgAdmin.auth.user.id
+    }
+  });
+  assert.equal(transferRes.statusCode, 200);
+  assert.equal(transferRes.json().org.owner_user_id, orgAdmin.auth.user.id);
+
+  const adminOrgsAfterTransferRes = await server.inject({
+    method: 'GET',
+    url: '/orgs',
+    headers: {
+      cookie: orgAdmin.cookie
+    }
+  });
+  assert.equal(adminOrgsAfterTransferRes.statusCode, 200);
+  const adminOrgAfterTransfer = adminOrgsAfterTransferRes.json().find((org) => org.id === createdOrg.id);
+  assert.equal(adminOrgAfterTransfer.current_user_role, 'owner');
+
+  const ownerOrgsAfterTransferRes = await server.inject({
+    method: 'GET',
+    url: '/orgs',
+    headers: {
+      cookie: orgOwner.cookie
+    }
+  });
+  assert.equal(ownerOrgsAfterTransferRes.statusCode, 200);
+  const ownerOrgAfterTransfer = ownerOrgsAfterTransferRes.json().find((org) => org.id === createdOrg.id);
+  assert.equal(ownerOrgAfterTransfer.current_user_role, 'admin');
+
+  const removeMemberRes = await server.inject({
+    method: 'DELETE',
+    url: `/orgs/${createdOrg.id}/members/${orgMember.auth.user.id}`,
+    headers: {
+      cookie: orgAdmin.cookie
+    }
+  });
+  assert.equal(removeMemberRes.statusCode, 200);
+  assert.equal(removeMemberRes.json().ok, true);
+
+  const membersAfterRemovalRes = await server.inject({
+    method: 'GET',
+    url: `/orgs/${createdOrg.id}/members`,
+    headers: {
+      cookie: orgAdmin.cookie
+    }
+  });
+  assert.equal(membersAfterRemovalRes.statusCode, 200);
+  assert.equal(membersAfterRemovalRes.json().count, 2);
+});

@@ -124,6 +124,14 @@ function normalizeOrgRole(value) {
   throw new Error('Invalid org role');
 }
 
+function normalizeOrgMembershipRole(value, { allowOwner = true } = {}) {
+  const role = String(value ?? '').trim().toLowerCase();
+  if (!role) return 'member';
+  if (role === 'member' || role === 'admin') return role;
+  if (allowOwner && role === 'owner') return role;
+  throw new Error('Invalid organization role');
+}
+
 function normalizeAssigneeLabel(value) {
   const text = String(value ?? '').trim();
   return text || null;
@@ -567,6 +575,82 @@ async function ensureOrg(db, orgId, name = 'Default') {
   );
 }
 
+const ORG_DETAIL_COLUMNS = `
+  o.id,
+  o.name,
+  o.owner_user_id,
+  o.created_at,
+  o.updated_at,
+  owner.display_name AS owner_display_name,
+  owner.email AS owner_email,
+  CAST((
+    SELECT COUNT(*)
+      FROM org_memberships om_count
+      JOIN users u_count ON u_count.id = om_count.user_id
+     WHERE om_count.org_id = o.id
+       AND om_count.archived = 0
+       AND u_count.archived = 0
+  ) AS INTEGER) AS member_count
+`;
+
+async function getOrgMembershipRow(db, orgId, userId, { includeArchived = false } = {}) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const safeUserId = assertUuid(userId, 'user_id');
+  const archivedClause = includeArchived ? '' : ' AND archived = 0';
+  return getRow(
+    db,
+    `SELECT *
+       FROM org_memberships
+      WHERE org_id = ? AND user_id = ?${archivedClause}
+      LIMIT 1`,
+    [safeOrgId, safeUserId]
+  );
+}
+
+async function ensureOrgMembership(db, orgId, userId, role = 'member') {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const safeUserId = assertUuid(userId, 'user_id');
+  const safeRole = normalizeOrgMembershipRole(role);
+  const existing = await getOrgMembershipRow(db, safeOrgId, safeUserId, { includeArchived: true });
+  const timestamp = nowIso();
+  if (existing) {
+    const nextRole = safeRole === 'owner' || existing.role !== 'owner'
+      ? safeRole
+      : existing.role;
+    await run(
+      db,
+      'UPDATE org_memberships SET role = ?, archived = 0, updated_at = ? WHERE id = ?',
+      [nextRole, timestamp, existing.id]
+    );
+    return getOrgMembershipRow(db, safeOrgId, safeUserId);
+  }
+  const membership = {
+    id: randomUUID(),
+    org_id: safeOrgId,
+    user_id: safeUserId,
+    role: safeRole,
+    archived: 0,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+  await run(
+    db,
+    `INSERT INTO org_memberships
+      (id, org_id, user_id, role, archived, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      membership.id,
+      membership.org_id,
+      membership.user_id,
+      membership.role,
+      membership.archived,
+      membership.created_at,
+      membership.updated_at
+    ]
+  );
+  return membership;
+}
+
 async function run(db, sql, params = []) {
   await db.exec(sql, params);
 }
@@ -774,34 +858,258 @@ export async function listWorkspaces(db, orgId = DEFAULT_ORG_ID) {
   return getRows(db, 'SELECT * FROM workspaces WHERE org_id = ?', [safeOrgId]);
 }
 
-export async function listOrgs(db) {
-  return getRows(db, 'SELECT * FROM orgs ORDER BY name ASC');
+export async function getOrg(db, id) {
+  const safeOrgId = assertUuid(id, 'org_id');
+  return getRow(
+    db,
+    `SELECT ${ORG_DETAIL_COLUMNS}
+       FROM orgs o
+       LEFT JOIN users owner ON owner.id = o.owner_user_id
+      WHERE o.id = ?
+      LIMIT 1`,
+    [safeOrgId]
+  );
+}
+
+export async function listOrgs(db, { userId = null } = {}) {
+  const safeUserId = optionalUuid(userId, 'user_id');
+  if (!safeUserId) {
+    return getRows(
+      db,
+      `SELECT ${ORG_DETAIL_COLUMNS}
+         FROM orgs o
+         LEFT JOIN users owner ON owner.id = o.owner_user_id
+        ORDER BY lower(o.name) ASC`
+    );
+  }
+  return getRows(
+    db,
+    `SELECT ${ORG_DETAIL_COLUMNS},
+       om.role AS current_user_role
+      FROM orgs o
+      LEFT JOIN users owner ON owner.id = o.owner_user_id
+      JOIN org_memberships om ON om.org_id = o.id
+     WHERE om.user_id = ?
+       AND om.archived = 0
+     ORDER BY lower(o.name) ASC`,
+    [safeUserId]
+  );
 }
 
 export async function createOrg(db, data, clientId = null) {
   const id = ensureUuid(data?.id, 'org id');
-  const existing = await getRow(db, 'SELECT * FROM orgs WHERE id = ?', [id]);
+  const existing = await getOrg(db, id);
   if (existing) return existing;
+  const name = normalizeRequiredText(data?.name, 'name', 256);
+  const ownerUserId = assertUuid(data?.owner_user_id, 'owner_user_id');
+  const ownerUser = await getRow(db, 'SELECT id FROM users WHERE id = ? AND archived = 0 LIMIT 1', [ownerUserId]);
+  if (!ownerUser) {
+    throw new Error('owner_user_id not found');
+  }
   const timestamp = nowIso();
-  const org = {
-    id,
-    name: String(data?.name ?? '').trim() || 'Organization',
-    created_at: timestamp,
-    updated_at: timestamp
-  };
-  await run(
-    db,
-    'INSERT INTO orgs (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
-    [org.id, org.name, org.created_at, org.updated_at]
-  );
+  await db.transaction(async (tx) => {
+    await run(
+      tx,
+      'INSERT INTO orgs (id, name, owner_user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [id, name, ownerUserId, timestamp, timestamp]
+    );
+    await ensureOrgMembership(tx, id, ownerUserId, 'owner');
+  });
   if (clientId) {
     // Org records are global, so only log when a workspace context is supplied by caller.
     const workspaceId = optionalUuid(data?.workspace_id, 'workspace_id');
     if (workspaceId) {
-      await recordChange(db, workspaceId, 'org', org.id, 'create', org, clientId);
+      await recordChange(db, workspaceId, 'org', id, 'create', { id, name, owner_user_id: ownerUserId }, clientId);
     }
   }
-  return org;
+  return getOrg(db, id);
+}
+
+export async function updateOrg(db, id, patch, clientId = null) {
+  const safeOrgId = assertUuid(id, 'org_id');
+  const existing = await getOrg(db, safeOrgId);
+  if (!existing) return null;
+  const nextName = patch?.name !== undefined
+    ? normalizeRequiredText(patch.name, 'name', 256)
+    : existing.name;
+  const updatedAt = nowIso();
+  await run(
+    db,
+    'UPDATE orgs SET name = ?, updated_at = ? WHERE id = ?',
+    [nextName, updatedAt, safeOrgId]
+  );
+  if (clientId) {
+    const workspaceId = optionalUuid(patch?.workspace_id, 'workspace_id');
+    if (workspaceId) {
+      await recordChange(db, workspaceId, 'org', safeOrgId, 'update', { name: nextName }, clientId);
+    }
+  }
+  return getOrg(db, safeOrgId);
+}
+
+export async function getOrgMembership(db, orgId, userId) {
+  return getOrgMembershipRow(db, orgId, userId);
+}
+
+export async function listOrgMembers(db, orgId, { includeArchived = false } = {}) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const where = ['om.org_id = ?'];
+  const params = [safeOrgId];
+  if (!includeArchived) {
+    where.push('om.archived = 0');
+    where.push('u.archived = 0');
+  }
+  return getRows(
+    db,
+    `SELECT
+       om.id AS membership_id,
+       om.org_id,
+       om.user_id,
+       om.role,
+       om.archived,
+       om.created_at,
+       om.updated_at,
+       u.display_name,
+       u.email,
+       u.archived AS user_archived
+     FROM org_memberships om
+     JOIN users u ON u.id = om.user_id
+    WHERE ${where.join(' AND ')}
+    ORDER BY
+      CASE om.role
+        WHEN 'owner' THEN 0
+        WHEN 'admin' THEN 1
+        ELSE 2
+      END,
+      lower(u.display_name) ASC,
+      lower(COALESCE(u.email, '')) ASC`,
+    params
+  );
+}
+
+export async function addOrgMember(db, orgId, data = {}) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const org = await getOrg(db, safeOrgId);
+  if (!org) {
+    throw new Error('organization not found');
+  }
+  const role = normalizeOrgMembershipRole(data?.role, { allowOwner: false });
+  const explicitUserId = optionalUuid(data?.user_id, 'user_id');
+  const email = normalizeEmail(data?.email);
+  let user = null;
+  if (explicitUserId) {
+    user = await getRow(db, 'SELECT * FROM users WHERE id = ? LIMIT 1', [explicitUserId]);
+  } else if (email) {
+    user = await getUserByEmail(db, email);
+  }
+  if (!user?.id) {
+    throw new Error('user not found');
+  }
+  await ensureOrgMembership(db, safeOrgId, user.id, role);
+  return getRow(
+    db,
+    `SELECT
+       om.id AS membership_id,
+       om.org_id,
+       om.user_id,
+       om.role,
+       om.archived,
+       om.created_at,
+       om.updated_at,
+       u.display_name,
+       u.email,
+       u.archived AS user_archived
+     FROM org_memberships om
+     JOIN users u ON u.id = om.user_id
+    WHERE om.org_id = ? AND om.user_id = ?
+    LIMIT 1`,
+    [safeOrgId, user.id]
+  );
+}
+
+export async function updateOrgMember(db, orgId, userId, patch = {}) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const safeUserId = assertUuid(userId, 'user_id');
+  const existing = await getOrgMembershipRow(db, safeOrgId, safeUserId);
+  if (!existing) return null;
+  if (existing.role === 'owner' && patch?.role !== undefined) {
+    throw new Error('use ownership transfer to change the owner');
+  }
+  const nextRole = patch?.role !== undefined
+    ? normalizeOrgMembershipRole(patch.role, { allowOwner: false })
+    : existing.role;
+  const nextArchived = patch?.archived !== undefined ? (patch.archived ? 1 : 0) : Number(existing.archived) ? 1 : 0;
+  await run(
+    db,
+    'UPDATE org_memberships SET role = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [nextRole, nextArchived, nowIso(), existing.id]
+  );
+  return getRow(
+    db,
+    `SELECT
+       om.id AS membership_id,
+       om.org_id,
+       om.user_id,
+       om.role,
+       om.archived,
+       om.created_at,
+       om.updated_at,
+       u.display_name,
+       u.email,
+       u.archived AS user_archived
+     FROM org_memberships om
+     JOIN users u ON u.id = om.user_id
+    WHERE om.org_id = ? AND om.user_id = ?
+    LIMIT 1`,
+    [safeOrgId, safeUserId]
+  );
+}
+
+export async function removeOrgMember(db, orgId, userId) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const safeUserId = assertUuid(userId, 'user_id');
+  const existing = await getOrgMembershipRow(db, safeOrgId, safeUserId);
+  if (!existing) return null;
+  if (existing.role === 'owner') {
+    throw new Error('transfer ownership before removing the owner');
+  }
+  await run(
+    db,
+    'UPDATE org_memberships SET archived = 1, updated_at = ? WHERE id = ?',
+    [nowIso(), existing.id]
+  );
+  return true;
+}
+
+export async function transferOrgOwnership(db, orgId, targetUserId) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const safeTargetUserId = assertUuid(targetUserId, 'target_user_id');
+  const org = await getOrg(db, safeOrgId);
+  if (!org) return null;
+  const targetMembership = await getOrgMembershipRow(db, safeOrgId, safeTargetUserId);
+  if (!targetMembership) {
+    throw new Error('target user must be an active organization member');
+  }
+  await db.transaction(async (tx) => {
+    const timestamp = nowIso();
+    if (org.owner_user_id && org.owner_user_id !== safeTargetUserId) {
+      const previousOwnerMembership = await getOrgMembershipRow(tx, safeOrgId, org.owner_user_id, { includeArchived: true });
+      if (previousOwnerMembership) {
+        await run(
+          tx,
+          'UPDATE org_memberships SET role = ?, archived = 0, updated_at = ? WHERE id = ?',
+          ['admin', timestamp, previousOwnerMembership.id]
+        );
+      }
+    }
+    await ensureOrgMembership(tx, safeOrgId, safeTargetUserId, 'owner');
+    await run(
+      tx,
+      'UPDATE orgs SET owner_user_id = ?, updated_at = ? WHERE id = ?',
+      [safeTargetUserId, timestamp, safeOrgId]
+    );
+  });
+  return getOrg(db, safeOrgId);
 }
 
 export async function listUsers(db, orgId, workspaceId = null) {
@@ -826,7 +1134,16 @@ export async function listUsers(db, orgId, workspaceId = null) {
   if (!safeOrgId) {
     throw new Error('org_id required');
   }
-  return getRows(db, 'SELECT * FROM users WHERE org_id = ? ORDER BY display_name ASC', [safeOrgId]);
+  return getRows(
+    db,
+    `SELECT u.*
+       FROM users u
+       JOIN org_memberships om ON om.user_id = u.id
+      WHERE om.org_id = ?
+        AND om.archived = 0
+      ORDER BY u.display_name ASC`,
+    [safeOrgId]
+  );
 }
 
 export async function createUser(db, data, clientId = null) {
@@ -874,6 +1191,7 @@ export async function createUser(db, data, clientId = null) {
       user.updated_at
     ]
   );
+  await ensureOrgMembership(db, user.org_id, user.id, user.org_role);
   const workspaceId = optionalUuid(data?.workspace_id, 'workspace_id');
   if (workspaceId) {
     await recordChange(db, workspaceId, 'user', user.id, 'create', user, clientId);
@@ -898,6 +1216,20 @@ export async function updateUser(db, id, patch, clientId = null) {
     'UPDATE users SET display_name = ?, email = ?, org_role = ?, archived = ?, updated_at = ? WHERE id = ?',
     [next.display_name, next.email, next.org_role, next.archived, next.updated_at, userId]
   );
+  await ensureOrgMembership(db, existing.org_id, userId, next.org_role);
+  if (next.archived) {
+    await run(
+      db,
+      'UPDATE org_memberships SET archived = 1, updated_at = ? WHERE org_id = ? AND user_id = ?',
+      [next.updated_at, existing.org_id, userId]
+    );
+  } else {
+    await run(
+      db,
+      'UPDATE org_memberships SET archived = 0, updated_at = ? WHERE org_id = ? AND user_id = ?',
+      [next.updated_at, existing.org_id, userId]
+    );
+  }
   const workspaceId = optionalUuid(patch.workspace_id, 'workspace_id');
   if (workspaceId) {
     await recordChange(db, workspaceId, 'user', userId, 'update', patch, clientId);

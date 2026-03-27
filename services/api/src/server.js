@@ -8,8 +8,16 @@ import { attachRouteSchemas } from './routeSchemas.js';
 import {
   createWorkspace,
   listWorkspaces,
+  getOrg,
   listOrgs,
   createOrg,
+  updateOrg,
+  getOrgMembership,
+  listOrgMembers,
+  addOrgMember,
+  updateOrgMember,
+  removeOrgMember,
+  transferOrgOwnership,
   listUsers,
   listUsersForAdmin,
   createUser,
@@ -701,6 +709,49 @@ async function ensureAuthenticatedAccess(request, reply) {
   return actor;
 }
 
+async function ensureAuthenticatedHumanSecurity(request, reply) {
+  const actor = await ensureAuthenticatedAccess(request, reply);
+  if (!actor) return null;
+  const security = await resolveActorSecurity(request);
+  if (!security?.user?.id || security?.principalType === 'service_account') {
+    reply.code(403).send({ error: 'human user access required' });
+    return null;
+  }
+  return security;
+}
+
+function getOrgMembershipRoleLevel(role) {
+  const normalized = String(role ?? '').trim().toLowerCase();
+  if (normalized === 'owner') return 3;
+  if (normalized === 'admin') return 2;
+  return 1;
+}
+
+async function ensureOrgAccess(request, reply, orgId, { minimumRole = 'member' } = {}) {
+  const safeOrgId = String(orgId ?? '').trim();
+  if (!safeOrgId) {
+    reply.code(400).send({ error: 'org_id required' });
+    return null;
+  }
+  const security = await ensureAuthenticatedHumanSecurity(request, reply);
+  if (!security) return null;
+  const org = await getOrg(db, safeOrgId);
+  if (!org) {
+    reply.code(404).send({ error: 'organization not found' });
+    return null;
+  }
+  const membership = await getOrgMembership(db, safeOrgId, security.user.id);
+  if (!membership || Number(membership.archived)) {
+    reply.code(403).send({ error: 'organization membership required' });
+    return null;
+  }
+  if (getOrgMembershipRoleLevel(membership.role) < getOrgMembershipRoleLevel(minimumRole)) {
+    reply.code(403).send({ error: `${minimumRole} role required` });
+    return null;
+  }
+  return { security, org, membership };
+}
+
 async function ensureWorkspaceAccess(request, reply, workspaceId) {
   const safeWorkspaceId = String(workspaceId ?? '').trim();
   if (!safeWorkspaceId) {
@@ -1087,15 +1138,113 @@ server.get('/workspaces', async (request, reply) => {
   return await listWorkspaces(db, org_id);
 });
 
-server.get('/orgs', async () => {
+server.get('/orgs', async (request, reply) => {
+  const security = await resolveActorSecurity(request);
+  if (security?.user?.id) {
+    return await listOrgs(db, { userId: security.user.id });
+  }
+  if (config.requireAuth) {
+    return reply.code(401).send({ error: 'authentication required' });
+  }
   return await listOrgs(db);
 });
 
 server.post('/orgs', async (request, reply) => {
   const { name } = request.body ?? {};
   if (!name) return reply.code(400).send({ error: 'name required' });
+  const security = await ensureAuthenticatedHumanSecurity(request, reply);
+  if (!security) return;
   try {
-    return await createOrg(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
+    return await createOrg(
+      db,
+      {
+        ...(request.body ?? {}),
+        owner_user_id: security.user.id
+      },
+      request.headers['x-client-id'] ?? null
+    );
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/orgs/:id', async (request, reply) => {
+  const access = await ensureOrgAccess(request, reply, request.params?.id, { minimumRole: 'member' });
+  if (!access) return;
+  return access.org;
+});
+
+server.patch('/orgs/:id', async (request, reply) => {
+  const access = await ensureOrgAccess(request, reply, request.params?.id, { minimumRole: 'admin' });
+  if (!access) return;
+  try {
+    const updated = await updateOrg(db, request.params?.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
+    if (!updated) return reply.code(404).send({ error: 'organization not found' });
+    return updated;
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/orgs/:id/members', async (request, reply) => {
+  const access = await ensureOrgAccess(request, reply, request.params?.id, { minimumRole: 'member' });
+  if (!access) return;
+  try {
+    const members = await listOrgMembers(db, request.params?.id, {
+      includeArchived: parseBooleanish(request.query?.include_archived, false)
+    });
+    return {
+      org: access.org,
+      members,
+      count: members.length
+    };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/orgs/:id/members', async (request, reply) => {
+  const access = await ensureOrgAccess(request, reply, request.params?.id, { minimumRole: 'admin' });
+  if (!access) return;
+  try {
+    const member = await addOrgMember(db, request.params?.id, request.body ?? {});
+    return { member };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.patch('/orgs/:id/members/:userId', async (request, reply) => {
+  const access = await ensureOrgAccess(request, reply, request.params?.id, { minimumRole: 'admin' });
+  if (!access) return;
+  try {
+    const updated = await updateOrgMember(db, request.params?.id, request.params?.userId, request.body ?? {});
+    if (!updated) return reply.code(404).send({ error: 'organization member not found' });
+    return { member: updated };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.delete('/orgs/:id/members/:userId', async (request, reply) => {
+  const access = await ensureOrgAccess(request, reply, request.params?.id, { minimumRole: 'admin' });
+  if (!access) return;
+  try {
+    const removed = await removeOrgMember(db, request.params?.id, request.params?.userId);
+    if (!removed) return reply.code(404).send({ error: 'organization member not found' });
+    return { ok: true };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.post('/orgs/:id/transfer-ownership', async (request, reply) => {
+  const access = await ensureOrgAccess(request, reply, request.params?.id, { minimumRole: 'owner' });
+  if (!access) return;
+  try {
+    const updated = await transferOrgOwnership(db, request.params?.id, request.body?.target_user_id);
+    if (!updated) return reply.code(404).send({ error: 'organization not found' });
+    return { org: updated };
   } catch (err) {
     return reply.code(400).send({ error: err.message });
   }
