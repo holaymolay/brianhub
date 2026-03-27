@@ -32,3 +32,12 @@ test('sync loop treats access failures as state resets and preserves blocked que
   assert.match(script, /if \(pushResult\.error && await handleSyncAccessFailure\(pushResult\.error\)\) \{\s*return;\s*\}/s);
   assert.match(script, /catch \(error\) \{\s*if \(await handleSyncAccessFailure\(error\)\) \{\s*updateSyncOfflineNotice\(\);\s*return;\s*\}\s*registerSyncFailure\(\);/s);
 });
+
+test('workspace refresh loads remote state atomically and only re-fetches after real reminder mutations', () => {
+  const script = readAppScript();
+  assert.match(script, /const workspaceId = state\.workspace\.id;/);
+  assert.match(script, /const \[\s*projects,\s*templates,\s*statuses,\s*taskTypes,\s*users,\s*workspaceMemberships,\s*storeRules,\s*noticeTypes,\s*notices,\s*tasks,\s*taskDependencies,\s*shoppingLists,\s*shoppingItems\s*\] = await Promise\.all\(\[/s);
+  assert.match(script, /if \(state\.workspace\?\.id !== workspaceId\) \{\s*return;\s*\}/s);
+  assert.match(script, /const remindersChanged = await ensureTemplateReminders\(\);\s*if \(remindersChanged && state\.workspace\) \{\s*await loadWorkspaceData\(\);\s*\}/s);
+  assert.match(script, /async function ensureTemplateReminders\(\) \{[\s\S]*let changed = false;[\s\S]*return changed;\s*\}/s);
+});

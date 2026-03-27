@@ -117,6 +117,11 @@ function normalizeRole(value) {
   return role || 'member';
 }
 
+function normalizeWorkspaceRecordType(value) {
+  const type = String(value ?? '').trim().toLowerCase();
+  return type === 'shared' ? 'shared' : 'personal';
+}
+
 function normalizeOrgRole(value) {
   const role = String(value ?? '').trim().toLowerCase();
   if (!role) return 'member';
@@ -833,23 +838,58 @@ export async function getWorkspace(db, id, orgId = null) {
   return getRow(db, 'SELECT * FROM workspaces WHERE id = ?', [workspaceId]);
 }
 
-export async function createWorkspace(db, { id: providedId, name, type, org_id: orgId = DEFAULT_ORG_ID, org_name }) {
+export async function createWorkspace(
+  db,
+  {
+    id: providedId,
+    name,
+    type,
+    org_id: orgId = DEFAULT_ORG_ID,
+    org_name,
+    creator_user_id: creatorUserId = null
+  },
+  clientId = null
+) {
   const safeOrgId = assertUuid(orgId ?? DEFAULT_ORG_ID, 'org_id');
+  const safeCreatorUserId = optionalUuid(creatorUserId, 'creator_user_id');
   if (providedId) {
     const existing = await getWorkspace(db, assertUuid(providedId, 'workspace id'), safeOrgId);
     if (existing) return existing;
   }
   const id = ensureUuid(providedId, 'workspace id');
   const timestamp = nowIso();
-  await ensureOrg(db, safeOrgId, org_name ?? (safeOrgId === DEFAULT_ORG_ID ? 'Default' : safeOrgId));
-  await run(
-    db,
-    'INSERT INTO workspaces (id, org_id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, safeOrgId, name, type, 0, timestamp, timestamp]
-  );
-  await seedWorkspaceStatuses(db, id);
-  await seedWorkspaceTaskTypes(db, id);
-  await seedWorkspaceNoticeTypes(db, id);
+  let creatorUser = null;
+  if (safeCreatorUserId) {
+    creatorUser = await getUserById(db, safeCreatorUserId);
+    if (!creatorUser || Number(creatorUser.archived)) {
+      throw new Error('creator_user_id not found');
+    }
+    if (creatorUser.org_id !== safeOrgId) {
+      throw new Error('creator_user_id must belong to the same organization');
+    }
+  }
+  await db.transaction(async (tx) => {
+    await ensureOrg(tx, safeOrgId, org_name ?? (safeOrgId === DEFAULT_ORG_ID ? 'Default' : safeOrgId));
+    await run(
+      tx,
+      'INSERT INTO workspaces (id, org_id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, safeOrgId, name, type, 0, timestamp, timestamp]
+    );
+    await seedWorkspaceStatuses(tx, id);
+    await seedWorkspaceTaskTypes(tx, id);
+    await seedWorkspaceNoticeTypes(tx, id);
+    if (creatorUser) {
+      await createWorkspaceMembership(
+        tx,
+        {
+          workspace_id: id,
+          user_id: creatorUser.id,
+          role: normalizeWorkspaceRecordType(type) === 'shared' ? 'manager' : 'member'
+        },
+        clientId
+      );
+    }
+  });
   return getWorkspace(db, id, safeOrgId);
 }
 

@@ -1119,7 +1119,18 @@ server.get('/health', async () => ({ ok: true }));
 server.post('/workspaces', async (request, reply) => {
   const { name, type, org_id, org_name } = request.body ?? {};
   if (!name || !type) return reply.code(400).send({ error: 'name and type required' });
-  return await createWorkspace(db, { name, type, org_id, org_name });
+  const security = await resolveActorSecurity(request);
+  return await createWorkspace(
+    db,
+    {
+      name,
+      type,
+      org_id,
+      org_name,
+      creator_user_id: security?.user?.id ?? null
+    },
+    request.headers['x-client-id'] ?? null
+  );
 });
 
 server.get('/workspaces', async (request, reply) => {

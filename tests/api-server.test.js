@@ -549,6 +549,54 @@ test('authenticated users only list workspaces they belong to', async () => {
   assert.deepEqual(listB.json().map((workspace) => workspace.id), [userB.workspaceId]);
 });
 
+test('authenticated workspace creators are automatically enrolled in their new workspace', async () => {
+  const creator = await createAcceptedUser({
+    workspaceName: 'Workspace creator home',
+    email: 'workspace.creator@example.com',
+    displayName: 'Workspace Creator',
+    password: 'Passw0rd!Creator'
+  });
+
+  const createRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    headers: {
+      cookie: creator.cookie
+    },
+    payload: {
+      name: 'Roger',
+      type: 'personal',
+      org_id: creator.auth.user.org_id
+    }
+  });
+  assert.equal(createRes.statusCode, 200);
+  const createdWorkspace = createRes.json();
+
+  const listRes = await server.inject({
+    method: 'GET',
+    url: '/workspaces',
+    headers: {
+      cookie: creator.cookie
+    }
+  });
+  assert.equal(listRes.statusCode, 200);
+  assert.deepEqual(
+    listRes.json().map((workspace) => workspace.id),
+    [creator.workspaceId, createdWorkspace.id]
+  );
+
+  const membershipsRes = await server.inject({
+    method: 'GET',
+    url: `/workspace-memberships?workspace_id=${encodeURIComponent(createdWorkspace.id)}`,
+    headers: {
+      cookie: creator.cookie
+    }
+  });
+  assert.equal(membershipsRes.statusCode, 200);
+  assert.equal(membershipsRes.json().length, 1);
+  assert.equal(membershipsRes.json()[0].user_id, creator.auth.user.id);
+});
+
 test('invite accept rejects email that does not match the invite', async () => {
   const inviteeEmail = 'mismatch.user@example.com';
   const workspaceRes = await server.inject({

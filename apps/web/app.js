@@ -8728,23 +8728,54 @@ async function loadWorkspaceData() {
     return;
   }
   if (!state.workspace) return;
+  const workspaceId = state.workspace.id;
   const localSnapshot = hasPendingLocalChanges() ? snapshotLocalData() : null;
   if (canUseRemoteApi()) {
     try {
-      state.projects = (await api.listProjects(state.workspace.id)).map(normalizeProject);
-      state.templates = (await api.listTemplates(state.workspace.id)).map(normalizeTemplate);
-      state.statuses = (await api.listStatuses(state.workspace.id)).map(normalizeStatus);
-      state.taskTypes = (await api.listTaskTypes(state.workspace.id)).map(normalizeTaskType);
-      state.users = (await api.listUsers({ workspaceId: state.workspace.id })).map(normalizeUser);
-      state.workspaceMemberships = (await api.listWorkspaceMemberships(state.workspace.id)).map(normalizeWorkspaceMembership);
-      state.storeRules = (await api.listStoreRules(state.workspace.id)).map(normalizeStoreRule);
-      state.noticeTypes = (await api.listNoticeTypes(state.workspace.id)).map(normalizeNoticeType);
-      state.notices = (await api.listNotices(state.workspace.id)).map(normalizeNotice);
-      const tasks = await api.listTasks(state.workspace.id);
+      const [
+        projects,
+        templates,
+        statuses,
+        taskTypes,
+        users,
+        workspaceMemberships,
+        storeRules,
+        noticeTypes,
+        notices,
+        tasks,
+        taskDependencies,
+        shoppingLists,
+        shoppingItems
+      ] = await Promise.all([
+        api.listProjects(workspaceId),
+        api.listTemplates(workspaceId),
+        api.listStatuses(workspaceId),
+        api.listTaskTypes(workspaceId),
+        api.listUsers({ workspaceId }),
+        api.listWorkspaceMemberships(workspaceId),
+        api.listStoreRules(workspaceId),
+        api.listNoticeTypes(workspaceId),
+        api.listNotices(workspaceId),
+        api.listTasks(workspaceId),
+        api.listTaskDependencies(workspaceId),
+        api.listShoppingLists(workspaceId),
+        api.listShoppingItems(workspaceId)
+      ]);
+      if (state.workspace?.id !== workspaceId) {
+        return;
+      }
+      state.projects = projects.map(normalizeProject);
+      state.templates = templates.map(normalizeTemplate);
+      state.statuses = statuses.map(normalizeStatus);
+      state.taskTypes = taskTypes.map(normalizeTaskType);
+      state.users = users.map(normalizeUser);
+      state.workspaceMemberships = workspaceMemberships.map(normalizeWorkspaceMembership);
+      state.storeRules = storeRules.map(normalizeStoreRule);
+      state.noticeTypes = noticeTypes.map(normalizeNoticeType);
+      state.notices = notices.map(normalizeNotice);
       state.tasks = Object.fromEntries(tasks.map(task => [task.id, normalizeTask(task)]));
-      state.taskDependencies = await api.listTaskDependencies(state.workspace.id);
-      state.shoppingLists = (await api.listShoppingLists(state.workspace.id)).map(normalizeShoppingList);
-      const shoppingItems = await api.listShoppingItems(state.workspace.id);
+      state.taskDependencies = taskDependencies;
+      state.shoppingLists = shoppingLists.map(normalizeShoppingList);
       state.shoppingItems = Object.fromEntries(shoppingItems.map(item => [item.id, normalizeShoppingItem(item)]));
     } catch (err) {
       if (isWorkspaceDataResetStatus(err?.status)) {
@@ -8793,8 +8824,10 @@ async function refreshWorkspace() {
     return;
   }
   await loadWorkspaceData();
-  await ensureTemplateReminders();
-  await loadWorkspaceData();
+  const remindersChanged = await ensureTemplateReminders();
+  if (remindersChanged && state.workspace) {
+    await loadWorkspaceData();
+  }
   render();
   await maybePromptTemplate();
 }
@@ -26611,6 +26644,7 @@ async function advanceTemplateDate(template) {
 async function ensureTemplateReminders() {
   const templates = state.templates ?? [];
   const now = Date.now();
+  let changed = false;
   for (const task of Object.values(state.tasks)) {
     if (task.template_state !== 'pending') continue;
     if (!task.template_defer_until) continue;
@@ -26618,7 +26652,10 @@ async function ensureTemplateReminders() {
     if (Number.isNaN(deferTime)) continue;
     if (now >= deferTime) {
       const updated = await api.updateTask(task.id, { template_prompt_pending: 1, template_defer_until: null });
-      if (updated) upsertTask(updated);
+      if (updated) {
+        upsertTask(updated);
+        changed = true;
+      }
     }
   }
   for (const template of templates) {
@@ -26648,8 +26685,12 @@ async function ensureTemplateReminders() {
       template_state: 'pending',
       template_prompt_pending: 1
     });
-    if (reminderTask) upsertTask(reminderTask);
+    if (reminderTask) {
+      upsertTask(reminderTask);
+      changed = true;
+    }
   }
+  return changed;
 }
 
 async function startTemplatePlan(template) {
