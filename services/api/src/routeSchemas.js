@@ -435,10 +435,31 @@ const machineWorkspaceGrantResponseSchema = {
   }
 };
 
+const serviceAccountSummaryResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'token_count',
+    'active_token_count',
+    'workspace_grant_count',
+    'effective_workspace_count',
+    'last_token_used_at',
+    'last_activity_at'
+  ],
+  properties: {
+    token_count: integerSchema,
+    active_token_count: integerSchema,
+    workspace_grant_count: integerSchema,
+    effective_workspace_count: integerSchema,
+    last_token_used_at: nullableDateTimeSchema,
+    last_activity_at: nullableDateTimeSchema
+  }
+};
+
 const serviceAccountResponseSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['id', 'org_id', 'display_name', 'permissions', 'archived', 'aliases'],
+  required: ['id', 'org_id', 'display_name', 'permissions', 'archived', 'aliases', 'summary'],
   properties: {
     id: uuidSchema,
     org_id: uuidSchema,
@@ -450,6 +471,7 @@ const serviceAccountResponseSchema = {
       type: 'array',
       items: serviceAccountAliasResponseSchema
     },
+    summary: serviceAccountSummaryResponseSchema,
     created_at: nullableDateTimeSchema,
     updated_at: nullableDateTimeSchema
   }
@@ -490,6 +512,39 @@ const serviceAccountWorkspaceGrantResponseSchema = {
     org_id: nullableUuidSchema,
     created_at: nullableDateTimeSchema,
     updated_at: nullableDateTimeSchema
+  }
+};
+
+const serviceAccountActivityEventResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'org_id', 'service_account_id', 'event_type', 'metadata', 'created_at'],
+  properties: {
+    id: uuidSchema,
+    org_id: uuidSchema,
+    service_account_id: uuidSchema,
+    token_id: nullableUuidSchema,
+    token_label: nullableString(256),
+    token_public_id: nullableString(64),
+    workspace_id: nullableUuidSchema,
+    workspace_name: nullableString(256),
+    actor_user_id: nullableUuidSchema,
+    actor_email: nullableString(320),
+    actor_display_name: nullableString(256),
+    event_type: nonEmptyString(128),
+    request_method: nullableString(16),
+    request_path: nullableString(512),
+    status_code: {
+      anyOf: [
+        integerSchema,
+        { type: 'null' }
+      ]
+    },
+    metadata: {
+      type: 'object',
+      additionalProperties: true
+    },
+    created_at: nullableDateTimeSchema
   }
 };
 
@@ -1049,6 +1104,42 @@ const routeSchemas = new Map([
             type: 'array',
             items: authWorkspaceResponseSchema
           }
+        }
+      }
+    }
+  }],
+  ['GET /admin/service-accounts/:id/activity', {
+    params: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id'],
+      properties: {
+        id: uuidSchema
+      }
+    },
+    query: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        limit: {
+          anyOf: [
+            integerSchema,
+            { type: 'string', pattern: '^[0-9]+$' }
+          ]
+        }
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['activity', 'count'],
+        properties: {
+          activity: {
+            type: 'array',
+            items: serviceAccountActivityEventResponseSchema
+          },
+          count: integerSchema
         }
       }
     }

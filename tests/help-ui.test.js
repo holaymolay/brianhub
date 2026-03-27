@@ -48,6 +48,7 @@ test('shared BrianHub API docs module documents the current resource model', () 
   assert.match(script, /Authorization: Bearer <token>/);
   assert.match(script, /GET \/admin\/service-accounts/);
   assert.match(script, /POST \/admin\/service-accounts\/:id\/tokens/);
+  assert.match(script, /GET \/admin\/service-accounts\/:id\/activity/);
   assert.match(script, /telegram_group/);
   assert.match(script, /tasks\.delete/);
   assert.match(script, /GET \/projects\?workspace_id=<uuid>/);
@@ -70,13 +71,20 @@ test('admin console exposes service-account, token, and workspace-grant controls
   const html = readRepoFile('apps/web/index.html');
   assert.match(html, /<h3>Service accounts<\/h3>/);
   assert.match(html, /id="admin-service-account-roger-preset"/);
+  assert.match(html, /id="admin-service-summary-name"/);
+  assert.match(html, /id="admin-service-summary-stats"/);
+  assert.match(html, /id="admin-service-setup-note"/);
   assert.match(html, /id="admin-service-account-permissions"/);
-  assert.match(html, /<h3>Token access<\/h3>/);
+  assert.match(html, /<h4>Token access<\/h4>/);
   assert.match(html, /id="admin-service-token-inherit"/);
   assert.match(html, /id="admin-service-token-reveal"/);
-  assert.match(html, /<h3>Workspace grants<\/h3>/);
+  assert.match(html, /<h4>Workspace access<\/h4>/);
   assert.match(html, /id="admin-service-grant-workspace"/);
+  assert.match(html, /id="admin-service-effective-workspaces"/);
   assert.match(html, /id="admin-service-grants-list"/);
+  assert.match(html, /<h4>Access history<\/h4>/);
+  assert.match(html, /id="admin-service-activity-refresh"/);
+  assert.match(html, /id="admin-service-activity-list"/);
 });
 
 test('admin console wiring includes service-account API helpers and event handlers', () => {
@@ -84,13 +92,30 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(apiScript, /export function listAdminServiceAccounts/);
   assert.match(apiScript, /export function createAdminServiceAccountToken/);
   assert.match(apiScript, /export function deleteAdminServiceAccountWorkspaceGrant/);
+  assert.match(apiScript, /export function listAdminServiceAccountActivity/);
 
   const appScript = readRepoFile('apps/web/app.js');
   assert.match(appScript, /async function refreshAdminServiceAccounts/);
   assert.match(appScript, /async function createAdminServiceToken/);
   assert.match(appScript, /async function addAdminServiceWorkspaceGrant/);
+  assert.match(appScript, /async function refreshAdminServiceAccountActivity/);
+  assert.match(appScript, /function renderAdminServiceAccountSummary/);
+  assert.match(appScript, /function renderAdminServiceActivityList/);
+  assert.match(appScript, /function presentAdminServiceToken\(rawToken, actionLabel = 'created'\)/);
+  assert.match(appScript, /window\.prompt\(\s*`Copy this \$\{actionLabel\} token now\./);
   assert.match(appScript, /void refreshAdminServiceAccounts\(\);/);
   assert.match(appScript, /adminServiceAccountRogerPreset\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceTokenRotate\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceGrantAdd\?\.addEventListener\('click'/);
+  assert.match(appScript, /adminServiceActivityRefresh\?\.addEventListener\('click'/);
+});
+
+test('admin console auto-selects existing service accounts and surfaces summary counts', () => {
+  const appScript = readRepoFile('apps/web/app.js');
+  assert.match(appScript, /function normalizeServiceAccountSummary\(/);
+  assert.match(appScript, /function resetAdminServiceAccountDetailState\(/);
+  assert.match(appScript, /summary\.active_token_count/);
+  assert.match(appScript, /summary\.effective_workspace_count/);
+  assert.match(appScript, /serviceAccounts\.length\)\s*\{\s*adminState\.selectedServiceAccountId = serviceAccounts\[0\]\?\.id \?\? '';/);
+  assert.match(appScript, /refreshAdminServiceAccountActivity\(\)/);
 });

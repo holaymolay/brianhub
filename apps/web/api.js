@@ -389,6 +389,12 @@ export function listAdminServiceAccountWorkspaceGrants(serviceAccountId) {
   return request(`/admin/service-accounts/${encodeURIComponent(serviceAccountId)}/workspace-grants`);
 }
 
+export function listAdminServiceAccountActivity(serviceAccountId, { limit = 50 } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  return request(`/admin/service-accounts/${encodeURIComponent(serviceAccountId)}/activity?${params.toString()}`);
+}
+
 export function createAdminServiceAccountWorkspaceGrant(serviceAccountId, data) {
   return request(`/admin/service-accounts/${encodeURIComponent(serviceAccountId)}/workspace-grants`, {
     method: 'POST',

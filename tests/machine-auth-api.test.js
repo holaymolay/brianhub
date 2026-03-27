@@ -258,6 +258,63 @@ test('service-account bearer auth exposes principal-aware /auth/me and Roger def
   assert.equal(deleteDenied.statusCode, 403);
 });
 
+test('service-account activity records lifecycle changes and bearer-token access history', async () => {
+  const workspace = await createWorkspace('Roger history workspace');
+  const serviceAccount = await createServiceAccount({
+    displayName: 'Roger history account'
+  });
+  const token = await createToken(serviceAccount.id, {
+    label: 'History token'
+  });
+  await grantWorkspace(serviceAccount.id, workspace.id);
+
+  const authMeRes = await server.inject({
+    method: 'GET',
+    url: '/auth/me',
+    headers: bearer(token.token)
+  });
+  assert.equal(authMeRes.statusCode, 200);
+
+  const listTasksRes = await server.inject({
+    method: 'GET',
+    url: `/tasks?workspace_id=${encodeURIComponent(workspace.id)}`,
+    headers: bearer(token.token)
+  });
+  assert.equal(listTasksRes.statusCode, 200);
+
+  const activityRes = await server.inject({
+    method: 'GET',
+    url: `/admin/service-accounts/${serviceAccount.id}/activity?limit=20`,
+    headers: ownerHeaders()
+  });
+  assert.equal(activityRes.statusCode, 200);
+  const activity = activityRes.json().activity;
+  assert.ok(Array.isArray(activity));
+  assert.ok(activity.some((event) => event.event_type === 'service_account.created'));
+  assert.ok(activity.some((event) => event.event_type === 'token.created' && event.token_id === token.id));
+  assert.ok(activity.some((event) => event.event_type === 'workspace_grant.created' && event.workspace_id === workspace.id));
+  const accessEvent = activity.find((event) => event.event_type === 'token.accessed' && event.request_path === '/tasks');
+  assert.ok(accessEvent);
+  assert.equal(accessEvent.status_code, 200);
+  assert.equal(accessEvent.workspace_id, workspace.id);
+  assert.equal(accessEvent.token_id, token.id);
+
+  const serviceAccountsRes = await server.inject({
+    method: 'GET',
+    url: `/admin/service-accounts?org_id=${encodeURIComponent(DEFAULT_ORG_ID)}&include_archived=1`,
+    headers: ownerHeaders()
+  });
+  assert.equal(serviceAccountsRes.statusCode, 200);
+  const listedAccount = serviceAccountsRes.json().service_accounts.find((entry) => entry.id === serviceAccount.id);
+  assert.ok(listedAccount);
+  assert.equal(listedAccount.summary.token_count, 1);
+  assert.equal(listedAccount.summary.active_token_count, 1);
+  assert.equal(listedAccount.summary.workspace_grant_count, 1);
+  assert.equal(listedAccount.summary.effective_workspace_count, 1);
+  assert.ok(listedAccount.summary.last_activity_at);
+  assert.ok(listedAccount.summary.last_token_used_at);
+});
+
 test('token-level permission constraints narrow access immediately without regenerating the token', async () => {
   const workspace = await createWorkspace('Token narrowing workspace');
   const serviceAccount = await createServiceAccount({

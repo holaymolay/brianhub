@@ -154,6 +154,16 @@ function sanitizeAlias(row) {
 
 function sanitizeServiceAccount(row, aliases = []) {
   if (!row) return null;
+  const summary = row.summary && typeof row.summary === 'object' && !Array.isArray(row.summary)
+    ? row.summary
+    : {
+        token_count: Number(row.token_count) || 0,
+        active_token_count: Number(row.active_token_count) || 0,
+        workspace_grant_count: Number(row.workspace_grant_count) || 0,
+        effective_workspace_count: Number(row.effective_workspace_count) || 0,
+        last_token_used_at: row.last_token_used_at ?? null,
+        last_activity_at: row.last_activity_at ?? null
+      };
   return {
     id: row.id,
     org_id: row.org_id,
@@ -162,6 +172,7 @@ function sanitizeServiceAccount(row, aliases = []) {
     permissions: normalizePermissionKeys(parseJsonArray(row.permissions_json)),
     archived: Number(row.archived) ? 1 : 0,
     aliases,
+    summary,
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null
   };
@@ -204,6 +215,93 @@ function sanitizeWorkspaceGrant(row) {
   };
 }
 
+function sanitizeServiceAccountActivityEvent(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    org_id: row.org_id,
+    service_account_id: row.service_account_id,
+    token_id: row.token_id ?? null,
+    token_label: row.token_label ?? null,
+    token_public_id: row.token_public_id ?? null,
+    workspace_id: row.workspace_id ?? null,
+    workspace_name: row.workspace_name ?? null,
+    actor_user_id: row.actor_user_id ?? null,
+    actor_email: row.actor_email ?? null,
+    actor_display_name: row.actor_display_name ?? null,
+    event_type: row.event_type,
+    request_method: row.request_method ?? null,
+    request_path: row.request_path ?? null,
+    status_code: row.status_code ?? null,
+    metadata: parseJsonObject(row.metadata_json),
+    created_at: row.created_at ?? null
+  };
+}
+
+async function insertServiceAccountActivity(
+  dbLike,
+  {
+    orgId,
+    serviceAccountId,
+    tokenId = null,
+    workspaceId = null,
+    actorUserId = null,
+    eventType,
+    requestMethod = null,
+    requestPath = null,
+    statusCode = null,
+    metadata = {}
+  } = {}
+) {
+  const safeOrgId = normalizeText(orgId, 'org_id', { required: true, maxLength: 64 });
+  const safeServiceAccountId = normalizeText(serviceAccountId, 'service_account_id', { required: true, maxLength: 64 });
+  const safeEventType = normalizeText(eventType, 'event_type', { required: true, maxLength: 128 });
+  const safeTokenId = normalizeText(tokenId, 'token_id', { maxLength: 64 }) ?? null;
+  const safeWorkspaceId = normalizeText(workspaceId, 'workspace_id', { maxLength: 64 }) ?? null;
+  const safeActorUserId = normalizeText(actorUserId, 'actor_user_id', { maxLength: 64 }) ?? null;
+  const safeMethod = normalizeText(requestMethod, 'request_method', { maxLength: 16 }) ?? null;
+  const safePath = normalizeText(requestPath, 'request_path', { maxLength: 512 }) ?? null;
+  const safeStatusCode = statusCode === null || statusCode === undefined || statusCode === ''
+    ? null
+    : Number(statusCode);
+  const safeMetadata = normalizeMetadataObject(metadata ?? {}, 'metadata');
+  const row = {
+    id: randomUUID(),
+    org_id: safeOrgId,
+    service_account_id: safeServiceAccountId,
+    token_id: safeTokenId,
+    workspace_id: safeWorkspaceId,
+    actor_user_id: safeActorUserId,
+    event_type: safeEventType,
+    request_method: safeMethod,
+    request_path: safePath,
+    status_code: Number.isInteger(safeStatusCode) ? safeStatusCode : null,
+    metadata_json: JSON.stringify(safeMetadata),
+    created_at: nowIso()
+  };
+  await dbLike.exec(
+    `INSERT INTO service_account_activity_events (
+      id, org_id, service_account_id, token_id, workspace_id, actor_user_id,
+      event_type, request_method, request_path, status_code, metadata_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      row.id,
+      row.org_id,
+      row.service_account_id,
+      row.token_id,
+      row.workspace_id,
+      row.actor_user_id,
+      row.event_type,
+      row.request_method,
+      row.request_path,
+      row.status_code,
+      row.metadata_json,
+      row.created_at
+    ]
+  );
+  return sanitizeServiceAccountActivityEvent(row);
+}
+
 async function getServiceAccountById(db, serviceAccountId) {
   return db.queryOne(
     'SELECT * FROM service_accounts WHERE id = ? LIMIT 1',
@@ -218,6 +316,13 @@ async function getTokenById(db, tokenId) {
   );
 }
 
+function isTokenCurrentlyActive(tokenRow) {
+  if (!tokenRow || tokenRow.revoked_at) return false;
+  if (!tokenRow.expires_at) return true;
+  const expiresAtMs = Date.parse(String(tokenRow.expires_at));
+  return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+}
+
 async function getAliasesForServiceAccount(db, serviceAccountId) {
   const rows = await db.query(
     `SELECT *
@@ -229,10 +334,66 @@ async function getAliasesForServiceAccount(db, serviceAccountId) {
   return rows.map(sanitizeAlias);
 }
 
+async function getServiceAccountSummary(db, serviceAccountId) {
+  const safeServiceAccountId = String(serviceAccountId ?? '').trim();
+  if (!safeServiceAccountId) {
+    return {
+      token_count: 0,
+      active_token_count: 0,
+      workspace_grant_count: 0,
+      effective_workspace_count: 0,
+      last_token_used_at: null,
+      last_activity_at: null
+    };
+  }
+  const [tokenRows, workspaceGrantRow, effectiveWorkspaceRow, activityRow] = await Promise.all([
+    db.query(
+      `SELECT revoked_at, expires_at, last_used_at
+         FROM api_tokens
+        WHERE owner_kind = 'service_account' AND owner_id = ?`,
+      [safeServiceAccountId]
+    ),
+    db.queryOne(
+      `SELECT COUNT(*) AS workspace_grant_count
+         FROM service_account_workspace_grants
+        WHERE service_account_id = ?`,
+      [safeServiceAccountId]
+    ),
+    db.queryOne(
+      `SELECT COUNT(*) AS effective_workspace_count
+         FROM service_account_workspace_grants g
+         JOIN workspaces w ON w.id = g.workspace_id
+        WHERE g.service_account_id = ? AND w.archived = 0`,
+      [safeServiceAccountId]
+    ),
+    db.queryOne(
+      `SELECT MAX(created_at) AS last_activity_at
+         FROM service_account_activity_events
+        WHERE service_account_id = ?`,
+      [safeServiceAccountId]
+    )
+  ]);
+  const sortedTokenUse = tokenRows
+    .map((row) => String(row?.last_used_at ?? '').trim())
+    .filter(Boolean)
+    .sort((left, right) => (Date.parse(right) || 0) - (Date.parse(left) || 0));
+  return {
+    token_count: tokenRows.length,
+    active_token_count: tokenRows.filter((row) => isTokenCurrentlyActive(row)).length,
+    workspace_grant_count: Number(workspaceGrantRow?.workspace_grant_count) || 0,
+    effective_workspace_count: Number(effectiveWorkspaceRow?.effective_workspace_count) || 0,
+    last_token_used_at: sortedTokenUse[0] ?? null,
+    last_activity_at: activityRow?.last_activity_at ?? null
+  };
+}
+
 async function hydrateServiceAccount(db, row) {
   if (!row) return null;
-  const aliases = await getAliasesForServiceAccount(db, row.id);
-  return sanitizeServiceAccount(row, aliases);
+  const [aliases, summary] = await Promise.all([
+    getAliasesForServiceAccount(db, row.id),
+    getServiceAccountSummary(db, row.id)
+  ]);
+  return sanitizeServiceAccount({ ...row, summary }, aliases);
 }
 
 async function replaceServiceAccountAliases(tx, serviceAccount, aliases) {
@@ -339,11 +500,22 @@ export async function createServiceAccount(
       ]
     );
     await replaceServiceAccountAliases(tx, row, normalizedAliases);
+    await insertServiceAccountActivity(tx, {
+      orgId: row.org_id,
+      serviceAccountId: row.id,
+      actorUserId: createdByUserId,
+      eventType: 'service_account.created',
+      metadata: {
+        display_name: row.display_name,
+        permissions: normalizedPermissions,
+        alias_count: normalizedAliases.length
+      }
+    });
   });
   return await hydrateServiceAccount(db, row);
 }
 
-export async function updateServiceAccount(db, serviceAccountId, patch = {}) {
+export async function updateServiceAccount(db, serviceAccountId, patch = {}, { actorUserId = null } = {}) {
   const existing = await getServiceAccountById(db, serviceAccountId);
   if (!existing) return null;
   const nextPermissions = patch.permissions !== undefined
@@ -381,6 +553,18 @@ export async function updateServiceAccount(db, serviceAccountId, patch = {}) {
     if (nextAliases !== undefined) {
       await replaceServiceAccountAliases(tx, next, nextAliases);
     }
+    await insertServiceAccountActivity(tx, {
+      orgId: existing.org_id,
+      serviceAccountId: existing.id,
+      actorUserId,
+      eventType: 'service_account.updated',
+      metadata: {
+        display_name: next.display_name,
+        archived: next.archived,
+        permissions: nextPermissions,
+        alias_count: nextAliases !== undefined ? nextAliases.length : undefined
+      }
+    });
   });
   return await hydrateServiceAccount(db, next);
 }
@@ -455,13 +639,26 @@ export async function createServiceAccountToken(
       row.updated_at
     ]
   );
+  await insertServiceAccountActivity(db, {
+    orgId: serviceAccount.org_id,
+    serviceAccountId: serviceAccount.id,
+    tokenId: row.id,
+    actorUserId: createdByUserId,
+    eventType: 'token.created',
+    metadata: {
+      label: row.label,
+      token_public_id: row.token_public_id,
+      permission_constraints: normalizedConstraints,
+      expires_at: row.expires_at
+    }
+  });
   return {
     service_account: await hydrateServiceAccount(db, serviceAccount),
     token: sanitizeApiToken(row, { includeToken: true })
   };
 }
 
-export async function updateApiToken(db, tokenId, patch = {}) {
+export async function updateApiToken(db, tokenId, patch = {}, { actorUserId = null } = {}) {
   const existing = await getTokenById(db, tokenId);
   if (!existing) return null;
   const nextConstraints = patch.permission_constraints !== undefined
@@ -494,6 +691,25 @@ export async function updateApiToken(db, tokenId, patch = {}) {
       existing.id
     ]
   );
+  const serviceAccount = existing.owner_kind === 'service_account'
+    ? await getServiceAccountById(db, existing.owner_id)
+    : null;
+  if (serviceAccount) {
+    await insertServiceAccountActivity(db, {
+      orgId: serviceAccount.org_id,
+      serviceAccountId: serviceAccount.id,
+      tokenId: existing.id,
+      actorUserId,
+      eventType: next.revoked_at && !existing.revoked_at ? 'token.revoked' : 'token.updated',
+      metadata: {
+        label: next.label,
+        token_public_id: existing.token_public_id,
+        permission_constraints: nextConstraints,
+        expires_at: next.expires_at,
+        revoked_at: next.revoked_at
+      }
+    });
+  }
   return sanitizeApiToken(next);
 }
 
@@ -564,6 +780,24 @@ export async function rotateApiToken(
       'UPDATE api_tokens SET revoked_at = ?, replaced_by_token_id = ?, updated_at = ? WHERE id = ?',
       [timestamp, replacement.id, timestamp, existing.id]
     );
+    if (existing.owner_kind === 'service_account') {
+      const serviceAccount = await getServiceAccountById(tx, existing.owner_id);
+      if (serviceAccount) {
+        await insertServiceAccountActivity(tx, {
+          orgId: serviceAccount.org_id,
+          serviceAccountId: serviceAccount.id,
+          tokenId: replacement.id,
+          actorUserId: createdByUserId,
+          eventType: 'token.rotated',
+          metadata: {
+            previous_token_id: existing.id,
+            previous_token_public_id: existing.token_public_id,
+            token_public_id: replacement.token_public_id,
+            label: replacement.label
+          }
+        });
+      }
+    }
   });
   return {
     previous_token: sanitizeApiToken({ ...existing, revoked_at: timestamp, replaced_by_token_id: replacement.id, updated_at: timestamp }),
@@ -571,7 +805,7 @@ export async function rotateApiToken(
   };
 }
 
-export async function revokeApiToken(db, tokenId) {
+export async function revokeApiToken(db, tokenId, { actorUserId = null } = {}) {
   const existing = await getTokenById(db, tokenId);
   if (!existing || existing.revoked_at) return false;
   const timestamp = nowIso();
@@ -579,6 +813,23 @@ export async function revokeApiToken(db, tokenId) {
     'UPDATE api_tokens SET revoked_at = ?, updated_at = ? WHERE id = ?',
     [timestamp, timestamp, existing.id]
   );
+  if (existing.owner_kind === 'service_account') {
+    const serviceAccount = await getServiceAccountById(db, existing.owner_id);
+    if (serviceAccount) {
+      await insertServiceAccountActivity(db, {
+        orgId: serviceAccount.org_id,
+        serviceAccountId: serviceAccount.id,
+        tokenId: existing.id,
+        actorUserId,
+        eventType: 'token.revoked',
+        metadata: {
+          label: existing.label ?? null,
+          token_public_id: existing.token_public_id,
+          revoked_at: timestamp
+        }
+      });
+    }
+  }
   return true;
 }
 
@@ -612,7 +863,8 @@ export async function listServiceAccountWorkspaces(db, serviceAccountId) {
 export async function createServiceAccountWorkspaceGrant(
   db,
   serviceAccountId,
-  { workspace_id: workspaceId } = {}
+  { workspace_id: workspaceId } = {},
+  { actorUserId = null } = {}
 ) {
   const serviceAccount = await getServiceAccountById(db, serviceAccountId);
   if (!serviceAccount || Number(serviceAccount.archived)) {
@@ -661,16 +913,41 @@ export async function createServiceAccountWorkspaceGrant(
       grant.updated_at
     ]
   );
+  await insertServiceAccountActivity(db, {
+    orgId: serviceAccount.org_id,
+    serviceAccountId: serviceAccount.id,
+    workspaceId: workspace.id,
+    actorUserId,
+    eventType: 'workspace_grant.created',
+    metadata: {
+      workspace_name: workspace.name
+    }
+  });
   return sanitizeWorkspaceGrant(grant);
 }
 
-export async function revokeServiceAccountWorkspaceGrant(db, grantId) {
+export async function revokeServiceAccountWorkspaceGrant(db, grantId, { actorUserId = null } = {}) {
   const existing = await db.queryOne(
-    'SELECT id FROM service_account_workspace_grants WHERE id = ? LIMIT 1',
+    `SELECT g.id, g.service_account_id, g.workspace_id, s.org_id, w.name AS workspace_name
+       FROM service_account_workspace_grants g
+       JOIN service_accounts s ON s.id = g.service_account_id
+       LEFT JOIN workspaces w ON w.id = g.workspace_id
+      WHERE g.id = ?
+      LIMIT 1`,
     [String(grantId ?? '').trim()]
   );
   if (!existing) return false;
   await db.exec('DELETE FROM service_account_workspace_grants WHERE id = ?', [existing.id]);
+  await insertServiceAccountActivity(db, {
+    orgId: existing.org_id,
+    serviceAccountId: existing.service_account_id,
+    workspaceId: existing.workspace_id,
+    actorUserId,
+    eventType: 'workspace_grant.revoked',
+    metadata: {
+      workspace_name: existing.workspace_name ?? null
+    }
+  });
   return true;
 }
 
@@ -742,4 +1019,31 @@ export async function resolveServiceAccountToken(db, bearerToken) {
     token_constraints: permissions.tokenConstraints,
     effective_permissions: permissions.effectivePermissions
   };
+}
+
+export async function listServiceAccountActivity(db, serviceAccountId, { limit = 50 } = {}) {
+  const serviceAccount = await getServiceAccountById(db, serviceAccountId);
+  if (!serviceAccount) return [];
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 50));
+  const rows = await db.query(
+    `SELECT e.*,
+            t.label AS token_label,
+            t.token_public_id,
+            w.name AS workspace_name,
+            u.email AS actor_email,
+            u.display_name AS actor_display_name
+       FROM service_account_activity_events e
+       LEFT JOIN api_tokens t ON t.id = e.token_id
+       LEFT JOIN workspaces w ON w.id = e.workspace_id
+       LEFT JOIN users u ON u.id = e.actor_user_id
+      WHERE e.service_account_id = ?
+      ORDER BY e.created_at DESC
+      LIMIT ?`,
+    [serviceAccount.id, safeLimit]
+  );
+  return rows.map(sanitizeServiceAccountActivityEvent);
+}
+
+export async function recordServiceAccountActivity(db, params = {}) {
+  return insertServiceAccountActivity(db, params);
 }

@@ -683,6 +683,12 @@ const adminServiceAccountAliases = document.getElementById('admin-service-accoun
 const adminServiceAccountPermissions = document.getElementById('admin-service-account-permissions');
 const adminServiceAccountSave = document.getElementById('admin-service-account-save');
 const adminServiceAccountsList = document.getElementById('admin-service-accounts-list');
+const adminServiceSummaryName = document.getElementById('admin-service-summary-name');
+const adminServiceSummaryDescription = document.getElementById('admin-service-summary-description');
+const adminServiceSummaryBadges = document.getElementById('admin-service-summary-badges');
+const adminServiceSummaryStats = document.getElementById('admin-service-summary-stats');
+const adminServiceSetupNote = document.getElementById('admin-service-setup-note');
+const adminServiceSummaryAliases = document.getElementById('admin-service-summary-aliases');
 const adminServiceTokenStatus = document.getElementById('admin-service-token-status');
 const adminServiceTokenNew = document.getElementById('admin-service-token-new');
 const adminServiceTokenLabel = document.getElementById('admin-service-token-label');
@@ -701,6 +707,10 @@ const adminServiceGrantsStatus = document.getElementById('admin-service-grants-s
 const adminServiceGrantWorkspace = document.getElementById('admin-service-grant-workspace');
 const adminServiceGrantAdd = document.getElementById('admin-service-grant-add');
 const adminServiceGrantsList = document.getElementById('admin-service-grants-list');
+const adminServiceEffectiveWorkspaces = document.getElementById('admin-service-effective-workspaces');
+const adminServiceActivityStatus = document.getElementById('admin-service-activity-status');
+const adminServiceActivityRefresh = document.getElementById('admin-service-activity-refresh');
+const adminServiceActivityList = document.getElementById('admin-service-activity-list');
 const profilePageBack = document.getElementById('profile-page-back');
 const profilePageSave = document.getElementById('profile-page-save');
 const profilePageAvatar = document.getElementById('profile-page-avatar');
@@ -2810,6 +2820,24 @@ async function copyTextToClipboard(value) {
   helper.select();
   document.execCommand('copy');
   helper.remove();
+}
+
+function presentAdminServiceToken(rawToken, actionLabel = 'created') {
+  const safeToken = String(rawToken ?? '').trim();
+  setAdminServiceTokenReveal(safeToken);
+  if (!safeToken) return false;
+  if (adminServiceTokenReveal) {
+    adminServiceTokenReveal.value = safeToken;
+    adminServiceTokenReveal.focus();
+    adminServiceTokenReveal.select();
+  }
+  if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+    window.prompt(
+      `Copy this ${actionLabel} token now. BrianHub will not show the raw secret again after this step.`,
+      safeToken
+    );
+  }
+  return true;
 }
 
 function clearAuditLogOutput() {
@@ -16053,26 +16081,32 @@ function getAdminState() {
   if (!Array.isArray(adminState.serviceAccounts)) adminState.serviceAccounts = [];
   if (!Array.isArray(adminState.serviceAccountTokens)) adminState.serviceAccountTokens = [];
   if (!Array.isArray(adminState.serviceAccountWorkspaceGrants)) adminState.serviceAccountWorkspaceGrants = [];
+  if (!Array.isArray(adminState.serviceAccountEffectiveWorkspaces)) adminState.serviceAccountEffectiveWorkspaces = [];
+  if (!Array.isArray(adminState.serviceAccountActivity)) adminState.serviceAccountActivity = [];
   if (typeof adminState.invitesLoading !== 'boolean') adminState.invitesLoading = false;
   if (typeof adminState.usersLoading !== 'boolean') adminState.usersLoading = false;
   if (typeof adminState.serviceAccountsLoading !== 'boolean') adminState.serviceAccountsLoading = false;
   if (typeof adminState.serviceAccountTokensLoading !== 'boolean') adminState.serviceAccountTokensLoading = false;
   if (typeof adminState.serviceAccountWorkspaceGrantsLoading !== 'boolean') adminState.serviceAccountWorkspaceGrantsLoading = false;
+  if (typeof adminState.serviceAccountActivityLoading !== 'boolean') adminState.serviceAccountActivityLoading = false;
   if (typeof adminState.invitesError !== 'string') adminState.invitesError = '';
   if (typeof adminState.usersError !== 'string') adminState.usersError = '';
   if (typeof adminState.serviceAccountsError !== 'string') adminState.serviceAccountsError = '';
   if (typeof adminState.serviceAccountTokensError !== 'string') adminState.serviceAccountTokensError = '';
   if (typeof adminState.serviceAccountWorkspaceGrantsError !== 'string') adminState.serviceAccountWorkspaceGrantsError = '';
+  if (typeof adminState.serviceAccountActivityError !== 'string') adminState.serviceAccountActivityError = '';
   if (typeof adminState.invitesLoaded !== 'boolean') adminState.invitesLoaded = false;
   if (typeof adminState.usersLoaded !== 'boolean') adminState.usersLoaded = false;
   if (typeof adminState.serviceAccountsLoaded !== 'boolean') adminState.serviceAccountsLoaded = false;
   if (typeof adminState.serviceAccountTokensLoaded !== 'boolean') adminState.serviceAccountTokensLoaded = false;
   if (typeof adminState.serviceAccountWorkspaceGrantsLoaded !== 'boolean') adminState.serviceAccountWorkspaceGrantsLoaded = false;
+  if (typeof adminState.serviceAccountActivityLoaded !== 'boolean') adminState.serviceAccountActivityLoaded = false;
   if (!Number.isFinite(Number(adminState.invitesRequestedAt))) adminState.invitesRequestedAt = 0;
   if (!Number.isFinite(Number(adminState.usersRequestedAt))) adminState.usersRequestedAt = 0;
   if (!Number.isFinite(Number(adminState.serviceAccountsRequestedAt))) adminState.serviceAccountsRequestedAt = 0;
   if (!Number.isFinite(Number(adminState.serviceAccountTokensRequestedAt))) adminState.serviceAccountTokensRequestedAt = 0;
   if (!Number.isFinite(Number(adminState.serviceAccountWorkspaceGrantsRequestedAt))) adminState.serviceAccountWorkspaceGrantsRequestedAt = 0;
+  if (!Number.isFinite(Number(adminState.serviceAccountActivityRequestedAt))) adminState.serviceAccountActivityRequestedAt = 0;
   if (typeof adminState.ownerEmail !== 'string') adminState.ownerEmail = getCurrentOwnerEmail();
   if (typeof adminState.statusMessage !== 'string') adminState.statusMessage = '';
   if (typeof adminState.statusTone !== 'string') adminState.statusTone = 'info';
@@ -16127,6 +16161,27 @@ function normalizeServiceAccountAliases(entries = []) {
     .filter((entry) => entry.alias_type && entry.alias_value);
 }
 
+function normalizeServiceAccountSummary(summary) {
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return {
+      token_count: 0,
+      active_token_count: 0,
+      workspace_grant_count: 0,
+      effective_workspace_count: 0,
+      last_token_used_at: null,
+      last_activity_at: null
+    };
+  }
+  return {
+    token_count: Number(summary.token_count) || 0,
+    active_token_count: Number(summary.active_token_count) || 0,
+    workspace_grant_count: Number(summary.workspace_grant_count) || 0,
+    effective_workspace_count: Number(summary.effective_workspace_count) || 0,
+    last_token_used_at: summary.last_token_used_at ? String(summary.last_token_used_at) : null,
+    last_activity_at: summary.last_activity_at ? String(summary.last_activity_at) : null
+  };
+}
+
 function normalizeServiceAccountRecord(account) {
   if (!account || typeof account !== 'object') return null;
   return {
@@ -16135,6 +16190,7 @@ function normalizeServiceAccountRecord(account) {
     description: account.description ? String(account.description) : '',
     permissions: normalizeServiceAccountPermissionKeys(account.permissions ?? []),
     aliases: normalizeServiceAccountAliases(account.aliases ?? []),
+    summary: normalizeServiceAccountSummary(account.summary),
     archived: Number(account.archived) ? 1 : 0
   };
 }
@@ -16157,7 +16213,25 @@ function normalizeServiceAccountWorkspaceGrantRecord(grant) {
   if (!grant || typeof grant !== 'object') return null;
   return {
     ...grant,
-    workspace_name: String(grant.workspace_name ?? '').trim() || 'Unnamed workspace'
+    workspace_name: String(grant.workspace_name ?? '').trim() || 'Unnamed workspace',
+    created_at: grant.created_at ? String(grant.created_at) : null
+  };
+}
+
+function normalizeServiceAccountActivityEventRecord(event) {
+  if (!event || typeof event !== 'object') return null;
+  return {
+    ...event,
+    event_type: String(event.event_type ?? '').trim(),
+    request_method: event.request_method ? String(event.request_method) : null,
+    request_path: event.request_path ? String(event.request_path) : null,
+    workspace_name: String(event.workspace_name ?? '').trim() || '',
+    actor_email: event.actor_email ? String(event.actor_email) : null,
+    actor_display_name: event.actor_display_name ? String(event.actor_display_name) : null,
+    created_at: event.created_at ? String(event.created_at) : null,
+    metadata: event.metadata && typeof event.metadata === 'object' && !Array.isArray(event.metadata)
+      ? event.metadata
+      : {}
   };
 }
 
@@ -16219,6 +16293,32 @@ function getSelectedAdminServiceAccountToken() {
   return adminState.serviceAccountTokens.find((token) => token.id === adminState.selectedServiceAccountTokenId) ?? null;
 }
 
+function getServiceAccountSummary(account) {
+  return normalizeServiceAccountSummary(account?.summary);
+}
+
+function resetAdminServiceAccountDetailState() {
+  const adminState = getAdminState();
+  adminState.selectedServiceAccountTokenId = '';
+  adminState.serviceAccountTokens = [];
+  adminState.serviceAccountTokensError = '';
+  adminState.serviceAccountTokensLoading = false;
+  adminState.serviceAccountTokensLoaded = false;
+  adminState.serviceAccountTokensRequestedAt = 0;
+  adminState.serviceAccountWorkspaceGrants = [];
+  adminState.serviceAccountEffectiveWorkspaces = [];
+  adminState.serviceAccountWorkspaceGrantsError = '';
+  adminState.serviceAccountWorkspaceGrantsLoading = false;
+  adminState.serviceAccountWorkspaceGrantsLoaded = false;
+  adminState.serviceAccountWorkspaceGrantsRequestedAt = 0;
+  adminState.serviceAccountActivity = [];
+  adminState.serviceAccountActivityError = '';
+  adminState.serviceAccountActivityLoading = false;
+  adminState.serviceAccountActivityLoaded = false;
+  adminState.serviceAccountActivityRequestedAt = 0;
+  setAdminServiceTokenReveal('');
+}
+
 function setAdminServiceAccountsStatus(message, tone = 'info') {
   if (!adminServiceAccountsStatus) return;
   adminServiceAccountsStatus.textContent = String(message ?? '');
@@ -16246,6 +16346,16 @@ function setAdminServiceGrantsStatus(message, tone = 'info') {
     adminServiceGrantsStatus.dataset.tone = tone;
   } else {
     delete adminServiceGrantsStatus.dataset.tone;
+  }
+}
+
+function setAdminServiceActivityStatus(message, tone = 'info') {
+  if (!adminServiceActivityStatus) return;
+  adminServiceActivityStatus.textContent = String(message ?? '');
+  if (tone) {
+    adminServiceActivityStatus.dataset.tone = tone;
+  } else {
+    delete adminServiceActivityStatus.dataset.tone;
   }
 }
 
@@ -16286,6 +16396,197 @@ function formatApiTokenStatus(token) {
     if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) return 'expired';
   }
   return 'active';
+}
+
+function formatServiceAccountActivityTitle(event) {
+  const eventType = String(event?.event_type ?? '').trim();
+  if (eventType === 'service_account.created') return 'Service account created';
+  if (eventType === 'service_account.updated') return 'Service account updated';
+  if (eventType === 'token.created') return 'Token created';
+  if (eventType === 'token.updated') return 'Token updated';
+  if (eventType === 'token.rotated') return 'Token rotated';
+  if (eventType === 'token.revoked') return 'Token revoked';
+  if (eventType === 'workspace_grant.created') return 'Workspace granted';
+  if (eventType === 'workspace_grant.revoked') return 'Workspace grant removed';
+  if (eventType === 'token.accessed') {
+    const method = String(event?.request_method ?? '').trim().toUpperCase();
+    const path = String(event?.request_path ?? '').trim();
+    return method && path ? `${method} ${path}` : 'API access';
+  }
+  return eventType || 'Activity';
+}
+
+function formatServiceAccountActivityMeta(event) {
+  const parts = [];
+  if (event?.created_at) parts.push(formatNoticeDateTimeDisplay(event.created_at));
+  if (event?.status_code) parts.push(`status ${event.status_code}`);
+  if (event?.workspace_name) parts.push(event.workspace_name);
+  else if (event?.workspace_id) parts.push(event.workspace_id);
+  if (event?.token_label) parts.push(event.token_label);
+  else if (event?.token_public_id) parts.push(event.token_public_id);
+  const actorLabel = event?.actor_display_name || event?.actor_email || '';
+  if (actorLabel) parts.push(`by ${actorLabel}`);
+  return parts.join(' • ');
+}
+
+function formatServiceAccountAliasDisplay(alias) {
+  if (!alias || typeof alias !== 'object') return '';
+  const metadata = alias.metadata && typeof alias.metadata === 'object' && !Array.isArray(alias.metadata)
+    ? alias.metadata
+    : {};
+  const label = String(metadata.label ?? '').trim();
+  if (label) return label;
+  if (alias.alias_type === 'telegram_group') {
+    const groupId = String(metadata.group_id ?? '').trim();
+    if (groupId) return `Telegram ${groupId}`;
+  }
+  const value = String(alias.alias_value ?? '').trim();
+  if (!value) return 'Alias';
+  if (value.length <= 42) return value;
+  return `${value.slice(0, 18)}…${value.slice(-10)}`;
+}
+
+function createAdminServiceChip(text, tone = '') {
+  const chip = document.createElement('span');
+  chip.className = 'admin-service-chip';
+  if (tone) chip.classList.add(`is-${tone}`);
+  chip.textContent = String(text ?? '').trim() || 'Unknown';
+  return chip;
+}
+
+function buildAdminServiceSummaryStats() {
+  const adminState = getAdminState();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  const selectedSummary = getServiceAccountSummary(selectedAccount);
+  const selectedToken = getSelectedAdminServiceAccountToken();
+  const basePermissions = selectedAccount?.permissions ?? getCheckedPermissionKeys(adminServiceAccountPermissions);
+  const detailTokensLoaded = Boolean(selectedAccount) && Boolean(adminState.serviceAccountTokensLoaded);
+  const detailGrantsLoaded = Boolean(selectedAccount) && Boolean(adminState.serviceAccountWorkspaceGrantsLoaded);
+  const detailActivityLoaded = Boolean(selectedAccount) && Boolean(adminState.serviceAccountActivityLoaded);
+  const tokens = detailTokensLoaded ? (adminState.serviceAccountTokens ?? []) : [];
+  const activeTokens = detailTokensLoaded
+    ? tokens.filter((token) => formatApiTokenStatus(token) === 'active').length
+    : selectedSummary.active_token_count;
+  const tokenCount = detailTokensLoaded ? tokens.length : selectedSummary.token_count;
+  const latestTokenUse = detailTokensLoaded
+    ? tokens
+      .map((token) => token?.last_used_at)
+      .filter(Boolean)
+      .sort((left, right) => Date.parse(String(right)) - Date.parse(String(left)))[0] ?? null
+    : selectedSummary.last_token_used_at;
+  const latestActivity = detailActivityLoaded
+    ? ((adminState.serviceAccountActivity ?? []).find(Boolean) ?? null)
+    : (selectedSummary.last_activity_at ? { created_at: selectedSummary.last_activity_at } : null);
+  const explicitGrants = detailGrantsLoaded
+    ? (adminState.serviceAccountWorkspaceGrants ?? []).length
+    : selectedSummary.workspace_grant_count;
+  const effectiveWorkspaces = detailGrantsLoaded
+    ? (adminState.serviceAccountEffectiveWorkspaces ?? []).length
+    : selectedSummary.effective_workspace_count;
+  return [
+    {
+      label: 'Baseline permissions',
+      value: String(basePermissions.length),
+      meta: selectedAccount ? 'Editable live without rotating tokens' : 'Choose only the capabilities Roger needs'
+    },
+    {
+      label: 'Workspace access',
+      value: String(effectiveWorkspaces),
+      meta: selectedAccount
+        ? `${explicitGrants} explicit grant${explicitGrants === 1 ? '' : 's'}`
+        : 'Grant after the account is saved'
+    },
+    {
+      label: 'Tokens',
+      value: `${activeTokens}/${tokenCount || 0}`,
+      meta: selectedToken
+        ? `${formatApiTokenStatus(selectedToken)} • ${selectedToken.token_public_id}`
+        : 'Create one primary token for Roger'
+    },
+    {
+      label: 'Recent activity',
+      value: latestActivity?.created_at ? formatNoticeDateTimeDisplay(latestActivity.created_at) : 'None yet',
+      meta: latestTokenUse
+        ? `Last token use ${formatNoticeDateTimeDisplay(latestTokenUse)}`
+        : 'Lifecycle and access events appear after deploy'
+    }
+  ];
+}
+
+function renderAdminServiceAccountSummary() {
+  const adminState = getAdminState();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  const selectedSummary = getServiceAccountSummary(selectedAccount);
+  const effectiveWorkspaces = adminState.serviceAccountEffectiveWorkspaces ?? [];
+  const draftName = String(adminServiceAccountName?.value ?? '').trim();
+  const draftDescription = String(adminServiceAccountDescription?.value ?? '').trim();
+  if (adminServiceSummaryName) {
+    adminServiceSummaryName.textContent = selectedAccount?.display_name || draftName || 'New service account';
+  }
+  if (adminServiceSummaryDescription) {
+    adminServiceSummaryDescription.textContent = selectedAccount?.description
+      || draftDescription
+      || 'Create a durable service-account identity, then issue scoped tokens for Roger or another operator flow.';
+  }
+  if (adminServiceSummaryBadges) {
+    adminServiceSummaryBadges.innerHTML = '';
+    if (selectedAccount) {
+      adminServiceSummaryBadges.appendChild(createAdminServiceChip(Number(selectedAccount.archived) ? 'Disabled' : 'Active', Number(selectedAccount.archived) ? 'danger' : 'success'));
+      adminServiceSummaryBadges.appendChild(createAdminServiceChip(`${selectedAccount.aliases.length} alias${selectedAccount.aliases.length === 1 ? '' : 'es'}`));
+      adminServiceSummaryBadges.appendChild(createAdminServiceChip(`${selectedSummary.active_token_count}/${selectedSummary.token_count} active token${selectedSummary.token_count === 1 ? '' : 's'}`));
+      adminServiceSummaryBadges.appendChild(createAdminServiceChip(`${selectedSummary.effective_workspace_count} workspace${selectedSummary.effective_workspace_count === 1 ? '' : 's'}`));
+    } else {
+      adminServiceSummaryBadges.appendChild(createAdminServiceChip('Draft', 'muted'));
+      adminServiceSummaryBadges.appendChild(createAdminServiceChip('Save before granting workspaces', 'muted'));
+    }
+  }
+  if (adminServiceSummaryAliases) {
+    adminServiceSummaryAliases.innerHTML = '';
+    const aliases = selectedAccount?.aliases ?? parseServiceAccountAliasesSafely(adminServiceAccountAliases?.value ?? '');
+    if (aliases.length) {
+      aliases.slice(0, 8).forEach((alias) => {
+        adminServiceSummaryAliases.appendChild(createAdminServiceChip(formatServiceAccountAliasDisplay(alias), 'muted'));
+      });
+      if (aliases.length > 8) {
+        adminServiceSummaryAliases.appendChild(createAdminServiceChip(`+${aliases.length - 8} more`, 'muted'));
+      }
+    } else {
+      adminServiceSummaryAliases.appendChild(createAdminServiceChip('No aliases attached yet', 'muted'));
+    }
+  }
+  if (adminServiceSummaryStats) {
+    adminServiceSummaryStats.innerHTML = '';
+    buildAdminServiceSummaryStats().forEach((stat) => {
+      const card = document.createElement('div');
+      card.className = 'admin-service-stat-card';
+      const label = document.createElement('div');
+      label.className = 'admin-service-stat-label';
+      label.textContent = stat.label;
+      const value = document.createElement('div');
+      value.className = 'admin-service-stat-value';
+      value.textContent = stat.value;
+      const meta = document.createElement('div');
+      meta.className = 'admin-service-stat-meta';
+      meta.textContent = stat.meta;
+      card.append(label, value, meta);
+      adminServiceSummaryStats.appendChild(card);
+    });
+  }
+  if (adminServiceSetupNote) {
+    adminServiceSetupNote.textContent = selectedAccount
+      ? effectiveWorkspaces.length
+        ? 'This account is live. Grant changes and token edits apply immediately to existing Roger credentials.'
+        : 'Save is complete. Next step: grant the workspace Roger should access, then mint one primary token.'
+      : 'Draft mode: save the account first, then grant workspace access and create a token.';
+  }
+}
+
+function parseServiceAccountAliasesSafely(value) {
+  try {
+    return parseServiceAccountAliasesText(value);
+  } catch {
+    return [];
+  }
 }
 
 function setAdminInviteToken(token = '') {
@@ -16626,6 +16927,7 @@ function renderAdminServiceAccountsList() {
     return;
   }
   adminState.serviceAccounts.forEach((account) => {
+    const summary = getServiceAccountSummary(account);
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'workspace-row notice-row admin-user-row';
@@ -16633,16 +16935,18 @@ function renderAdminServiceAccountsList() {
     row.addEventListener('click', () => {
       if (adminState.selectedServiceAccountId === account.id) return;
       adminState.selectedServiceAccountId = account.id;
-      adminState.selectedServiceAccountTokenId = '';
-      setAdminServiceTokenReveal('');
+      resetAdminServiceAccountDetailState();
       renderAdminServiceAccountsList();
+      renderAdminServiceAccountSummary();
       renderAdminServiceAccountEditor();
       renderAdminServiceAccountTokensList();
       renderAdminServiceTokenEditor();
       renderAdminServiceWorkspaceGrantEditor();
       renderAdminServiceWorkspaceGrantsList();
+      renderAdminServiceActivityList();
       void refreshAdminServiceAccountTokens();
       void refreshAdminServiceAccountWorkspaceGrants();
+      void refreshAdminServiceAccountActivity();
     });
     const info = document.createElement('div');
     info.className = 'notice-row-info';
@@ -16651,10 +16955,18 @@ function renderAdminServiceAccountsList() {
     title.textContent = account.display_name || 'Untitled service account';
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
-    const aliasSummary = account.aliases.length
-      ? `${account.aliases.length} alias${account.aliases.length === 1 ? '' : 'es'}`
-      : 'no aliases';
-    meta.textContent = `${Number(account.archived) ? 'disabled' : 'active'} • ${account.permissions.length} permission${account.permissions.length === 1 ? '' : 's'} • ${aliasSummary}`;
+    const aliasLabel = account.aliases[0] ? formatServiceAccountAliasDisplay(account.aliases[0]) : 'No aliases';
+    const metaParts = [
+      Number(account.archived) ? 'disabled' : 'active',
+      `${summary.active_token_count}/${summary.token_count} token${summary.token_count === 1 ? '' : 's'}`,
+      `${summary.effective_workspace_count} workspace${summary.effective_workspace_count === 1 ? '' : 's'}`,
+      `${account.permissions.length} permission${account.permissions.length === 1 ? '' : 's'}`,
+      aliasLabel
+    ];
+    if (summary.last_activity_at) {
+      metaParts.push(`active ${formatNoticeDateTimeDisplay(summary.last_activity_at)}`);
+    }
+    meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
     row.appendChild(info);
@@ -16723,10 +17035,11 @@ function renderAdminServiceAccountEditor() {
   if (!adminServiceAccountsStatus?.dataset.tone) {
     setAdminServiceAccountsStatus(
       isOwnerActor
-        ? 'Owner console for service accounts, bearer tokens, and workspace grants.'
+        ? 'Choose a service account on the left, then manage its permissions, workspace access, and tokens from the workspace on the right.'
         : 'Owner access required to manage service accounts.'
     );
   }
+  renderAdminServiceAccountSummary();
 }
 
 function renderAdminServiceAccountTokensList() {
@@ -16744,7 +17057,7 @@ function renderAdminServiceAccountTokensList() {
   if (!selectedAccount) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Select a service account first.';
+    note.textContent = 'Save or select a service account first.';
     adminServiceTokensList.appendChild(note);
     return;
   }
@@ -16787,9 +17100,14 @@ function renderAdminServiceAccountTokensList() {
     title.textContent = token.label || `Token ${token.token_public_id}`;
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
-    const statusLabel = formatApiTokenStatus(token);
-    const lastUsed = token.last_used_at ? ` • last used ${formatNoticeDateTimeDisplay(token.last_used_at)}` : '';
-    meta.textContent = `${statusLabel} • ${token.token_public_id}${lastUsed}`;
+    const metaParts = [formatApiTokenStatus(token), token.token_public_id];
+    if (token.permission_constraints === null) metaParts.push('inherits account permissions');
+    else metaParts.push(`${token.permission_constraints.length} token constraint${token.permission_constraints.length === 1 ? '' : 's'}`);
+    if (token.created_at) metaParts.push(`created ${formatNoticeDateTimeDisplay(token.created_at)}`);
+    if (token.expires_at) metaParts.push(`expires ${formatNoticeDateTimeDisplay(token.expires_at)}`);
+    if (token.last_used_at) metaParts.push(`last used ${formatNoticeDateTimeDisplay(token.last_used_at)}`);
+    if (token.replaced_by_token_id) metaParts.push('superseded');
+    meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
     row.appendChild(info);
@@ -16833,16 +17151,21 @@ function renderAdminServiceTokenEditor() {
   if (!adminServiceTokenStatus?.dataset.tone) {
     setAdminServiceTokenStatus(
       selectedAccount
-        ? 'Create a new bearer token or rotate an existing one. Raw tokens are shown only once.'
-        : 'Select a service account first to manage tokens.'
+        ? selectedToken
+          ? 'Edit this token, rotate it, or revoke it. Rotation immediately invalidates the old secret.'
+          : 'Create one primary bearer token for Roger. Leave inheritance on unless you need to narrow this token.'
+        : 'Save or select a service account first to manage tokens.'
     );
   }
+  renderAdminServiceAccountSummary();
 }
 
 function renderAdminServiceWorkspaceGrantEditor() {
   const isOwnerActor = isCurrentActorOwnerSuperAdmin();
   const selectedAccount = getSelectedAdminServiceAccount();
   const workspaces = getAvailableGrantWorkspaces(selectedAccount);
+  const effectiveWorkspaces = getAdminState().serviceAccountEffectiveWorkspaces ?? [];
+  const effectiveCount = effectiveWorkspaces.length;
   if (adminServiceGrantWorkspace) {
     const currentOptionsKey = workspaces.map((workspace) => `${workspace.id}:${workspace.name}`).join('|');
     if (adminServiceGrantWorkspace.dataset.optionsKey !== currentOptionsKey) {
@@ -16864,13 +17187,31 @@ function renderAdminServiceWorkspaceGrantEditor() {
     adminServiceGrantWorkspace.disabled = !isOwnerActor || !selectedAccount;
   }
   if (adminServiceGrantAdd) adminServiceGrantAdd.disabled = !isOwnerActor || !selectedAccount;
+  if (adminServiceEffectiveWorkspaces) {
+    adminServiceEffectiveWorkspaces.innerHTML = '';
+    if (!selectedAccount) {
+      adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip('Select an account first', 'muted'));
+    } else if (!effectiveWorkspaces.length) {
+      adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip('No workspace access yet', 'muted'));
+    } else {
+      effectiveWorkspaces.slice(0, 10).forEach((workspace) => {
+        adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip(workspace.name || workspace.id, 'success'));
+      });
+      if (effectiveWorkspaces.length > 10) {
+        adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip(`+${effectiveWorkspaces.length - 10} more`, 'muted'));
+      }
+    }
+  }
   if (!adminServiceGrantsStatus?.dataset.tone) {
     setAdminServiceGrantsStatus(
       selectedAccount
-        ? 'Grant only the workspaces this service account should see.'
-        : 'Select a service account first to manage workspace grants.'
+        ? effectiveCount
+          ? `This account can currently see ${effectiveCount} workspace${effectiveCount === 1 ? '' : 's'}. Add only the workspaces Roger should operate in.`
+          : 'No workspace access yet. Roger will not see any BrianHub data until you add at least one grant.'
+        : 'Save or select a service account first to manage workspace grants.'
     );
   }
+  renderAdminServiceAccountSummary();
 }
 
 function renderAdminServiceWorkspaceGrantsList() {
@@ -16888,7 +17229,7 @@ function renderAdminServiceWorkspaceGrantsList() {
   if (!selectedAccount) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Select a service account first.';
+    note.textContent = 'Save or select a service account first.';
     adminServiceGrantsList.appendChild(note);
     return;
   }
@@ -16909,7 +17250,7 @@ function renderAdminServiceWorkspaceGrantsList() {
   if (!adminState.serviceAccountWorkspaceGrants.length) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'No workspace grants yet.';
+    note.textContent = 'No workspace grants yet. Roger cannot reach BrianHub work until you add one.';
     adminServiceGrantsList.appendChild(note);
     return;
   }
@@ -16923,7 +17264,9 @@ function renderAdminServiceWorkspaceGrantsList() {
     title.textContent = grant.workspace_name;
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
-    meta.textContent = grant.workspace_id;
+    const metaParts = [grant.workspace_id];
+    if (grant.created_at) metaParts.push(`granted ${formatNoticeDateTimeDisplay(grant.created_at)}`);
+    meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
     row.appendChild(info);
@@ -16941,6 +17284,66 @@ function renderAdminServiceWorkspaceGrantsList() {
     row.appendChild(actions);
     adminServiceGrantsList.appendChild(row);
   });
+  renderAdminServiceAccountSummary();
+}
+
+function renderAdminServiceActivityList() {
+  if (!adminServiceActivityList) return;
+  const adminState = getAdminState();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  adminServiceActivityList.innerHTML = '';
+  if (!isCurrentActorOwnerSuperAdmin()) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Owner access required to review service-account activity.';
+    adminServiceActivityList.appendChild(note);
+    return;
+  }
+  if (!selectedAccount) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Save or select a service account first.';
+    adminServiceActivityList.appendChild(note);
+    return;
+  }
+  if (adminState.serviceAccountActivityLoading) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Loading access history...';
+    adminServiceActivityList.appendChild(note);
+    return;
+  }
+  if (adminState.serviceAccountActivityError) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = adminState.serviceAccountActivityError;
+    adminServiceActivityList.appendChild(note);
+    return;
+  }
+  if (!adminState.serviceAccountActivity.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No activity yet. History appears after token creation, grant changes, or live API use.';
+    adminServiceActivityList.appendChild(note);
+    return;
+  }
+  adminState.serviceAccountActivity.forEach((event) => {
+    const row = document.createElement('div');
+    row.className = 'workspace-row notice-row';
+    const info = document.createElement('div');
+    info.className = 'notice-row-info';
+    const title = document.createElement('div');
+    title.className = 'notice-row-title';
+    title.textContent = formatServiceAccountActivityTitle(event);
+    const meta = document.createElement('div');
+    meta.className = 'notice-row-meta';
+    meta.textContent = formatServiceAccountActivityMeta(event);
+    info.appendChild(title);
+    info.appendChild(meta);
+    row.appendChild(info);
+    adminServiceActivityList.appendChild(row);
+  });
+  renderAdminServiceAccountSummary();
 }
 
 function renderAdminPage() {
@@ -16972,6 +17375,17 @@ function renderAdminPage() {
   renderAdminServiceTokenEditor();
   renderAdminServiceWorkspaceGrantEditor();
   renderAdminServiceWorkspaceGrantsList();
+  renderAdminServiceActivityList();
+  if (adminServiceActivityRefresh) {
+    adminServiceActivityRefresh.disabled = !isCurrentActorOwnerSuperAdmin() || !getSelectedAdminServiceAccount();
+  }
+  if (!adminServiceActivityStatus?.dataset.tone) {
+    setAdminServiceActivityStatus(
+      getSelectedAdminServiceAccount()
+        ? 'Recent service-account access and lifecycle events appear here.'
+        : 'Select a service account first to review access history.'
+    );
+  }
 
   if (getActiveView() !== 'admin') return;
   const adminState = getAdminState();
@@ -16999,12 +17413,18 @@ function renderAdminPage() {
   ) {
     void refreshAdminServiceAccountWorkspaceGrants();
   }
+  if (
+    adminState.selectedServiceAccountId
+    && !adminState.serviceAccountActivityLoading
+    && (!adminState.serviceAccountActivityLoaded || now - Number(adminState.serviceAccountActivityRequestedAt ?? 0) > ADMIN_USERS_AUTO_REFRESH_MS)
+  ) {
+    void refreshAdminServiceAccountActivity();
+  }
 }
 
 async function refreshAdminServiceAccounts({ preferredServiceAccountId = null } = {}) {
   const adminState = getAdminState();
   if (adminState.serviceAccountsLoading) return;
-  const hadLoaded = Boolean(adminState.serviceAccountsLoaded);
   const previousSelection = String(preferredServiceAccountId ?? adminState.selectedServiceAccountId ?? '').trim();
   adminState.serviceAccountsRequestedAt = Date.now();
   adminState.serviceAccountsLoading = true;
@@ -17025,12 +17445,10 @@ async function refreshAdminServiceAccounts({ preferredServiceAccountId = null } 
     adminState.serviceAccounts = serviceAccounts;
     if (previousSelection && serviceAccounts.some((account) => account.id === previousSelection)) {
       adminState.selectedServiceAccountId = previousSelection;
-    } else if (previousSelection && !serviceAccounts.length) {
+    } else if (serviceAccounts.length) {
+      adminState.selectedServiceAccountId = serviceAccounts[0]?.id ?? '';
+    } else {
       adminState.selectedServiceAccountId = '';
-    } else if (previousSelection) {
-      adminState.selectedServiceAccountId = serviceAccounts[0]?.id ?? '';
-    } else if (!hadLoaded) {
-      adminState.selectedServiceAccountId = serviceAccounts[0]?.id ?? '';
     }
     setAdminServiceAccountsStatus(
       serviceAccounts.length
@@ -17049,24 +17467,17 @@ async function refreshAdminServiceAccounts({ preferredServiceAccountId = null } 
   if (adminState.selectedServiceAccountId) {
     await Promise.all([
       refreshAdminServiceAccountTokens(),
-      refreshAdminServiceAccountWorkspaceGrants()
+      refreshAdminServiceAccountWorkspaceGrants(),
+      refreshAdminServiceAccountActivity()
     ]);
   } else {
-    adminState.serviceAccountTokens = [];
-    adminState.serviceAccountTokensError = '';
-    adminState.serviceAccountTokensLoading = false;
-    adminState.serviceAccountTokensLoaded = false;
-    adminState.serviceAccountWorkspaceGrants = [];
-    adminState.serviceAccountWorkspaceGrantsError = '';
-    adminState.serviceAccountWorkspaceGrantsLoading = false;
-    adminState.serviceAccountWorkspaceGrantsLoaded = false;
-    adminState.selectedServiceAccountTokenId = '';
-    setAdminServiceTokenReveal('');
+    resetAdminServiceAccountDetailState();
     resetAdminServiceTokenForm();
     renderAdminServiceAccountTokensList();
     renderAdminServiceTokenEditor();
     renderAdminServiceWorkspaceGrantEditor();
     renderAdminServiceWorkspaceGrantsList();
+    renderAdminServiceActivityList();
   }
 }
 
@@ -17134,6 +17545,7 @@ async function refreshAdminServiceAccountWorkspaceGrants() {
   const selectedAccount = getSelectedAdminServiceAccount();
   if (!selectedAccount) {
     adminState.serviceAccountWorkspaceGrants = [];
+    adminState.serviceAccountEffectiveWorkspaces = [];
     adminState.serviceAccountWorkspaceGrantsError = '';
     adminState.serviceAccountWorkspaceGrantsLoading = false;
     adminState.serviceAccountWorkspaceGrantsLoaded = false;
@@ -17155,13 +17567,17 @@ async function refreshAdminServiceAccountWorkspaceGrants() {
         .filter(Boolean)
         .sort((left, right) => String(left.workspace_name ?? '').localeCompare(String(right.workspace_name ?? '')))
       : [];
+    adminState.serviceAccountEffectiveWorkspaces = Array.isArray(response?.effective_workspaces)
+      ? response.effective_workspaces.filter(Boolean)
+      : [];
     setAdminServiceGrantsStatus(
       adminState.serviceAccountWorkspaceGrants.length
-        ? `Loaded ${adminState.serviceAccountWorkspaceGrants.length} workspace grant${adminState.serviceAccountWorkspaceGrants.length === 1 ? '' : 's'} for ${selectedAccount.display_name}.`
+        ? `Loaded ${adminState.serviceAccountWorkspaceGrants.length} workspace grant${adminState.serviceAccountWorkspaceGrants.length === 1 ? '' : 's'} and ${adminState.serviceAccountEffectiveWorkspaces.length} effective workspace${adminState.serviceAccountEffectiveWorkspaces.length === 1 ? '' : 's'} for ${selectedAccount.display_name}.`
         : `No workspace grants yet for ${selectedAccount.display_name}.`
     );
   } catch (err) {
     adminState.serviceAccountWorkspaceGrants = [];
+    adminState.serviceAccountEffectiveWorkspaces = [];
     adminState.serviceAccountWorkspaceGrantsError = err?.message ?? 'Unable to load workspace grants.';
   } finally {
     adminState.serviceAccountWorkspaceGrantsLoading = false;
@@ -17171,19 +17587,48 @@ async function refreshAdminServiceAccountWorkspaceGrants() {
   }
 }
 
+async function refreshAdminServiceAccountActivity() {
+  const adminState = getAdminState();
+  const selectedAccount = getSelectedAdminServiceAccount();
+  if (!selectedAccount) {
+    adminState.serviceAccountActivity = [];
+    adminState.serviceAccountActivityError = '';
+    adminState.serviceAccountActivityLoading = false;
+    adminState.serviceAccountActivityLoaded = false;
+    renderAdminServiceActivityList();
+    return;
+  }
+  if (adminState.serviceAccountActivityLoading) return;
+  adminState.serviceAccountActivityRequestedAt = Date.now();
+  adminState.serviceAccountActivityLoading = true;
+  adminState.serviceAccountActivityError = '';
+  renderAdminServiceActivityList();
+  try {
+    const response = await api.listAdminServiceAccountActivity(selectedAccount.id, { limit: 100 });
+    adminState.serviceAccountActivity = Array.isArray(response?.activity)
+      ? response.activity
+        .map((event) => normalizeServiceAccountActivityEventRecord(event))
+        .filter(Boolean)
+      : [];
+    setAdminServiceActivityStatus(
+      adminState.serviceAccountActivity.length
+        ? `Loaded ${adminState.serviceAccountActivity.length} recent event${adminState.serviceAccountActivity.length === 1 ? '' : 's'} for ${selectedAccount.display_name}.`
+        : `No access history yet for ${selectedAccount.display_name}.`
+    );
+  } catch (err) {
+    adminState.serviceAccountActivity = [];
+    adminState.serviceAccountActivityError = err?.message ?? 'Unable to load service-account activity.';
+  } finally {
+    adminState.serviceAccountActivityLoading = false;
+    adminState.serviceAccountActivityLoaded = true;
+    renderAdminServiceActivityList();
+  }
+}
+
 function startNewAdminServiceAccountDraft(draft = null) {
   const adminState = getAdminState();
   adminState.selectedServiceAccountId = '';
-  adminState.selectedServiceAccountTokenId = '';
-  adminState.serviceAccountTokens = [];
-  adminState.serviceAccountTokensError = '';
-  adminState.serviceAccountTokensLoading = false;
-  adminState.serviceAccountTokensLoaded = false;
-  adminState.serviceAccountWorkspaceGrants = [];
-  adminState.serviceAccountWorkspaceGrantsError = '';
-  adminState.serviceAccountWorkspaceGrantsLoading = false;
-  adminState.serviceAccountWorkspaceGrantsLoaded = false;
-  setAdminServiceTokenReveal('');
+  resetAdminServiceAccountDetailState();
   resetAdminServiceAccountForm(draft);
   resetAdminServiceTokenForm();
   renderAdminServiceAccountsList();
@@ -17192,6 +17637,7 @@ function startNewAdminServiceAccountDraft(draft = null) {
   renderAdminServiceTokenEditor();
   renderAdminServiceWorkspaceGrantEditor();
   renderAdminServiceWorkspaceGrantsList();
+  renderAdminServiceActivityList();
 }
 
 async function submitAdminServiceAccountSave() {
@@ -17233,6 +17679,7 @@ async function submitAdminServiceAccountSave() {
     const saved = normalizeServiceAccountRecord(response?.service_account);
     const accountId = String(saved?.id ?? '').trim();
     await refreshAdminServiceAccounts({ preferredServiceAccountId: accountId });
+    await refreshAdminServiceAccountActivity();
     setAdminServiceAccountsStatus(selected ? 'Service account updated.' : 'Service account created.');
     showToast({
       type: 'success',
@@ -17269,8 +17716,9 @@ async function createAdminServiceToken() {
   try {
     const response = await api.createAdminServiceAccountToken(selectedAccount.id, payload);
     const created = normalizeServiceAccountTokenRecord(response?.token);
-    setAdminServiceTokenReveal(response?.token?.token ?? '');
+    presentAdminServiceToken(response?.token?.token ?? '', 'new');
     await refreshAdminServiceAccountTokens({ preferredTokenId: created?.id ?? '' });
+    await refreshAdminServiceAccountActivity();
     setAdminServiceTokenStatus('Token created. Copy it now because the raw secret will not be shown again.');
     showToast({ type: 'success', message: `Created token for ${selectedAccount.display_name}.` });
   } catch (err) {
@@ -17303,6 +17751,7 @@ async function updateAdminSelectedServiceToken() {
     const response = await api.updateAdminServiceAccountToken(selectedToken.id, payload);
     const updated = normalizeServiceAccountTokenRecord(response?.token);
     await refreshAdminServiceAccountTokens({ preferredTokenId: updated?.id ?? selectedToken.id });
+    await refreshAdminServiceAccountActivity();
     setAdminServiceTokenStatus('Token settings updated.');
     showToast({ type: 'success', message: `Updated ${updated?.label || selectedToken.label || 'token'}.` });
   } catch (err) {
@@ -17336,8 +17785,9 @@ async function rotateAdminSelectedServiceToken() {
   try {
     const response = await api.rotateAdminServiceAccountToken(selectedToken.id, payload);
     const rotated = normalizeServiceAccountTokenRecord(response?.token);
-    setAdminServiceTokenReveal(response?.token?.token ?? '');
+    presentAdminServiceToken(response?.token?.token ?? '', 'rotated');
     await refreshAdminServiceAccountTokens({ preferredTokenId: rotated?.id ?? '' });
+    await refreshAdminServiceAccountActivity();
     setAdminServiceTokenStatus('Token rotated. Copy the new raw secret now.');
     showToast({ type: 'success', message: `Rotated ${selectedToken.label || selectedToken.token_public_id}.` });
   } catch (err) {
@@ -17365,6 +17815,7 @@ async function revokeAdminSelectedServiceToken() {
   try {
     await api.deleteAdminServiceAccountToken(selectedToken.id);
     await refreshAdminServiceAccountTokens({ preferredTokenId: selectedToken.id });
+    await refreshAdminServiceAccountActivity();
     setAdminServiceTokenStatus('Token revoked.');
     showToast({ type: 'success', message: `Revoked ${selectedToken.label || selectedToken.token_public_id}.` });
   } catch (err) {
@@ -17419,6 +17870,7 @@ async function addAdminServiceWorkspaceGrant() {
     await api.createAdminServiceAccountWorkspaceGrant(selectedAccount.id, { workspace_id: workspaceId });
     if (adminServiceGrantWorkspace) adminServiceGrantWorkspace.value = '';
     await refreshAdminServiceAccountWorkspaceGrants();
+    await refreshAdminServiceAccountActivity();
     setAdminServiceGrantsStatus('Workspace granted.');
     showToast({ type: 'success', message: `Granted workspace access to ${selectedAccount.display_name}.` });
   } catch (err) {
@@ -17446,6 +17898,7 @@ async function deleteAdminServiceWorkspaceGrant(grant) {
   try {
     await api.deleteAdminServiceAccountWorkspaceGrant(grantId);
     await refreshAdminServiceAccountWorkspaceGrants();
+    await refreshAdminServiceAccountActivity();
     setAdminServiceGrantsStatus(`Removed workspace grant for ${label}.`);
     showToast({ type: 'success', message: `Removed workspace grant for ${label}.` });
   } catch (err) {
@@ -17987,20 +18440,36 @@ function renderProjectList() {
       state.ui.activeProjectId = null;
     }
   }
-  const note = document.createElement('div');
-  note.className = 'sidebar-note';
-  note.textContent = 'Projects live in the Projects page.';
-  projectListEl.appendChild(note);
-
-  const openButton = document.createElement('button');
-  openButton.type = 'button';
-  openButton.className = 'subtle-button';
-  openButton.textContent = 'Open Projects';
-  openButton.addEventListener('click', () => {
-    setActiveView('projects');
-    render();
+  const projects = getProjectsForWorkspace()
+    .slice()
+    .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+  if (!projects.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No projects yet.';
+    projectListEl.appendChild(note);
+    return;
+  }
+  projects.forEach((project) => {
+    const row = document.createElement('div');
+    row.className = 'workspace-row project-row' + (project.id === active ? ' active' : '');
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'workspace-select';
+    selectBtn.textContent = project.name;
+    selectBtn.addEventListener('click', () => {
+      setActiveTaskFilter(project.id);
+      clearActiveWorkflowChecklistInstanceId();
+      setActiveView('tasks');
+      render();
+    });
+    const badge = document.createElement('span');
+    badge.className = 'project-badge';
+    badge.textContent = 'Project';
+    row.appendChild(selectBtn);
+    row.appendChild(badge);
+    projectListEl.appendChild(row);
   });
-  projectListEl.appendChild(openButton);
 }
 
 function renderProjectsPage() {
@@ -27846,17 +28315,8 @@ adminServiceAccountSelect?.addEventListener('change', () => {
   const adminState = getAdminState();
   const nextId = String(adminServiceAccountSelect.value ?? '').trim();
   adminState.selectedServiceAccountId = nextId;
-  adminState.selectedServiceAccountTokenId = '';
-  setAdminServiceTokenReveal('');
+  resetAdminServiceAccountDetailState();
   if (!nextId) {
-    adminState.serviceAccountTokens = [];
-    adminState.serviceAccountTokensError = '';
-    adminState.serviceAccountTokensLoading = false;
-    adminState.serviceAccountTokensLoaded = false;
-    adminState.serviceAccountWorkspaceGrants = [];
-    adminState.serviceAccountWorkspaceGrantsError = '';
-    adminState.serviceAccountWorkspaceGrantsLoading = false;
-    adminState.serviceAccountWorkspaceGrantsLoaded = false;
     resetAdminServiceAccountForm();
     resetAdminServiceTokenForm();
     renderAdminServiceAccountsList();
@@ -27865,6 +28325,7 @@ adminServiceAccountSelect?.addEventListener('change', () => {
     renderAdminServiceTokenEditor();
     renderAdminServiceWorkspaceGrantEditor();
     renderAdminServiceWorkspaceGrantsList();
+    renderAdminServiceActivityList();
     return;
   }
   renderAdminServiceAccountsList();
@@ -27873,12 +28334,19 @@ adminServiceAccountSelect?.addEventListener('change', () => {
   renderAdminServiceTokenEditor();
   renderAdminServiceWorkspaceGrantEditor();
   renderAdminServiceWorkspaceGrantsList();
+  renderAdminServiceActivityList();
   void refreshAdminServiceAccountTokens();
   void refreshAdminServiceAccountWorkspaceGrants();
+  void refreshAdminServiceAccountActivity();
 });
 adminServiceAccountSave?.addEventListener('click', () => {
   void submitAdminServiceAccountSave();
 });
+adminServiceAccountName?.addEventListener('input', renderAdminServiceAccountSummary);
+adminServiceAccountDescription?.addEventListener('input', renderAdminServiceAccountSummary);
+adminServiceAccountArchived?.addEventListener('change', renderAdminServiceAccountSummary);
+adminServiceAccountAliases?.addEventListener('input', renderAdminServiceAccountSummary);
+adminServiceAccountPermissions?.addEventListener('change', renderAdminServiceAccountSummary);
 adminServiceTokenNew?.addEventListener('click', () => {
   const adminState = getAdminState();
   adminState.selectedServiceAccountTokenId = '';
@@ -27887,6 +28355,7 @@ adminServiceTokenNew?.addEventListener('click', () => {
   renderAdminServiceAccountTokensList();
   renderAdminServiceTokenEditor();
   setAdminServiceTokenStatus('Creating a new token.');
+  renderAdminServiceAccountSummary();
 });
 adminServiceTokenInherit?.addEventListener('change', () => {
   const selectedToken = getSelectedAdminServiceAccountToken();
@@ -27897,6 +28366,7 @@ adminServiceTokenInherit?.addEventListener('change', () => {
   renderPermissionOptions(adminServiceTokenPermissions, selectedKeys, {
     disabled: !isCurrentActorOwnerSuperAdmin() || inheritPermissions
   });
+  renderAdminServiceAccountSummary();
 });
 adminServiceTokenCreate?.addEventListener('click', () => {
   void createAdminServiceToken();
@@ -27915,6 +28385,9 @@ adminServiceTokenCopy?.addEventListener('click', () => {
 });
 adminServiceGrantAdd?.addEventListener('click', () => {
   void addAdminServiceWorkspaceGrant();
+});
+adminServiceActivityRefresh?.addEventListener('click', () => {
+  void refreshAdminServiceAccountActivity();
 });
 taskTypesOpen?.addEventListener('click', openTaskTypesModal);
 taskTypesClose?.addEventListener('click', closeTaskTypesModal);

@@ -14,10 +14,13 @@ test('task tree uses dark scrollbar styling', () => {
   assert.match(styles, /#task-tree::\-webkit-scrollbar-thumb:hover \{/);
 });
 
-test('task sidebar points projects to the dedicated Projects view', () => {
+test('task sidebar renders project rows directly instead of an open-projects placeholder', () => {
   const script = readRepoFile('apps/web/app.js');
-  assert.match(script, /note\.textContent = 'Projects live in the Projects page\.'/);
-  assert.match(script, /openButton\.textContent = 'Open Projects';/);
-  assert.match(script, /openButton\.addEventListener\('click', \(\) => \{\s*setActiveView\('projects'\);\s*render\(\);\s*\}\);/s);
+  assert.match(script, /const projects = getProjectsForWorkspace\(\)/);
+  assert.match(script, /note\.textContent = 'No projects yet\.';/);
+  assert.match(script, /selectBtn\.textContent = project\.name;/);
+  assert.match(script, /selectBtn\.addEventListener\('click', \(\) => \{\s*setActiveTaskFilter\(project\.id\);\s*clearActiveWorkflowChecklistInstanceId\(\);\s*setActiveView\('tasks'\);\s*render\(\);\s*\}\);/s);
+  assert.match(script, /badge\.textContent = 'Project';/);
+  assert.doesNotMatch(script, /Open Projects/);
   assert.match(script, /newProjectBtn\?\.addEventListener\('click', async \(\) => \{[\s\S]*setActiveView\('projects'\);[\s\S]*render\(\);[\s\S]*\}\);/);
 });

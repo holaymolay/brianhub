@@ -103,10 +103,12 @@ import {
   createServiceAccount,
   createServiceAccountToken,
   createServiceAccountWorkspaceGrant,
+  listServiceAccountActivity,
   listServiceAccounts,
   listServiceAccountTokens,
   listServiceAccountWorkspaceGrants,
   listServiceAccountWorkspaces,
+  recordServiceAccountActivity,
   resolveServiceAccountToken,
   revokeApiToken,
   revokeServiceAccountWorkspaceGrant,
@@ -705,6 +707,7 @@ async function ensureWorkspaceAccess(request, reply, workspaceId) {
     reply.code(400).send({ error: 'workspace_id required' });
     return null;
   }
+  request.serviceAccountAccessWorkspaceId = safeWorkspaceId;
   if (!config.requireAuth) {
     return await resolveActorSecurity(request);
   }
@@ -876,6 +879,7 @@ server.addHook('onRequest', (request, reply, done) => {
   request.actorSecurity = null;
   request.authSession = null;
   request.serviceAccountAuth = null;
+  request.serviceAccountAccessWorkspaceId = null;
   request.invalidAuthorization = false;
   const corsOrigin = getCorsOrigin(request.headers.origin);
   if (corsOrigin) {
@@ -980,7 +984,7 @@ server.addHook('onSend', async (request, reply, payload) => {
   return payload;
 });
 
-server.addHook('onResponse', (request, reply, done) => {
+server.addHook('onResponse', async (request, reply) => {
   const latencyMs = Math.max(0, Date.now() - Number(request.startedAtMs ?? Date.now()));
   request.log.info({
     method: request.method,
@@ -989,7 +993,33 @@ server.addHook('onResponse', (request, reply, done) => {
     statusCode: reply.statusCode,
     latencyMs
   }, 'request completed');
-  done();
+  if (request.serviceAccountAuth?.service_account?.id) {
+    try {
+      await recordServiceAccountActivity(db, {
+        orgId: request.serviceAccountAuth.service_account.org_id,
+        serviceAccountId: request.serviceAccountAuth.service_account.id,
+        tokenId: request.serviceAccountAuth.token?.id ?? null,
+        workspaceId: request.serviceAccountAccessWorkspaceId ?? null,
+        eventType: 'token.accessed',
+        requestMethod: request.method,
+        requestPath: request.routeOptions?.url ?? request.url,
+        statusCode: reply.statusCode,
+        metadata: {
+          request_id: request.id,
+          request_url: request.url,
+          principal_type: request.actor?.principal_type ?? null
+        }
+      });
+    } catch (error) {
+      request.log.warn({
+        requestId: request.id,
+        err: {
+          name: error?.name,
+          message: error?.message
+        }
+      }, 'service-account activity logging failed');
+    }
+  }
 });
 
 server.setNotFoundHandler((request, reply) => {
@@ -1351,7 +1381,12 @@ server.patch('/admin/service-accounts/:id', async (request, reply) => {
   const security = await ensureOwnerAccess(request, reply);
   if (!security) return;
   try {
-    const updated = await updateServiceAccount(db, request.params?.id, request.body ?? {});
+    const updated = await updateServiceAccount(
+      db,
+      request.params?.id,
+      request.body ?? {},
+      { actorUserId: security.user?.id ?? null }
+    );
     if (!updated) return reply.code(404).send({ error: 'not found' });
     return { service_account: updated };
   } catch (err) {
@@ -1393,7 +1428,12 @@ server.patch('/admin/service-account-tokens/:id', async (request, reply) => {
   const security = await ensureOwnerAccess(request, reply);
   if (!security) return;
   try {
-    const updated = await updateApiToken(db, request.params?.id, request.body ?? {});
+    const updated = await updateApiToken(
+      db,
+      request.params?.id,
+      request.body ?? {},
+      { actorUserId: security.user?.id ?? null }
+    );
     if (!updated) return reply.code(404).send({ error: 'not found' });
     return { token: updated };
   } catch (err) {
@@ -1422,7 +1462,9 @@ server.delete('/admin/service-account-tokens/:id', async (request, reply) => {
   const security = await ensureOwnerAccess(request, reply);
   if (!security) return;
   try {
-    const revoked = await revokeApiToken(db, request.params?.id);
+    const revoked = await revokeApiToken(db, request.params?.id, {
+      actorUserId: security.user?.id ?? null
+    });
     if (!revoked) return reply.code(404).send({ error: 'not found' });
     return { ok: true };
   } catch (err) {
@@ -1450,7 +1492,12 @@ server.post('/admin/service-accounts/:id/workspace-grants', async (request, repl
   const security = await ensureOwnerAccess(request, reply);
   if (!security) return;
   try {
-    const grant = await createServiceAccountWorkspaceGrant(db, request.params?.id, request.body ?? {});
+    const grant = await createServiceAccountWorkspaceGrant(
+      db,
+      request.params?.id,
+      request.body ?? {},
+      { actorUserId: security.user?.id ?? null }
+    );
     return { workspace_grant: grant };
   } catch (err) {
     return reply.code(400).send({ error: err.message });
@@ -1461,9 +1508,27 @@ server.delete('/admin/service-account-workspace-grants/:id', async (request, rep
   const security = await ensureOwnerAccess(request, reply);
   if (!security) return;
   try {
-    const revoked = await revokeServiceAccountWorkspaceGrant(db, request.params?.id);
+    const revoked = await revokeServiceAccountWorkspaceGrant(db, request.params?.id, {
+      actorUserId: security.user?.id ?? null
+    });
     if (!revoked) return reply.code(404).send({ error: 'not found' });
     return { ok: true };
+  } catch (err) {
+    return reply.code(400).send({ error: err.message });
+  }
+});
+
+server.get('/admin/service-accounts/:id/activity', async (request, reply) => {
+  const security = await ensureOwnerAccess(request, reply);
+  if (!security) return;
+  try {
+    const activity = await listServiceAccountActivity(db, request.params?.id, {
+      limit: request.query?.limit
+    });
+    return {
+      activity,
+      count: activity.length
+    };
   } catch (err) {
     return reply.code(400).send({ error: err.message });
   }

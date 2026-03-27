@@ -24,11 +24,18 @@ test('tasks page exposes a dedicated mobile tools sheet', () => {
 
 test('desktop task toolbar uses the same select controls for sort, group by, and view', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
   assert.match(html, /id="task-sort-select" class="task-view-select task-toolbar-select"/);
   assert.match(html, /id="task-group-select" class="task-view-select task-toolbar-select"/);
   assert.match(html, /id="task-view-select" class="task-view-select task-toolbar-select"/);
+  assert.match(html, /id="task-columns-button"/);
   assert.doesNotMatch(html, /id="task-sort-button"/);
   assert.doesNotMatch(html, /id="task-group-button"/);
+  assert.match(css, /#tasks-panel \.task-view-toggle \{[\s\S]*display: flex;[\s\S]*flex: 1 1 34rem;[\s\S]*width: min\(100%, 34rem\);/);
+  assert.match(css, /\.task-view-toggle \{[\s\S]*display: flex;[\s\S]*flex-wrap: nowrap;[\s\S]*min-width: 0;[\s\S]*max-width: 100%;/);
+  assert.match(css, /\.task-toolbar-field \{[\s\S]*flex: 1 1 0;/);
+  assert.match(css, /\.task-view-select \{[\s\S]*min-width: 0;/);
+  assert.match(css, /#task-columns-button \{[\s\S]*flex: 0 0 auto;[\s\S]*align-self: flex-end;/);
 });
 
 test('mobile create sheet exposes a task quick-add form', () => {
