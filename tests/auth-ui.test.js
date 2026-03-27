@@ -7,13 +7,21 @@ function readAppScript() {
   return readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
 }
 
+function readApiScript() {
+  return readFileSync(resolve(process.cwd(), 'apps/web/api.js'), 'utf8');
+}
+
+function readLocalDataScript() {
+  return readFileSync(resolve(process.cwd(), 'apps/web/localData.js'), 'utf8');
+}
+
 test('auth resets clear persisted workspace domain state and pending local changes', () => {
   const script = readAppScript();
-  assert.match(script, /function clearWorkspaceDomainData\(\{\s*preserveWorkspaces = false,\s*clearPendingChanges = true,\s*resetAdminState = true\s*\} = \{\}\)/s);
+  assert.match(script, /function clearWorkspaceDomainData\(\{\s*preserveWorkspaces = false,\s*clearPendingChanges = true,\s*resetAdminState = true,\s*persist = true\s*\} = \{\}\)/s);
   assert.match(script, /const cleared = prepareLocalDataForStorage\(\{\s*localSeq: clearPendingChanges \? 0 : \(state\.local\?\.localSeq \?\? 0\),\s*pendingChanges: clearPendingChanges \? \[\] : \(state\.local\?\.pendingChanges \?\? \[\]\),/s);
   assert.match(script, /state\.local\.pendingChanges = cleared\.pendingChanges \?\? \[\];/);
   assert.match(script, /if \(resetAdminState\) \{\s*state\.ui\.admin = \{\};\s*\}/s);
-  assert.match(script, /persistLocalData\(\);/);
+  assert.match(script, /if \(persist\) \{\s*persistLocalData\(\);\s*\}/s);
 });
 
 test('workspace reload path drops stale data when auth or access is no longer valid', () => {
@@ -21,7 +29,7 @@ test('workspace reload path drops stale data when auth or access is no longer va
   assert.match(script, /function isWorkspaceDataResetStatus\(status\) \{\s*const candidate = Number\(status\);\s*return candidate === 401 \|\| candidate === 403 \|\| candidate === 404;\s*\}/s);
   assert.match(script, /if \(isWorkspaceDataResetStatus\(err\?\.status\)\) \{\s*clearWorkspaceDomainData\(\{ clearPendingChanges: true, resetAdminState: true \}\);\s*return;\s*\}/s);
   assert.match(script, /if \(isWorkspaceDataResetStatus\(err\?\.status\)\) \{\s*const failedWorkspaceId = state\.workspace\?\.id \?\? null;[\s\S]*clearWorkspaceDomainData\(\{\s*preserveWorkspaces: errStatus !== 401,\s*clearPendingChanges: true,\s*resetAdminState: true\s*\}\);[\s\S]*if \(errStatus !== 401\) \{\s*await loadWorkspaces\(\);[\s\S]*if \(state\.workspace\?\.id && state\.workspace\.id !== failedWorkspaceId\) \{\s*await loadWorkspaceData\(\);\s*\}/s);
-  assert.match(script, /async function reloadWorkspaceAfterAuthChange\(\) \{\s*clearWorkspaceDomainData\(\{ clearPendingChanges: true, resetAdminState: true \}\);/s);
+  assert.match(script, /async function reloadWorkspaceAfterAuthChange\(\) \{\s*clearWorkspaceDomainData\(\{ clearPendingChanges: true, resetAdminState: true, persist: false \}\);/s);
 });
 
 test('sync loop treats access failures as state resets and preserves blocked queue messaging', () => {
@@ -40,4 +48,17 @@ test('workspace refresh loads remote state atomically and only re-fetches after 
   assert.match(script, /if \(state\.workspace\?\.id !== workspaceId\) \{\s*return;\s*\}/s);
   assert.match(script, /const remindersChanged = await ensureTemplateReminders\(\);\s*if \(remindersChanged && state\.workspace\) \{\s*await loadWorkspaceData\(\);\s*\}/s);
   assert.match(script, /async function ensureTemplateReminders\(\) \{[\s\S]*let changed = false;[\s\S]*return changed;\s*\}/s);
+});
+
+test('local workspace cache is actor-scoped and api client does not send actor spoof headers', () => {
+  const appScript = readAppScript();
+  const apiScript = readApiScript();
+  const localDataScript = readLocalDataScript();
+  assert.match(localDataScript, /const DATA_KEY = 'brianhub_data_v2';/);
+  assert.match(localDataScript, /export function loadLocalData\(actorKey = null\) \{\s*const safeActorKey = String\(actorKey \?\? ''\)\.trim\(\);\s*if \(!safeActorKey\) return defaultData\(\);/s);
+  assert.match(localDataScript, /export function saveLocalData\(data, actorKey = null\) \{\s*const safeActorKey = String\(actorKey \?\? ''\)\.trim\(\);\s*if \(!safeActorKey\) return;[\s\S]*store\.actors\[safeActorKey\] = normalizeData\(data\);/s);
+  assert.match(appScript, /const localData = loadLocalData\(null\);/);
+  assert.match(appScript, /function getCurrentLocalDataActorKey\(\) \{[\s\S]*return `user:\$\{auth\.user\.id\}`;[\s\S]*\}/s);
+  assert.match(appScript, /saveLocalData\(prepareLocalDataForStorage\(\{[\s\S]*\}\), getCurrentLocalDataActorKey\(\)\);/s);
+  assert.doesNotMatch(apiScript, /X-Actor-Email|x-actor-email/);
 });

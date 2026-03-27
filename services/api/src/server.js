@@ -879,6 +879,99 @@ async function ensureProjectAccess(request, reply, projectId) {
   return { project, access };
 }
 
+async function ensureWorkspaceEntityAccess(request, reply, query, params = []) {
+  const row = await db.queryOne(query, params);
+  if (!row?.workspace_id) {
+    reply.code(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'not found',
+        requestId: request.id
+      }
+    });
+    return null;
+  }
+  const access = await ensureWorkspaceAccess(request, reply, row.workspace_id);
+  if (!access) return null;
+  return { row, access };
+}
+
+async function ensureTemplateAccess(request, reply, templateId) {
+  return ensureWorkspaceEntityAccess(
+    request,
+    reply,
+    'SELECT workspace_id FROM templates WHERE id = ? LIMIT 1',
+    [templateId]
+  );
+}
+
+async function ensureStatusAccess(request, reply, statusId) {
+  return ensureWorkspaceEntityAccess(
+    request,
+    reply,
+    'SELECT workspace_id FROM workspace_statuses WHERE id = ? LIMIT 1',
+    [statusId]
+  );
+}
+
+async function ensureTaskTypeAccess(request, reply, taskTypeId) {
+  return ensureWorkspaceEntityAccess(
+    request,
+    reply,
+    'SELECT workspace_id FROM task_types WHERE id = ? LIMIT 1',
+    [taskTypeId]
+  );
+}
+
+async function ensureNoticeAccess(request, reply, noticeId) {
+  return ensureWorkspaceEntityAccess(
+    request,
+    reply,
+    'SELECT workspace_id FROM notices WHERE id = ? LIMIT 1',
+    [noticeId]
+  );
+}
+
+async function ensureNoticeTypeAccess(request, reply, noticeTypeId) {
+  return ensureWorkspaceEntityAccess(
+    request,
+    reply,
+    'SELECT workspace_id FROM notice_types WHERE id = ? LIMIT 1',
+    [noticeTypeId]
+  );
+}
+
+async function ensureStoreRuleAccess(request, reply, storeRuleId) {
+  return ensureWorkspaceEntityAccess(
+    request,
+    reply,
+    'SELECT workspace_id FROM store_rules WHERE id = ? LIMIT 1',
+    [storeRuleId]
+  );
+}
+
+async function ensureShoppingListAccess(request, reply, shoppingListId) {
+  return ensureWorkspaceEntityAccess(
+    request,
+    reply,
+    'SELECT workspace_id FROM shopping_lists WHERE id = ? LIMIT 1',
+    [shoppingListId]
+  );
+}
+
+async function ensureShoppingItemAccess(request, reply, shoppingItemId) {
+  return ensureWorkspaceEntityAccess(
+    request,
+    reply,
+    `SELECT sl.workspace_id AS workspace_id
+       FROM shopping_list_items sli
+       JOIN shopping_lists sl ON sl.id = sli.list_id
+      WHERE sli.id = ?
+      LIMIT 1`,
+    [shoppingItemId]
+  );
+}
+
 async function ensureAdminActionReadAccess(request, reply, action) {
   const security = await ensureAuthenticatedAccess(request, reply);
   if (!security) return null;
@@ -2332,8 +2425,10 @@ server.delete('/projects/:id', async (request, reply) => {
   return result;
 });
 
-server.get('/templates', async (request) => {
+server.get('/templates', async (request, reply) => {
   const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listTemplates(db, workspace_id);
 });
 
@@ -2342,23 +2437,31 @@ server.post('/templates', async (request, reply) => {
   if (!workspace_id || !name) {
     return reply.code(400).send({ error: 'workspace_id and name required' });
   }
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await createTemplate(db, request.body ?? {});
 });
 
 server.patch('/templates/:id', async (request, reply) => {
+  const templateAccess = await ensureTemplateAccess(request, reply, request.params.id);
+  if (!templateAccess) return;
   const updated = await updateTemplate(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
   if (!updated) return reply.code(404).send({ error: 'not found' });
   return updated;
 });
 
 server.delete('/templates/:id', async (request, reply) => {
+  const templateAccess = await ensureTemplateAccess(request, reply, request.params.id);
+  if (!templateAccess) return;
   const result = await deleteTemplate(db, request.params.id, request.headers['x-client-id'] ?? null);
   if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
   return result;
 });
 
-server.get('/statuses', async (request) => {
+server.get('/statuses', async (request, reply) => {
   const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listStatuses(db, workspace_id);
 });
 
@@ -2367,6 +2470,8 @@ server.post('/statuses', async (request, reply) => {
   if (!workspace_id || !label) {
     return reply.code(400).send({ error: 'workspace_id and label required' });
   }
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   try {
     return await createStatus(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
   } catch (err) {
@@ -2375,12 +2480,16 @@ server.post('/statuses', async (request, reply) => {
 });
 
 server.patch('/statuses/:id', async (request, reply) => {
+  const statusAccess = await ensureStatusAccess(request, reply, request.params.id);
+  if (!statusAccess) return;
   const updated = await updateStatus(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
   if (!updated) return reply.code(404).send({ error: 'not found' });
   return updated;
 });
 
 server.delete('/statuses/:id', async (request, reply) => {
+  const statusAccess = await ensureStatusAccess(request, reply, request.params.id);
+  if (!statusAccess) return;
   const result = await deleteStatus(db, request.params.id, request.headers['x-client-id'] ?? null);
   if (!result || result.deleted === 0) {
     if (result?.error === 'protected') {
@@ -2391,8 +2500,10 @@ server.delete('/statuses/:id', async (request, reply) => {
   return result;
 });
 
-server.get('/task-types', async (request) => {
+server.get('/task-types', async (request, reply) => {
   const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listTaskTypes(db, workspace_id);
 });
 
@@ -2401,6 +2512,8 @@ server.post('/task-types', async (request, reply) => {
   if (!workspace_id || !name) {
     return reply.code(400).send({ error: 'workspace_id and name required' });
   }
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   try {
     return await createTaskType(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
   } catch (err) {
@@ -2409,6 +2522,8 @@ server.post('/task-types', async (request, reply) => {
 });
 
 server.patch('/task-types/:id', async (request, reply) => {
+  const taskTypeAccess = await ensureTaskTypeAccess(request, reply, request.params.id);
+  if (!taskTypeAccess) return;
   try {
     const updated = await updateTaskType(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
     if (!updated) return reply.code(404).send({ error: 'not found' });
@@ -2419,6 +2534,8 @@ server.patch('/task-types/:id', async (request, reply) => {
 });
 
 server.delete('/task-types/:id', async (request, reply) => {
+  const taskTypeAccess = await ensureTaskTypeAccess(request, reply, request.params.id);
+  if (!taskTypeAccess) return;
   const result = await deleteTaskType(db, request.params.id, request.headers['x-client-id'] ?? null);
   if (!result || result.deleted === 0) {
     if (result?.error === 'protected') {
@@ -2429,8 +2546,10 @@ server.delete('/task-types/:id', async (request, reply) => {
   return result;
 });
 
-server.get('/notice-types', async (request) => {
+server.get('/notice-types', async (request, reply) => {
   const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listNoticeTypes(db, workspace_id);
 });
 
@@ -2439,6 +2558,8 @@ server.post('/notice-types', async (request, reply) => {
   if (!workspace_id || !label) {
     return reply.code(400).send({ error: 'workspace_id and label required' });
   }
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   try {
     return await createNoticeType(db, { workspace_id, label }, request.headers['x-client-id'] ?? null);
   } catch (err) {
@@ -2447,6 +2568,8 @@ server.post('/notice-types', async (request, reply) => {
 });
 
 server.patch('/notice-types/:id', async (request, reply) => {
+  const noticeTypeAccess = await ensureNoticeTypeAccess(request, reply, request.params.id);
+  if (!noticeTypeAccess) return;
   try {
     const updated = await updateNoticeType(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
     if (!updated) return reply.code(404).send({ error: 'not found' });
@@ -2456,12 +2579,16 @@ server.patch('/notice-types/:id', async (request, reply) => {
   }
 });
 
-server.delete('/notice-types/:id', async (request) => {
+server.delete('/notice-types/:id', async (request, reply) => {
+  const noticeTypeAccess = await ensureNoticeTypeAccess(request, reply, request.params.id);
+  if (!noticeTypeAccess) return;
   return await deleteNoticeType(db, request.params.id, request.headers['x-client-id'] ?? null);
 });
 
-server.get('/notices', async (request) => {
+server.get('/notices', async (request, reply) => {
   const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listNotices(db, workspace_id);
 });
 
@@ -2470,23 +2597,31 @@ server.post('/notices', async (request, reply) => {
   if (!workspace_id || !title || !notify_at) {
     return reply.code(400).send({ error: 'workspace_id, title, and notify_at required' });
   }
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await createNotice(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
 });
 
 server.patch('/notices/:id', async (request, reply) => {
+  const noticeAccess = await ensureNoticeAccess(request, reply, request.params.id);
+  if (!noticeAccess) return;
   const updated = await updateNotice(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
   if (!updated) return reply.code(404).send({ error: 'not found' });
   return updated;
 });
 
 server.delete('/notices/:id', async (request, reply) => {
+  const noticeAccess = await ensureNoticeAccess(request, reply, request.params.id);
+  if (!noticeAccess) return;
   const result = await deleteNotice(db, request.params.id, request.headers['x-client-id'] ?? null);
   if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
   return result;
 });
 
-server.get('/store-rules', async (request) => {
+server.get('/store-rules', async (request, reply) => {
   const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listStoreRules(db, workspace_id);
 });
 
@@ -2495,23 +2630,31 @@ server.post('/store-rules', async (request, reply) => {
   if (!workspace_id || !store_name) {
     return reply.code(400).send({ error: 'workspace_id and store_name required' });
   }
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await createStoreRule(db, request.body ?? {}, request.headers['x-client-id'] ?? null);
 });
 
 server.patch('/store-rules/:id', async (request, reply) => {
+  const storeRuleAccess = await ensureStoreRuleAccess(request, reply, request.params.id);
+  if (!storeRuleAccess) return;
   const updated = await updateStoreRule(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
   if (!updated) return reply.code(404).send({ error: 'not found' });
   return updated;
 });
 
 server.delete('/store-rules/:id', async (request, reply) => {
+  const storeRuleAccess = await ensureStoreRuleAccess(request, reply, request.params.id);
+  if (!storeRuleAccess) return;
   const result = await deleteStoreRule(db, request.params.id, request.headers['x-client-id'] ?? null);
   if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
   return result;
 });
 
-server.get('/shopping-lists', async (request) => {
+server.get('/shopping-lists', async (request, reply) => {
   const { workspace_id } = request.query ?? {};
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await listShoppingLists(db, workspace_id);
 });
 
@@ -2520,6 +2663,8 @@ server.post('/shopping-lists', async (request, reply) => {
   if (!workspace_id || !name) {
     return reply.code(400).send({ error: 'workspace_id and name required' });
   }
+  const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+  if (!access) return;
   return await createShoppingList(
     db,
     { workspace_id, name, store_name, scheduled_for, archived: request.body?.archived },
@@ -2528,19 +2673,30 @@ server.post('/shopping-lists', async (request, reply) => {
 });
 
 server.patch('/shopping-lists/:id', async (request, reply) => {
+  const shoppingListAccess = await ensureShoppingListAccess(request, reply, request.params.id);
+  if (!shoppingListAccess) return;
   const updated = await updateShoppingList(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
   if (!updated) return reply.code(404).send({ error: 'not found' });
   return updated;
 });
 
 server.delete('/shopping-lists/:id', async (request, reply) => {
+  const shoppingListAccess = await ensureShoppingListAccess(request, reply, request.params.id);
+  if (!shoppingListAccess) return;
   const result = await deleteShoppingList(db, request.params.id, request.headers['x-client-id'] ?? null);
   if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
   return result;
 });
 
-server.get('/shopping-items', async (request) => {
+server.get('/shopping-items', async (request, reply) => {
   const { workspace_id, list_id } = request.query ?? {};
+  if (list_id) {
+    const listAccess = await ensureShoppingListAccess(request, reply, list_id);
+    if (!listAccess) return;
+  } else {
+    const access = await ensureWorkspaceAccess(request, reply, workspace_id);
+    if (!access) return;
+  }
   return await listShoppingItems(db, workspace_id, list_id ?? null);
 });
 
@@ -2549,6 +2705,8 @@ server.post('/shopping-items', async (request, reply) => {
   if (!list_id) {
     return reply.code(400).send({ error: 'list_id required' });
   }
+  const listAccess = await ensureShoppingListAccess(request, reply, list_id);
+  if (!listAccess) return;
   if (Array.isArray(items) && items.length) {
     return { items: await createShoppingItems(db, list_id, items, request.headers['x-client-id'] ?? null) };
   }
@@ -2561,12 +2719,16 @@ server.post('/shopping-items', async (request, reply) => {
 });
 
 server.patch('/shopping-items/:id', async (request, reply) => {
+  const shoppingItemAccess = await ensureShoppingItemAccess(request, reply, request.params.id);
+  if (!shoppingItemAccess) return;
   const updated = await updateShoppingItem(db, request.params.id, request.body ?? {}, request.headers['x-client-id'] ?? null);
   if (!updated) return reply.code(404).send({ error: 'not found' });
   return updated;
 });
 
 server.delete('/shopping-items/:id', async (request, reply) => {
+  const shoppingItemAccess = await ensureShoppingItemAccess(request, reply, request.params.id);
+  if (!shoppingItemAccess) return;
   const result = await deleteShoppingItem(db, request.params.id, request.headers['x-client-id'] ?? null);
   if (!result || result.deleted === 0) return reply.code(404).send({ error: 'not found' });
   return result;
@@ -2575,6 +2737,11 @@ server.delete('/shopping-items/:id', async (request, reply) => {
 server.post('/tasks/:id/convert-to-shopping-item', async (request, reply) => {
   const taskAccess = await ensureTaskAccess(request, reply, request.params.id);
   if (!taskAccess) return;
+  const targetListId = String(request.body?.list_id ?? '').trim();
+  if (targetListId) {
+    const shoppingListAccess = await ensureShoppingListAccess(request, reply, targetListId);
+    if (!shoppingListAccess) return;
+  }
   try {
     const converted = await convertTaskToShoppingItem(
       db,

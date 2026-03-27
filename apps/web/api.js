@@ -3,7 +3,6 @@ import { webConfig } from './config.js';
 import { logger } from './logger.js';
 
 const API_BASE = webConfig.apiBase;
-const UI_STORAGE_KEY = 'brianhub_ui_v1';
 let requestIdCounter = 0;
 let supportsAuthSettingsEndpoint = true;
 let supportsAdminUsersEndpoint = true;
@@ -11,25 +10,6 @@ let supportsAdminUsersEndpoint = true;
 function emitApiEvent(detail) {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent('brianhub:api', { detail }));
-}
-
-function getActorEmailFromUiState() {
-  if (typeof localStorage === 'undefined') return null;
-  const raw = localStorage.getItem(UI_STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    const email = String(
-      parsed?.ui?.auth?.user?.email
-      ?? parsed?.ui?.profile?.email
-      ?? ''
-    ).trim().toLowerCase();
-    if (!email) return null;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
-    return email;
-  } catch {
-    return null;
-  }
 }
 
 function createRequestId() {
@@ -64,7 +44,6 @@ async function request(path, options = {}) {
       : []
   );
   const startedAt = Date.now();
-  const actorEmail = getActorEmailFromUiState();
   const requestId = createRequestId();
   let res;
   try {
@@ -74,7 +53,6 @@ async function request(path, options = {}) {
         'Content-Type': 'application/json',
         'X-Client-Id': getClientId(),
         'X-Request-Id': requestId,
-        ...(actorEmail ? { 'X-Actor-Email': actorEmail } : {}),
         ...customHeaders
       },
       ...fetchOptions

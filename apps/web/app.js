@@ -19,7 +19,7 @@ import { applyCheckIn, applyWaitingFollowup, TaskStatus } from '../../packages/c
 
 const DEFAULT_OWNER_EMAIL = 'brian@pipecaminc.com';
 
-const localData = loadLocalData();
+const localData = loadLocalData(null);
 const bootLocalData = getBootLocalData(localData);
 const state = {
   ...loadState(),
@@ -8281,7 +8281,7 @@ function persistLocalData() {
     storeRules: state.storeRules ?? [],
     shoppingLists: state.shoppingLists ?? [],
     shoppingItems: state.shoppingItems ?? {}
-  }));
+  }), getCurrentLocalDataActorKey());
 }
 
 function queueLocalChange(change) {
@@ -15475,6 +15475,12 @@ function isAuthenticatedActor() {
   return Boolean(auth.authenticated && auth.user?.id);
 }
 
+function getCurrentLocalDataActorKey() {
+  const auth = getAuthState();
+  if (!auth.authenticated || !auth.user?.id) return null;
+  return `user:${auth.user.id}`;
+}
+
 function shouldShowAuthGatePage() {
   return (isAuthGateEnabled() || Boolean(state.ui?.forceAuthGate)) && !isAuthenticatedActor();
 }
@@ -15587,6 +15593,16 @@ function applyAuthPayload(payload, { persistProfile = true } = {}) {
   if (!auth.authenticated) {
     applyUserSettingsPayload(null);
   }
+}
+
+function hydrateLocalDataForCurrentActor() {
+  const actorKey = getCurrentLocalDataActorKey();
+  const hydrated = prepareLocalDataForStorage(loadLocalData(actorKey));
+  applyLocalDataSnapshot(hydrated);
+  state.workspaces = (hydrated.workspaces ?? []).map(normalizeWorkspace);
+  state.local.localSeq = hydrated.localSeq ?? 0;
+  state.local.pendingChanges = hydrated.pendingChanges ?? [];
+  state.workspace = null;
 }
 
 function getDefaultUserSettings() {
@@ -15758,7 +15774,8 @@ function queueUserSettingsSave({ immediate = false } = {}) {
 function clearWorkspaceDomainData({
   preserveWorkspaces = false,
   clearPendingChanges = true,
-  resetAdminState = true
+  resetAdminState = true,
+  persist = true
 } = {}) {
   if (taskEditorAutosaveTimer) {
     clearTimeout(taskEditorAutosaveTimer);
@@ -15796,7 +15813,9 @@ function clearWorkspaceDomainData({
   state.ui.syncCursor = 0;
   state.ui.aiSuggestions = [];
   state.ui.aiSuggestionNotes = '';
-  persistLocalData();
+  if (persist) {
+    persistLocalData();
+  }
 }
 
 async function hydrateAuthSession() {
@@ -15805,18 +15824,21 @@ async function hydrateAuthSession() {
     const session = await api.getAuthMe();
     const nextSessionEmail = normalizeActorEmail(session?.user?.email ?? null);
     if (persistedProfileEmail && nextSessionEmail && persistedProfileEmail !== nextSessionEmail) {
-      clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true });
+      clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true, persist: false });
     }
     applyAuthPayload(session, { persistProfile: true });
+    hydrateLocalDataForCurrentActor();
     await hydrateUserSettingsFromServer();
   } catch {
     applyAuthPayload({ authenticated: false }, { persistProfile: false });
     applyUserSettingsPayload(null);
+    clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true, persist: false });
   }
 }
 
 async function reloadWorkspaceAfterAuthChange() {
-  clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true });
+  clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true, persist: false });
+  hydrateLocalDataForCurrentActor();
   await hydrateUserSettingsFromServer();
   await loadWorkspaces();
   await refreshWorkspace();

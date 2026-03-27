@@ -125,7 +125,7 @@ function buildApiConfig(env = process.env) {
   const allowHeaderActorAuth = parseBoolean(
     'BRIANHUB_ALLOW_HEADER_ACTOR_AUTH',
     env.BRIANHUB_ALLOW_HEADER_ACTOR_AUTH,
-    true,
+    false,
     errors
   );
   const sessionCookieName = String(env.BRIANHUB_SESSION_COOKIE_NAME ?? 'brianhub_session').trim() || 'brianhub_session';

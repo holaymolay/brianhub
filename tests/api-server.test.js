@@ -597,6 +597,234 @@ test('authenticated workspace creators are automatically enrolled in their new w
   assert.equal(membershipsRes.json()[0].user_id, creator.auth.user.id);
 });
 
+test('authenticated users cannot read or mutate another users workspace-scoped resources', async () => {
+  const userA = await createAcceptedUser({
+    workspaceName: 'Isolation source workspace',
+    email: 'isolation.source@example.com',
+    displayName: 'Isolation Source',
+    password: 'Passw0rd!IsolationA'
+  });
+  const userB = await createAcceptedUser({
+    workspaceName: 'Isolation viewer workspace',
+    email: 'isolation.viewer@example.com',
+    displayName: 'Isolation Viewer',
+    password: 'Passw0rd!IsolationB'
+  });
+
+  const authHeadersA = { cookie: userA.cookie };
+  const authHeadersB = { cookie: userB.cookie };
+  const previousRequireAuth = serverModuleRef.config.requireAuth;
+  serverModuleRef.config.requireAuth = true;
+
+  try {
+    const projectRes = await server.inject({
+      method: 'POST',
+      url: '/projects',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        name: 'Source project'
+      }
+    });
+    assert.equal(projectRes.statusCode, 200);
+    const project = projectRes.json();
+
+    const templateRes = await server.inject({
+      method: 'POST',
+      url: '/templates',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        name: 'Source template'
+      }
+    });
+    assert.equal(templateRes.statusCode, 200);
+    const template = templateRes.json();
+
+    const statusRes = await server.inject({
+      method: 'POST',
+      url: '/statuses',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        label: 'Source status'
+      }
+    });
+    assert.equal(statusRes.statusCode, 200);
+    const status = statusRes.json();
+
+    const taskTypeRes = await server.inject({
+      method: 'POST',
+      url: '/task-types',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        name: 'Source type'
+      }
+    });
+    assert.equal(taskTypeRes.statusCode, 200);
+    const taskType = taskTypeRes.json();
+
+    const noticeTypeRes = await server.inject({
+      method: 'POST',
+      url: '/notice-types',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        label: 'Reminder'
+      }
+    });
+    assert.equal(noticeTypeRes.statusCode, 200);
+    const noticeType = noticeTypeRes.json();
+
+    const noticeRes = await server.inject({
+      method: 'POST',
+      url: '/notices',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        title: 'Source notice',
+        notify_at: '2026-03-28T08:00:00.000Z',
+        notice_type_id: noticeType.id
+      }
+    });
+    assert.equal(noticeRes.statusCode, 200);
+    const notice = noticeRes.json();
+
+    const storeRuleRes = await server.inject({
+      method: 'POST',
+      url: '/store-rules',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        store_name: 'Costco'
+      }
+    });
+    assert.equal(storeRuleRes.statusCode, 200);
+    const storeRule = storeRuleRes.json();
+
+    const shoppingListRes = await server.inject({
+      method: 'POST',
+      url: '/shopping-lists',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        name: 'Source shopping list'
+      }
+    });
+    assert.equal(shoppingListRes.statusCode, 200);
+    const shoppingList = shoppingListRes.json();
+
+    const shoppingItemRes = await server.inject({
+      method: 'POST',
+      url: '/shopping-items',
+      headers: authHeadersA,
+      payload: {
+        list_id: shoppingList.id,
+        name: 'Source shopping item'
+      }
+    });
+    assert.equal(shoppingItemRes.statusCode, 200);
+    const shoppingItem = shoppingItemRes.json();
+
+    const taskRes = await server.inject({
+      method: 'POST',
+      url: '/tasks',
+      headers: authHeadersA,
+      payload: {
+        workspace_id: userA.workspaceId,
+        title: 'Source task'
+      }
+    });
+    assert.equal(taskRes.statusCode, 200);
+    const task = taskRes.json();
+
+    const forbiddenReads = [
+      `/projects?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/templates?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/statuses?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/task-types?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/notice-types?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/notices?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/store-rules?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/shopping-lists?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/shopping-items?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/shopping-items?list_id=${encodeURIComponent(shoppingList.id)}`,
+      `/tasks?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/task-dependencies?workspace_id=${encodeURIComponent(userA.workspaceId)}`,
+      `/tasks/tree?workspace_id=${encodeURIComponent(userA.workspaceId)}`
+    ];
+
+    for (const url of forbiddenReads) {
+      const response = await server.inject({
+        method: 'GET',
+        url,
+        headers: authHeadersB
+      });
+      assert.equal(response.statusCode, 403, `expected forbidden for ${url}`);
+    }
+
+    const searchRes = await server.inject({
+      method: 'POST',
+      url: '/tasks/search',
+      headers: authHeadersB,
+      payload: {
+        workspace_id: userA.workspaceId,
+        text: 'Source'
+      }
+    });
+    assert.equal(searchRes.statusCode, 403);
+
+    const syncPullRes = await server.inject({
+      method: 'POST',
+      url: '/sync/pull',
+      headers: authHeadersB,
+      payload: {
+        workspace_id: userA.workspaceId,
+        cursor: 0
+      }
+    });
+    assert.equal(syncPullRes.statusCode, 403);
+
+    const forbiddenMutations = [
+      ['PATCH', `/projects/${project.id}`, { name: 'Intrusion project' }],
+      ['PATCH', `/templates/${template.id}`, { name: 'Intrusion template' }],
+      ['PATCH', `/statuses/${status.id}`, { label: 'Intrusion status' }],
+      ['PATCH', `/task-types/${taskType.id}`, { name: 'Intrusion type' }],
+      ['PATCH', `/notice-types/${noticeType.id}`, { label: 'Intrusion notice type' }],
+      ['PATCH', `/notices/${notice.id}`, { title: 'Intrusion notice' }],
+      ['PATCH', `/store-rules/${storeRule.id}`, { store_name: 'Intrusion store' }],
+      ['PATCH', `/shopping-lists/${shoppingList.id}`, { name: 'Intrusion shopping list' }],
+      ['PATCH', `/shopping-items/${shoppingItem.id}`, { name: 'Intrusion shopping item' }],
+      ['PATCH', `/tasks/${task.id}`, { title: 'Intrusion task' }],
+      ['DELETE', `/shopping-lists/${shoppingList.id}`, null],
+      ['DELETE', `/templates/${template.id}`, null]
+    ];
+
+    for (const [method, url, payload] of forbiddenMutations) {
+      const response = await server.inject({
+        method,
+        url,
+        headers: authHeadersB,
+        payload: payload ?? undefined
+      });
+      assert.equal(response.statusCode, 403, `expected forbidden for ${method} ${url}`);
+    }
+
+    const convertRes = await server.inject({
+      method: 'POST',
+      url: `/tasks/${task.id}/convert-to-shopping-item`,
+      headers: authHeadersB,
+      payload: {
+        list_id: shoppingList.id
+      }
+    });
+    assert.equal(convertRes.statusCode, 403);
+  } finally {
+    serverModuleRef.config.requireAuth = previousRequireAuth;
+  }
+});
+
 test('invite accept rejects email that does not match the invite', async () => {
   const inviteeEmail = 'mismatch.user@example.com';
   const workspaceRes = await server.inject({

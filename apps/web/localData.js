@@ -1,4 +1,4 @@
-const DATA_KEY = 'brianhub_data_v1';
+const DATA_KEY = 'brianhub_data_v2';
 let mutationCounter = 0;
 
 function createMutationId() {
@@ -49,6 +49,12 @@ function defaultData() {
     pendingChanges: [],
     auditLog: [],
     ...defaultDomainData()
+  };
+}
+
+function defaultStore() {
+  return {
+    actors: {}
   };
 }
 
@@ -112,20 +118,45 @@ function normalizeData(data) {
   return next;
 }
 
-export function loadLocalData() {
+function normalizeStore(store) {
+  const next = { ...defaultStore(), ...(store ?? {}) };
+  if (!next.actors || typeof next.actors !== 'object' || Array.isArray(next.actors)) {
+    next.actors = {};
+  }
+  const normalizedActors = {};
+  Object.entries(next.actors).forEach(([key, value]) => {
+    const actorKey = String(key ?? '').trim();
+    if (!actorKey) return;
+    normalizedActors[actorKey] = normalizeData(value);
+  });
+  next.actors = normalizedActors;
+  return next;
+}
+
+function loadStore() {
   const raw = localStorage.getItem(DATA_KEY);
-  if (!raw) return defaultData();
+  if (!raw) return defaultStore();
   try {
     const parsed = JSON.parse(raw);
-    return normalizeData(parsed);
+    return normalizeStore(parsed);
   } catch {
-    return defaultData();
+    return defaultStore();
   }
 }
 
-export function saveLocalData(data) {
-  const payload = normalizeData(data);
-  localStorage.setItem(DATA_KEY, JSON.stringify(payload));
+export function loadLocalData(actorKey = null) {
+  const safeActorKey = String(actorKey ?? '').trim();
+  if (!safeActorKey) return defaultData();
+  const store = loadStore();
+  return normalizeData(store.actors[safeActorKey]);
+}
+
+export function saveLocalData(data, actorKey = null) {
+  const safeActorKey = String(actorKey ?? '').trim();
+  if (!safeActorKey) return;
+  const store = loadStore();
+  store.actors[safeActorKey] = normalizeData(data);
+  localStorage.setItem(DATA_KEY, JSON.stringify(normalizeStore(store)));
 }
 
 export function shouldHydrateLocalDomainData(data) {
