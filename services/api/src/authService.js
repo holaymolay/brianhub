@@ -754,6 +754,10 @@ export async function acceptInviteRegistration(
   let result = null;
   await db.transaction(async (tx) => {
     const inviteOrgRole = normalizeOrgRole(invite.role);
+    const workspace = await tx.queryOne(
+      'SELECT id, type, owner_user_id FROM workspaces WHERE id = ? LIMIT 1',
+      [invite.workspace_id]
+    );
     let user = await getUserByOrgEmail(tx, invite.org_id, inviteEmail);
     if (user && Number(user.archived)) {
       await tx.exec(
@@ -780,6 +784,13 @@ export async function acceptInviteRegistration(
         user.id,
         { org_role: 'admin' },
         clientId
+      );
+    }
+    const workspaceType = String(workspace?.type ?? 'personal').trim().toLowerCase();
+    if (workspace?.id && workspaceType === 'personal' && !workspace.owner_user_id) {
+      await tx.exec(
+        'UPDATE workspaces SET owner_user_id = ?, updated_at = ? WHERE id = ?',
+        [user.id, nowIso(), workspace.id]
       );
     }
     await createWorkspaceMembership(
@@ -826,11 +837,23 @@ export async function acceptInviteRegistration(
 
 export async function listUserWorkspaces(db, userId) {
   return db.query(
-    `SELECT w.*, wm.role
-       FROM workspace_memberships wm
-       JOIN workspaces w ON w.id = wm.workspace_id
-      WHERE wm.user_id = ? AND wm.archived = 0 AND w.archived = 0
+    `SELECT w.*,
+            CASE
+              WHEN lower(coalesce(w.type, 'personal')) = 'personal' THEN 'owner'
+              ELSE wm.role
+            END AS role
+       FROM workspaces w
+       LEFT JOIN workspace_memberships wm
+         ON wm.workspace_id = w.id
+        AND wm.user_id = ?
+        AND wm.archived = 0
+      WHERE w.archived = 0
+        AND (
+          (lower(coalesce(w.type, 'personal')) = 'personal' AND w.owner_user_id = ?)
+          OR
+          (lower(coalesce(w.type, 'personal')) <> 'personal' AND wm.id IS NOT NULL)
+        )
       ORDER BY w.created_at ASC`,
-    [userId]
+    [userId, userId]
   );
 }

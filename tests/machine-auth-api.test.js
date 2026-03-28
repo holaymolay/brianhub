@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createProject, createTask } from '../services/api/src/taskService.js';
 import { ROGER_V1_DEFAULT_PERMISSIONS } from '../services/api/src/permissionRegistry.js';
 
 const DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000001';
@@ -10,6 +11,7 @@ const ownerEmail = 'brian@pipecaminc.com';
 const rogerAlias = 'agent:main:telegram:group:-5130223325';
 
 let server = null;
+let db = null;
 const tempDir = mkdtempSync(join(tmpdir(), 'brianhub-service-auth-test-'));
 const tempDbPath = join(tempDir, 'service-auth.sqlite');
 const previousDb = process.env.BRIANHUB_DB;
@@ -46,32 +48,18 @@ async function createWorkspace(name) {
 }
 
 async function createProjectAsOwner(workspaceId, name) {
-  const response = await server.inject({
-    method: 'POST',
-    url: '/projects',
-    headers: ownerHeaders(),
-    payload: {
-      workspace_id: workspaceId,
-      name,
-      kind: 'project'
-    }
+  return await createProject(db, {
+    workspace_id: workspaceId,
+    name,
+    kind: 'project'
   });
-  assert.equal(response.statusCode, 200);
-  return response.json();
 }
 
 async function createTaskAsOwner(workspaceId, title) {
-  const response = await server.inject({
-    method: 'POST',
-    url: '/tasks',
-    headers: ownerHeaders(),
-    payload: {
-      workspace_id: workspaceId,
-      title
-    }
+  return await createTask(db, {
+    workspace_id: workspaceId,
+    title
   });
-  assert.equal(response.statusCode, 200);
-  return response.json();
 }
 
 async function createServiceAccount({
@@ -143,6 +131,7 @@ before(async () => {
   serverUrl.search = `v=${Date.now()}-${process.hrtime.bigint().toString()}`;
   const serverModule = await import(serverUrl);
   server = serverModule.server;
+  db = serverModule.db;
   await server.ready();
 });
 

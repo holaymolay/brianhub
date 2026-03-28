@@ -739,7 +739,7 @@ async function attachTagsToTask(db, task) {
 
 async function getWorkspaceRow(db, workspaceId) {
   const id = assertUuid(workspaceId, 'workspace_id');
-  const row = await getRow(db, 'SELECT id, org_id FROM workspaces WHERE id = ?', [id]);
+  const row = await getRow(db, 'SELECT id, org_id, type, owner_user_id, archived FROM workspaces WHERE id = ?', [id]);
   if (!row) throw new Error('Workspace not found');
   return row;
 }
@@ -858,6 +858,7 @@ export async function createWorkspace(
   }
   const id = ensureUuid(providedId, 'workspace id');
   const timestamp = nowIso();
+  const normalizedType = normalizeWorkspaceRecordType(type);
   let creatorUser = null;
   if (safeCreatorUserId) {
     creatorUser = await getUserById(db, safeCreatorUserId);
@@ -872,8 +873,8 @@ export async function createWorkspace(
     await ensureOrg(tx, safeOrgId, org_name ?? (safeOrgId === DEFAULT_ORG_ID ? 'Default' : safeOrgId));
     await run(
       tx,
-      'INSERT INTO workspaces (id, org_id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, safeOrgId, name, type, 0, timestamp, timestamp]
+      'INSERT INTO workspaces (id, org_id, owner_user_id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, safeOrgId, normalizedType === 'personal' ? safeCreatorUserId : null, name, type, 0, timestamp, timestamp]
     );
     await seedWorkspaceStatuses(tx, id);
     await seedWorkspaceTaskTypes(tx, id);
@@ -884,7 +885,7 @@ export async function createWorkspace(
         {
           workspace_id: id,
           user_id: creatorUser.id,
-          role: normalizeWorkspaceRecordType(type) === 'shared' ? 'manager' : 'member'
+          role: normalizedType === 'shared' ? 'manager' : 'member'
         },
         clientId
       );
@@ -1721,13 +1722,14 @@ export async function updateWorkspace(db, id, patch, clientId = null) {
     ...existing,
     name: patch.name ?? existing.name,
     type: patch.type ?? existing.type,
+    owner_user_id: patch.owner_user_id !== undefined ? optionalUuid(patch.owner_user_id, 'owner_user_id') : existing.owner_user_id ?? null,
     archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : existing.archived ?? 0,
     updated_at: nowIso()
   };
   await run(
     db,
-    'UPDATE workspaces SET name = ?, type = ?, archived = ?, updated_at = ? WHERE id = ?',
-    [next.name, next.type, next.archived, next.updated_at, id]
+    'UPDATE workspaces SET name = ?, type = ?, owner_user_id = ?, archived = ?, updated_at = ? WHERE id = ?',
+    [next.name, next.type, next.owner_user_id, next.archived, next.updated_at, id]
   );
   await recordChange(db, id, 'workspace', id, 'update', patch, clientId);
   return getWorkspace(db, id);

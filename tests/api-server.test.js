@@ -825,6 +825,128 @@ test('authenticated users cannot read or mutate another users workspace-scoped r
   }
 });
 
+test('app owner does not implicitly bypass personal workspace membership checks', async () => {
+  const workspaceOwner = await createAcceptedUser({
+    workspaceName: 'Owner isolation workspace',
+    email: 'owner.isolation.member@example.com',
+    displayName: 'Owner Isolation Member',
+    password: 'Passw0rd!OwnerIsolation'
+  });
+
+  const previousRequireAuth = serverModuleRef.config.requireAuth;
+  serverModuleRef.config.requireAuth = true;
+  try {
+    const shoppingListRes = await server.inject({
+      method: 'POST',
+      url: '/shopping-lists',
+      headers: {
+        cookie: workspaceOwner.cookie
+      },
+      payload: {
+        workspace_id: workspaceOwner.workspaceId,
+        name: 'Private groceries'
+      }
+    });
+    assert.equal(shoppingListRes.statusCode, 200);
+
+    const ownerReadRes = await server.inject({
+      method: 'GET',
+      url: `/shopping-lists?workspace_id=${encodeURIComponent(workspaceOwner.workspaceId)}`,
+      headers: {
+        'x-actor-email': ownerEmail
+      }
+    });
+    assert.equal(ownerReadRes.statusCode, 403);
+
+    const ownerTaskReadRes = await server.inject({
+      method: 'GET',
+      url: `/tasks?workspace_id=${encodeURIComponent(workspaceOwner.workspaceId)}`,
+      headers: {
+        'x-actor-email': ownerEmail
+      }
+    });
+    assert.equal(ownerTaskReadRes.statusCode, 403);
+  } finally {
+    serverModuleRef.config.requireAuth = previousRequireAuth;
+  }
+});
+
+test('non-owner members still cannot access another users personal workspace', async () => {
+  const workspaceOwner = await createAcceptedUser({
+    workspaceName: 'Private owner workspace',
+    email: 'private.owner@example.com',
+    displayName: 'Private Owner',
+    password: 'Passw0rd!PrivateOwner'
+  });
+  const collaborator = await createAcceptedUser({
+    workspaceName: 'Collaborator home workspace',
+    email: 'private.collaborator@example.com',
+    displayName: 'Private Collaborator',
+    password: 'Passw0rd!PrivateCollaborator'
+  });
+
+  const previousRequireAuth = serverModuleRef.config.requireAuth;
+  serverModuleRef.config.requireAuth = true;
+  try {
+    const taskRes = await server.inject({
+      method: 'POST',
+      url: '/tasks',
+      headers: {
+        cookie: workspaceOwner.cookie
+      },
+      payload: {
+        workspace_id: workspaceOwner.workspaceId,
+        title: 'Strictly private task'
+      }
+    });
+    assert.equal(taskRes.statusCode, 200);
+
+    const addMembershipRes = await server.inject({
+      method: 'POST',
+      url: '/workspace-memberships',
+      headers: {
+        cookie: workspaceOwner.cookie
+      },
+      payload: {
+        workspace_id: workspaceOwner.workspaceId,
+        user_id: collaborator.auth.user.id,
+        role: 'member'
+      }
+    });
+    assert.equal(addMembershipRes.statusCode, 200);
+
+    const listWorkspacesRes = await server.inject({
+      method: 'GET',
+      url: '/workspaces',
+      headers: {
+        cookie: collaborator.cookie
+      }
+    });
+    assert.equal(listWorkspacesRes.statusCode, 200);
+    assert.deepEqual(listWorkspacesRes.json().map((workspace) => workspace.id), [collaborator.workspaceId]);
+
+    const readTasksRes = await server.inject({
+      method: 'GET',
+      url: `/tasks?workspace_id=${encodeURIComponent(workspaceOwner.workspaceId)}`,
+      headers: {
+        cookie: collaborator.cookie
+      }
+    });
+    assert.equal(readTasksRes.statusCode, 403);
+
+    const readShoppingListsRes = await server.inject({
+      method: 'GET',
+      url: `/shopping-lists?workspace_id=${encodeURIComponent(workspaceOwner.workspaceId)}`,
+      headers: {
+        cookie: collaborator.cookie
+      }
+    });
+    assert.equal(readShoppingListsRes.statusCode, 403);
+  } finally {
+    serverModuleRef.config.requireAuth = previousRequireAuth;
+  }
+});
+
 test('invite accept rejects email that does not match the invite', async () => {
   const inviteeEmail = 'mismatch.user@example.com';
   const workspaceRes = await server.inject({

@@ -265,14 +265,26 @@ async function isWorkspaceMember(userId, workspaceId) {
   const safeUserId = String(userId ?? '').trim();
   const safeWorkspaceId = String(workspaceId ?? '').trim();
   if (!safeUserId || !safeWorkspaceId) return false;
-  const membership = await db.queryOne(
-    `SELECT id
-       FROM workspace_memberships
-      WHERE workspace_id = ? AND user_id = ? AND archived = 0
+  const access = await db.queryOne(
+    `SELECT w.id,
+            lower(coalesce(w.type, 'personal')) AS workspace_type,
+            w.owner_user_id,
+            wm.id AS membership_id
+       FROM workspaces w
+       LEFT JOIN workspace_memberships wm
+         ON wm.workspace_id = w.id
+        AND wm.user_id = ?
+        AND wm.archived = 0
+      WHERE w.id = ?
+        AND w.archived = 0
       LIMIT 1`,
-    [safeWorkspaceId, safeUserId]
+    [safeUserId, safeWorkspaceId]
   );
-  return Boolean(membership);
+  if (!access) return false;
+  if (access.workspace_type === 'personal') {
+    return access.owner_user_id === safeUserId;
+  }
+  return Boolean(access.membership_id);
 }
 
 function mapStatusCodeToErrorCode(statusCode) {
@@ -765,9 +777,6 @@ async function ensureWorkspaceAccess(request, reply, workspaceId) {
   const actor = await ensureAuthenticatedAccess(request, reply);
   if (!actor) return null;
   const security = await resolveActorSecurity(request);
-  if (security?.isOwner) {
-    return security;
-  }
   const routePolicy = getServiceAccountRoutePolicy(request);
   if (security?.principalType === 'service_account') {
     if (routePolicy?.permission && !permissionSetHasPermission(security.effectivePermissions, routePolicy.permission)) {
