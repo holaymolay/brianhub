@@ -1153,6 +1153,33 @@ body.mobile-create-open {
   transition: color 140ms ease;
 }
 
+.sidebar-section-scope {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 112px;
+  min-width: 0;
+  padding: 0.15rem 0.44rem;
+  border-radius: 999px;
+  border: 1px solid rgba(154, 166, 186, 0.2);
+  background: rgba(11, 18, 28, 0.7);
+  color: #9fb4cb;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-section.is-expanded .sidebar-section-scope,
+.sidebar-section.is-active .sidebar-section-scope {
+  border-color: rgba(90, 170, 255, 0.22);
+  color: #cfe4ff;
+  background: rgba(18, 31, 49, 0.72);
+}
+
 .scheduling-mini-month {
   border: 1px solid var(--border);
   border-radius: 0.85rem;
@@ -2366,6 +2393,54 @@ body.api-help-body {
   gap: 0.45rem;
 }
 
+.admin-service-token-mode {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.admin-service-token-mode-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(111, 138, 169, 0.24);
+  background: rgba(13, 21, 34, 0.56);
+  color: #cddcec;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.admin-service-token-mode-button:hover {
+  border-color: rgba(90, 170, 255, 0.28);
+  background: rgba(18, 29, 46, 0.74);
+}
+
+.admin-service-token-mode-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(90, 170, 255, 0.26);
+}
+
+.admin-service-token-mode-button.is-active {
+  border-color: rgba(90, 170, 255, 0.52);
+  background: rgba(21, 42, 72, 0.8);
+  color: #f4f9ff;
+}
+
+.admin-service-token-mode-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .admin-service-token-state {
   border-style: solid;
 }
@@ -2396,6 +2471,14 @@ body.api-help-body {
   background: rgba(13, 21, 34, 0.5);
 }
 
+.admin-service-token-editor.is-issue-mode {
+  border-color: rgba(90, 170, 255, 0.24);
+}
+
+.admin-service-token-editor.is-manage-mode {
+  border-color: rgba(111, 138, 169, 0.26);
+}
+
 .admin-service-subsection-head {
   gap: 0.55rem;
 }
@@ -2415,6 +2498,11 @@ body.api-help-body {
 
 .admin-service-token-reveal .setting-input {
   width: 100%;
+}
+
+#admin-service-token-create-actions,
+#admin-service-token-manage-actions {
+  justify-content: flex-start;
 }
 
 .admin-service-workspace .workspace-list {

@@ -79,12 +79,16 @@ test('admin console exposes service-worker, token, and workspace-grant controls'
   assert.match(html, /<h4>Worker identity &amp; baseline access<\/h4>/);
   assert.match(html, /<h4>Tokens<\/h4>/);
   assert.match(html, /id="admin-service-token-state"/);
+  assert.match(html, /id="admin-service-token-mode-issue"/);
+  assert.match(html, /id="admin-service-token-mode-manage"/);
   assert.match(html, /id="admin-service-token-editor-title"/);
   assert.match(html, /id="admin-service-token-editor-meta"/);
   assert.match(html, /id="admin-service-token-inherit"/);
   assert.match(html, /id="admin-service-token-reveal"/);
   assert.match(html, /id="admin-service-token-acknowledge"/);
   assert.match(html, /id="admin-service-token-list-summary"/);
+  assert.match(html, /id="admin-service-token-create-actions"/);
+  assert.match(html, /id="admin-service-token-manage-actions"/);
   assert.match(html, /<h4>Workspace access<\/h4>/);
   assert.match(html, /id="admin-service-grant-workspace"/);
   assert.match(html, /id="admin-service-effective-workspaces"/);
@@ -112,6 +116,9 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /function setAdminServiceTokenState/);
   assert.match(appScript, /function setAdminServiceTokenListSummary/);
   assert.match(appScript, /function setAdminServiceTokenEditorMeta/);
+  assert.match(appScript, /function normalizeAdminServiceTokenEditorMode\(mode\)/);
+  assert.match(appScript, /function getAdminServiceTokenEditorMode\(\)/);
+  assert.match(appScript, /function setAdminServiceTokenEditorMode\(mode\)/);
   assert.match(appScript, /function buildAdminServiceTokenPayload/);
   assert.match(appScript, /function formatApiTokenTone\(status\)/);
   assert.match(appScript, /function getServiceWorkerTokenAccessLabel\(token\)/);
@@ -127,6 +134,8 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /revokeBtn\.textContent = 'Revoke';/);
   assert.match(appScript, /void refreshAdminServiceAccounts\(\);/);
   assert.match(appScript, /adminServiceAccountRogerPreset\?\.addEventListener\('click'/);
+  assert.match(appScript, /adminServiceTokenModeIssue\?\.addEventListener\('click'/);
+  assert.match(appScript, /adminServiceTokenModeManage\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceTokenRotate\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceGrantAdd\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceActivityRefresh\?\.addEventListener\('click'/);

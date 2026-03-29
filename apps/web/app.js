@@ -743,6 +743,8 @@ const adminServiceSetupChecklist = document.getElementById('admin-service-setup-
 const adminServiceSummaryAliases = document.getElementById('admin-service-summary-aliases');
 const adminServiceTokenStatus = document.getElementById('admin-service-token-status');
 const adminServiceTokenNew = document.getElementById('admin-service-token-new');
+const adminServiceTokenModeIssue = document.getElementById('admin-service-token-mode-issue');
+const adminServiceTokenModeManage = document.getElementById('admin-service-token-mode-manage');
 const adminServiceTokenState = document.getElementById('admin-service-token-state');
 const adminServiceTokenEditorTitle = document.getElementById('admin-service-token-editor-title');
 const adminServiceTokenEditorCopy = document.getElementById('admin-service-token-editor-copy');
@@ -756,9 +758,11 @@ const adminServiceTokenReveal = document.getElementById('admin-service-token-rev
 const adminServiceTokenCopy = document.getElementById('admin-service-token-copy');
 const adminServiceTokenAcknowledge = document.getElementById('admin-service-token-acknowledge');
 const adminServiceTokenCreate = document.getElementById('admin-service-token-create');
+const adminServiceTokenCreateActions = document.getElementById('admin-service-token-create-actions');
 const adminServiceTokenSave = document.getElementById('admin-service-token-save');
 const adminServiceTokenRotate = document.getElementById('admin-service-token-rotate');
 const adminServiceTokenRevoke = document.getElementById('admin-service-token-revoke');
+const adminServiceTokenManageActions = document.getElementById('admin-service-token-manage-actions');
 const adminServiceTokensList = document.getElementById('admin-service-tokens-list');
 const adminServiceTokenListSummary = document.getElementById('admin-service-token-list-summary');
 const adminServiceGrantsStatus = document.getElementById('admin-service-grants-status');
@@ -16529,16 +16533,33 @@ function getSidebarSectionCount(sectionKey) {
   }
 }
 
+function getSidebarSectionScopeText(sectionKey) {
+  const key = String(sectionKey ?? '').trim();
+  if (!['tasks', 'projects', 'workflows', 'shopping', 'notices'].includes(key)) return '';
+  const activeOrganization = getActiveOrganizationRecord();
+  if (activeOrganization?.name) {
+    return activeOrganization.name;
+  }
+  const anchorWorkspace = getCurrentWorkspaceAnchor() ?? normalizeWorkspace(state.workspace);
+  return String(anchorWorkspace?.name ?? '').trim();
+}
+
 function syncSidebarSectionLabels() {
   sidebarSections.forEach((section) => {
     const sectionKey = String(section.dataset.sidebarSection ?? '').trim();
     const toggleButton = section.querySelector('.sidebar-section-button[data-sidebar-toggle]');
     const label = toggleButton?.querySelector('.sidebar-section-button-label');
+    const scope = toggleButton?.querySelector('.sidebar-section-scope');
     if (!toggleButton || !label) return;
     const baseLabel = String(toggleButton.dataset.sidebarLabel ?? label.textContent ?? '').trim() || 'Section';
     const expanded = isSidebarSectionExpanded(sectionKey);
     const count = getSidebarSectionCount(sectionKey);
     label.textContent = !expanded && count > 0 ? `${baseLabel} (${count})` : baseLabel;
+    if (scope) {
+      const scopeText = getSidebarSectionScopeText(sectionKey);
+      scope.textContent = scopeText;
+      scope.classList.toggle('hidden', !scopeText);
+    }
   });
 }
 
@@ -17612,6 +17633,7 @@ function getAdminState() {
   if (typeof adminState.selectedUserId !== 'string') adminState.selectedUserId = '';
   if (typeof adminState.selectedServiceAccountId !== 'string') adminState.selectedServiceAccountId = '';
   if (typeof adminState.selectedServiceAccountTokenId !== 'string') adminState.selectedServiceAccountTokenId = '';
+  if (typeof adminState.serviceAccountTokenEditorMode !== 'string') adminState.serviceAccountTokenEditorMode = 'issue';
   if (typeof adminState.revealedServiceToken !== 'string') adminState.revealedServiceToken = '';
   if (typeof adminState.revealedServiceTokenPendingConfirmation !== 'boolean') adminState.revealedServiceTokenPendingConfirmation = false;
   if (typeof adminState.revealedServiceTokenCopied !== 'boolean') adminState.revealedServiceTokenCopied = false;
@@ -17812,6 +17834,18 @@ function getSelectedAdminServiceAccountToken() {
   return adminState.serviceAccountTokens.find((token) => token.id === adminState.selectedServiceAccountTokenId) ?? null;
 }
 
+function normalizeAdminServiceTokenEditorMode(mode) {
+  return String(mode ?? '').trim() === 'manage' ? 'manage' : 'issue';
+}
+
+function getAdminServiceTokenEditorMode() {
+  return normalizeAdminServiceTokenEditorMode(getAdminState().serviceAccountTokenEditorMode);
+}
+
+function setAdminServiceTokenEditorMode(mode) {
+  getAdminState().serviceAccountTokenEditorMode = normalizeAdminServiceTokenEditorMode(mode);
+}
+
 function getServiceAccountSummary(account) {
   return normalizeServiceAccountSummary(account?.summary);
 }
@@ -17819,6 +17853,7 @@ function getServiceAccountSummary(account) {
 function resetAdminServiceAccountDetailState() {
   const adminState = getAdminState();
   adminState.selectedServiceAccountTokenId = '';
+  adminState.serviceAccountTokenEditorMode = 'issue';
   adminState.serviceAccountTokens = [];
   adminState.serviceAccountTokensError = '';
   adminState.serviceAccountTokensLoading = false;
@@ -17941,6 +17976,7 @@ function selectAdminServiceToken(tokenId, { requireConfirm = true } = {}) {
     return false;
   }
   adminState.selectedServiceAccountTokenId = nextId;
+  setAdminServiceTokenEditorMode(nextId ? 'manage' : 'issue');
   setAdminServiceTokenReveal('');
   renderAdminServiceAccountTokensList();
   renderAdminServiceTokenEditor();
@@ -18088,7 +18124,7 @@ function focusAdminServiceSetupTarget(target) {
       element = adminServiceGrantWorkspace ?? adminServiceGrantAdd;
       break;
     case 'token':
-      element = adminServiceTokenNew ?? adminServiceTokenLabel ?? adminServiceTokenCreate;
+      element = adminServiceTokenModeIssue ?? adminServiceTokenNew ?? adminServiceTokenLabel ?? adminServiceTokenCreate;
       break;
     default:
       break;
@@ -18919,7 +18955,7 @@ function renderAdminServiceAccountTokensList() {
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.className = 'subtle-button';
-    editBtn.textContent = token.id === adminState.selectedServiceAccountTokenId ? 'Selected' : 'Edit';
+    editBtn.textContent = token.id === adminState.selectedServiceAccountTokenId ? 'Selected' : 'Manage';
     editBtn.disabled = token.id === adminState.selectedServiceAccountTokenId;
     editBtn.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -18959,8 +18995,26 @@ function renderAdminServiceTokenEditor() {
   const selectedToken = getSelectedAdminServiceAccountToken();
   const adminState = getAdminState();
   const tokens = adminState.serviceAccountTokens ?? [];
+  const tokenEditorMode = getAdminServiceTokenEditorMode();
+  const issueMode = tokenEditorMode === 'issue';
   const pendingReveal = hasPendingAdminServiceTokenReveal();
   setAdminServiceTokenEditorMeta('');
+  adminServiceTokenModeIssue?.classList.toggle('is-active', issueMode);
+  adminServiceTokenModeIssue?.setAttribute('aria-pressed', issueMode ? 'true' : 'false');
+  adminServiceTokenModeManage?.classList.toggle('is-active', !issueMode);
+  adminServiceTokenModeManage?.setAttribute('aria-pressed', !issueMode ? 'true' : 'false');
+  if (adminServiceTokenModeIssue) {
+    adminServiceTokenModeIssue.disabled = !isOwnerActor || !selectedAccount;
+  }
+  if (adminServiceTokenModeManage) {
+    adminServiceTokenModeManage.disabled = !isOwnerActor || !selectedAccount || !tokens.length;
+  }
+  adminServiceTokenCreateActions?.classList.toggle('hidden', !issueMode);
+  adminServiceTokenManageActions?.classList.toggle('hidden', issueMode);
+  adminServiceTokenCreateActions?.setAttribute('aria-hidden', issueMode ? 'false' : 'true');
+  adminServiceTokenManageActions?.setAttribute('aria-hidden', issueMode ? 'true' : 'false');
+  adminServiceTokenPermissions?.closest('.admin-service-token-editor')?.classList.toggle('is-issue-mode', issueMode);
+  adminServiceTokenPermissions?.closest('.admin-service-token-editor')?.classList.toggle('is-manage-mode', !issueMode);
   if (selectedToken) {
     if (adminServiceTokenLabel && document.activeElement !== adminServiceTokenLabel) {
       adminServiceTokenLabel.value = selectedToken.label ?? '';
@@ -18984,27 +19038,33 @@ function renderAdminServiceTokenEditor() {
   if (adminServiceTokenLabel) adminServiceTokenLabel.disabled = !isOwnerActor || !selectedAccount;
   if (adminServiceTokenExpiresAt) adminServiceTokenExpiresAt.disabled = !isOwnerActor || !selectedAccount;
   if (adminServiceTokenInherit) adminServiceTokenInherit.disabled = !isOwnerActor || !selectedAccount;
-  if (adminServiceTokenCreate) adminServiceTokenCreate.disabled = !isOwnerActor || !selectedAccount;
+  if (adminServiceTokenCreate) adminServiceTokenCreate.disabled = !isOwnerActor || !selectedAccount || !issueMode;
   if (adminServiceTokenNew) adminServiceTokenNew.disabled = !isOwnerActor || !selectedAccount;
-  if (adminServiceTokenSave) adminServiceTokenSave.disabled = !isOwnerActor || !selectedToken;
-  if (adminServiceTokenRotate) adminServiceTokenRotate.disabled = !isOwnerActor || !selectedToken || Boolean(selectedToken?.revoked_at);
-  if (adminServiceTokenRevoke) adminServiceTokenRevoke.disabled = !isOwnerActor || !selectedToken || Boolean(selectedToken?.revoked_at);
+  if (adminServiceTokenSave) adminServiceTokenSave.disabled = !isOwnerActor || issueMode || !selectedToken;
+  if (adminServiceTokenRotate) adminServiceTokenRotate.disabled = !isOwnerActor || issueMode || !selectedToken || Boolean(selectedToken?.revoked_at);
+  if (adminServiceTokenRevoke) adminServiceTokenRevoke.disabled = !isOwnerActor || issueMode || !selectedToken || Boolean(selectedToken?.revoked_at);
   if (adminServiceTokenCopy) adminServiceTokenCopy.disabled = !adminState.revealedServiceToken;
   if (adminServiceTokenAcknowledge) adminServiceTokenAcknowledge.disabled = !adminState.revealedServiceToken;
-  if (adminServiceTokenNew) adminServiceTokenNew.textContent = 'Generate new token';
+  if (adminServiceTokenNew) adminServiceTokenNew.textContent = 'Issue new token';
   if (adminServiceTokenCreate) adminServiceTokenCreate.textContent = 'Generate token';
   if (adminServiceTokenSave) adminServiceTokenSave.textContent = 'Update token';
   if (adminServiceTokenRotate) adminServiceTokenRotate.textContent = 'Regenerate token';
   if (adminServiceTokenRevoke) adminServiceTokenRevoke.textContent = 'Revoke token';
   if (adminServiceTokenEditorTitle) {
-    adminServiceTokenEditorTitle.textContent = selectedToken ? 'Edit token' : 'Generate a token';
+    adminServiceTokenEditorTitle.textContent = issueMode
+      ? 'Issue a new token'
+      : selectedToken
+        ? 'Manage issued token'
+        : 'Select an issued token';
   }
   if (adminServiceTokenEditorCopy) {
-    adminServiceTokenEditorCopy.textContent = selectedToken
-      ? 'You can change the metadata, narrow permissions, regenerate the secret, or revoke the token. BrianHub never stores the raw token in a recoverable form.'
-      : 'Name the token, choose expiration and permissions, then copy the raw secret once. Existing tokens only show metadata after issuance.';
+    adminServiceTokenEditorCopy.textContent = issueMode
+      ? 'Name the token, choose expiration and permissions, then copy the raw secret once. BrianHub will never show that secret again.'
+      : selectedToken
+        ? 'Review this issued token, narrow its permissions, regenerate the secret, or revoke it. BrianHub never stores the raw token in a recoverable form.'
+        : 'Pick a token from the list to inspect its status, permissions, and usage metadata.';
   }
-  if (selectedToken) {
+  if (!issueMode && selectedToken) {
     const metaParts = [
       `${formatApiTokenStatusLabel(selectedToken)} • ${selectedToken.token_public_id}`,
       getServiceWorkerTokenAccessLabel(selectedToken)
@@ -19026,6 +19086,8 @@ function renderAdminServiceTokenEditor() {
     );
   } else if (!tokens.length) {
     setAdminServiceTokenState('This worker has no tokens yet and cannot connect to BrianHub until you generate its first token.', 'warning');
+  } else if (issueMode) {
+    setAdminServiceTokenState('Issue a fresh bearer token for this worker. Existing tokens remain in the inventory list and keep working until you revoke or regenerate them.', 'info');
   } else if (selectedToken) {
     const tokenStatus = formatApiTokenStatus(selectedToken);
     const tokenLabel = selectedToken.label || selectedToken.token_public_id;
@@ -19042,9 +19104,11 @@ function renderAdminServiceTokenEditor() {
       pendingReveal
         ? 'Copy the raw token, store it somewhere safe, then confirm before leaving this screen.'
         : selectedAccount
-        ? selectedToken
-          ? 'Update this token, regenerate it, or revoke it. Regeneration immediately invalidates the old secret.'
-          : 'Generate the first bearer token for this worker. Leave matching on unless you need a narrower token.'
+        ? issueMode
+          ? 'Issue a new bearer token for this worker. Leave matching on unless you need a narrower token.'
+          : selectedToken
+            ? 'Update this token, regenerate it, or revoke it. Regeneration immediately invalidates the old secret.'
+            : 'Select a token from the inventory list to manage it.'
         : 'Save or select a service worker first to manage tokens.'
     );
   }
@@ -19390,6 +19454,7 @@ async function refreshAdminServiceAccountTokens({ preferredTokenId = null } = {}
   }
   if (adminState.serviceAccountTokensLoading) return;
   const hadLoaded = Boolean(adminState.serviceAccountTokensLoaded);
+  const tokenEditorMode = getAdminServiceTokenEditorMode();
   const previousSelection = String(preferredTokenId ?? adminState.selectedServiceAccountTokenId ?? '').trim();
   adminState.serviceAccountTokensRequestedAt = Date.now();
   adminState.serviceAccountTokensLoading = true;
@@ -19417,6 +19482,11 @@ async function refreshAdminServiceAccountTokens({ preferredTokenId = null } = {}
       adminState.selectedServiceAccountTokenId = tokens[0]?.id ?? '';
     } else if (!hadLoaded) {
       adminState.selectedServiceAccountTokenId = tokens[0]?.id ?? '';
+    }
+    if (!tokens.length) {
+      setAdminServiceTokenEditorMode('issue');
+    } else if (adminState.selectedServiceAccountTokenId && (preferredTokenId || !hadLoaded || tokenEditorMode === 'manage')) {
+      setAdminServiceTokenEditorMode('manage');
     }
     setAdminServiceTokenStatus(
       tokens.length
@@ -30381,11 +30451,41 @@ adminServiceTokenNew?.addEventListener('click', () => {
   if (!confirmAbandonPendingAdminServiceTokenReveal()) return;
   const adminState = getAdminState();
   adminState.selectedServiceAccountTokenId = '';
+  setAdminServiceTokenEditorMode('issue');
   setAdminServiceTokenReveal('');
   resetAdminServiceTokenForm();
   renderAdminServiceAccountTokensList();
   renderAdminServiceTokenEditor();
-  setAdminServiceTokenStatus('Creating a new token.');
+  setAdminServiceTokenStatus('Issuing a new token.');
+  renderAdminServiceAccountSummary();
+});
+adminServiceTokenModeIssue?.addEventListener('click', () => {
+  if (!confirmAbandonPendingAdminServiceTokenReveal()) return;
+  const adminState = getAdminState();
+  adminState.selectedServiceAccountTokenId = '';
+  setAdminServiceTokenEditorMode('issue');
+  setAdminServiceTokenReveal('');
+  resetAdminServiceTokenForm();
+  renderAdminServiceAccountTokensList();
+  renderAdminServiceTokenEditor();
+  setAdminServiceTokenStatus('Issuing a new token.');
+  renderAdminServiceAccountSummary();
+});
+adminServiceTokenModeManage?.addEventListener('click', () => {
+  if (!confirmAbandonPendingAdminServiceTokenReveal()) return;
+  const adminState = getAdminState();
+  const tokens = adminState.serviceAccountTokens ?? [];
+  if (!tokens.length) {
+    setAdminServiceTokenStatus('No issued tokens yet. Generate one first.', 'warning');
+    return;
+  }
+  if (!adminState.selectedServiceAccountTokenId) {
+    adminState.selectedServiceAccountTokenId = tokens[0]?.id ?? '';
+  }
+  setAdminServiceTokenEditorMode('manage');
+  renderAdminServiceAccountTokensList();
+  renderAdminServiceTokenEditor();
+  setAdminServiceTokenStatus('Managing issued token.');
   renderAdminServiceAccountSummary();
 });
 adminServiceTokenInherit?.addEventListener('change', () => {

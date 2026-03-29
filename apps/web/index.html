@@ -151,6 +151,7 @@
                   aria-expanded="true"
                 >
                   <span class="sidebar-section-button-label">My Tasks</span>
+                  <span class="sidebar-section-scope hidden"></span>
                 </button>
                 <div class="sidebar-header-actions">
                   <button id="new-task-list-btn" class="icon-button menu-icon" type="button" title="New list">＋</button>
@@ -172,6 +173,7 @@
                   aria-expanded="true"
                 >
                   <span class="sidebar-section-button-label">Projects</span>
+                  <span class="sidebar-section-scope hidden"></span>
                 </button>
                 <div class="sidebar-header-actions">
                   <button id="new-project-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
@@ -211,6 +213,7 @@
                   aria-expanded="true"
                 >
                   <span class="sidebar-section-button-label">Workflows</span>
+                  <span class="sidebar-section-scope hidden"></span>
                 </button>
                 <div class="sidebar-header-actions">
                   <div class="workspace-menu-wrapper">
@@ -237,6 +240,7 @@
                   aria-expanded="true"
                 >
                   <span class="sidebar-section-button-label">Shopping Lists</span>
+                  <span class="sidebar-section-scope hidden"></span>
                 </button>
                 <div class="sidebar-header-actions">
                   <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
@@ -279,6 +283,7 @@
                   aria-expanded="true"
                 >
                   <span class="sidebar-section-button-label">Notices</span>
+                  <span class="sidebar-section-scope hidden"></span>
                 </button>
                 <div class="sidebar-header-actions">
                   <button id="new-notice-sidebar-btn" class="icon-button menu-icon" type="button" title="New notice">＋</button>
@@ -856,6 +861,10 @@
 	                        <button id="admin-service-token-new" class="subtle-button" type="button">Generate new token</button>
 	                      </div>
 	                      <div id="admin-service-token-status" class="sidebar-note"></div>
+	                      <div class="admin-service-token-mode" role="group" aria-label="Token workflow mode">
+	                        <button id="admin-service-token-mode-issue" class="admin-service-token-mode-button" type="button">Issue token</button>
+	                        <button id="admin-service-token-mode-manage" class="admin-service-token-mode-button" type="button">Manage issued token</button>
+	                      </div>
 	                      <div id="admin-service-token-reveal-wrap" class="admin-service-token-reveal hidden">
 	                        <div class="admin-service-token-reveal-copy">
 	                          <div class="setting-label">Copy this raw token now</div>
@@ -905,8 +914,10 @@
 	                            <div class="setting-label">Token permissions</div>
 	                            <div id="admin-service-token-permissions" class="admin-permission-grid" role="group" aria-label="Token permissions"></div>
 	                          </div>
-	                          <div class="setting-row audit-controls">
+	                          <div id="admin-service-token-create-actions" class="setting-row audit-controls">
 	                            <button id="admin-service-token-create" type="button">Generate token</button>
+	                          </div>
+	                          <div id="admin-service-token-manage-actions" class="setting-row audit-controls">
 	                            <button id="admin-service-token-save" class="subtle-button" type="button">Update token</button>
 	                            <button id="admin-service-token-rotate" class="subtle-button" type="button">Regenerate token</button>
 	                            <button id="admin-service-token-revoke" class="subtle-button" type="button">Revoke token</button>

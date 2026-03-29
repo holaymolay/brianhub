@@ -31,6 +31,7 @@ test('desktop sidebar uses per-section scrolling and exposes organizations', () 
   const script = readRepoFile('apps/web/app.js');
   assert.match(html, /class="sidebar-section sidebar-section-organizations" data-sidebar-section="organizations"/);
   assert.match(html, /id="tasks-open"[\s\S]*data-sidebar-toggle="tasks"[\s\S]*data-sidebar-label="My Tasks"[\s\S]*aria-controls="sidebar-section-body-tasks"/);
+  assert.match(html, /id="tasks-open"[\s\S]*<span class="sidebar-section-button-label">My Tasks<\/span>[\s\S]*<span class="sidebar-section-scope hidden"><\/span>/);
   assert.match(html, /id="organizations-open"[\s\S]*data-sidebar-toggle="organizations"[\s\S]*data-sidebar-label="Organizations"[\s\S]*aria-controls="sidebar-section-body-organizations"/);
   assert.match(html, /id="organizations-open"/);
   assert.match(html, /id="organization-list" class="workspace-list sidebar-section-list"/);
@@ -45,11 +46,13 @@ test('desktop sidebar uses per-section scrolling and exposes organizations', () 
   assert.match(styles, /\.sidebar-section:not\(\.is-expanded\) \.sidebar-section-button \{/);
   assert.match(styles, /\.sidebar-section:is-expanded \.sidebar-section-button|\.sidebar-section\.is-expanded \.sidebar-section-button \{/);
   assert.match(styles, /\.sidebar-section\.is-active \.sidebar-section-button \{/);
+  assert.match(styles, /\.sidebar-section-scope \{[\s\S]*text-transform: uppercase;[\s\S]*text-overflow: ellipsis;/s);
   assert.match(styles, /\.sidebar \.workspace-row \{[\s\S]*padding: 0\.09rem 0\.18rem;/s);
   assert.match(styles, /\.sidebar \.workspace-select \{[\s\S]*font-size: 0\.75rem;[\s\S]*line-height: 1\.1;[\s\S]*padding: 0\.18rem 0\.22rem;/s);
   assert.match(styles, /\.workspace-select \{[\s\S]*width: 100%;[\s\S]*min-width: 0;[\s\S]*white-space: nowrap;[\s\S]*text-overflow: ellipsis;/s);
   assert.match(script, /function renderOrganizationSidebarList\(\)/);
   assert.match(script, /function getSidebarSectionCount\(sectionKey\)/);
+  assert.match(script, /function getSidebarSectionScopeText\(sectionKey\)/);
   assert.match(script, /function syncSidebarSectionLabels\(\)/);
   assert.match(script, /function getSidebarFocusedSectionKey\(\)/);
   assert.match(script, /function openSidebarSection\(sectionKey\)/);
@@ -62,6 +65,7 @@ test('desktop sidebar uses per-section scrolling and exposes organizations', () 
   assert.match(script, /section\.classList\.toggle\('is-expanded', expanded\);/);
   assert.match(script, /setSidebarSectionExpanded\(key, true\);\s*openSidebarSection\(key\);/s);
   assert.match(script, /label\.textContent = !expanded && count > 0 \? `\$\{baseLabel\} \(\$\{count\}\)` : baseLabel;/);
+  assert.match(script, /scope\.textContent = scopeText;/);
   assert.match(script, /function renderWorkspaceList\(\) \{\s*workspaceListEl\.innerHTML = '';\s*const workspaceAnchor = getCurrentWorkspaceAnchor\(\);/s);
   assert.match(script, /const labelWorkspace = workspaceAnchor \?\? state\.workspace;/);
   assert.match(script, /const workspaces = getWorkspaceBackboneList\(\);/);
