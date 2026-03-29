@@ -63,6 +63,7 @@ Current production model:
 - public health route
 - browser/session-cookie auth for human users
 - bearer-token auth for owner-provisioned service accounts
+- organizations as separate collaboration entities with their own operating surface
 - explicit workspace grants for service-account workspace access
 - service accounts are constrained by route policy and fine-grained permissions
 - Roger defaults to product-only task/project automation, not broader admin powers
@@ -127,8 +128,16 @@ Owner-only service-account provisioning routes:
 - `POST /admin/service-account-tokens/:id/rotate`
 - `DELETE /admin/service-account-tokens/:id`
 - `GET /admin/service-accounts/:id/workspace-grants`
+- `GET /admin/service-accounts/:id/activity`
 - `POST /admin/service-accounts/:id/workspace-grants`
 - `DELETE /admin/service-account-workspace-grants/:id`
+
+Service-account token rules:
+
+- raw token secrets are shown only once at create or rotate time
+- existing token rows expose metadata only after issuance
+- service-account inventory includes creator attribution and summary counts
+- the admin UI labels these identities as `Service workers`
 
 ## Authenticated routes
 
@@ -138,6 +147,15 @@ General authenticated routes:
 
 - `GET /workspaces`
 - `POST /workspaces`
+- `GET /orgs`
+- `POST /orgs`
+- `GET /orgs/:id`
+- `PATCH /orgs/:id`
+- `GET /orgs/:id/members`
+- `POST /orgs/:id/members`
+- `PATCH /orgs/:id/members/:userId`
+- `DELETE /orgs/:id/members/:userId`
+- `POST /orgs/:id/transfer-ownership`
 - `GET /tasks?workspace_id=<uuid>`
 - `GET /tasks/tree?workspace_id=<uuid>`
 - `GET /tasks/:id`
@@ -188,7 +206,11 @@ Admin-only routes:
 - `GET /admin/invites`
 - `POST /admin/invites`
 - `DELETE /admin/invites/:id`
+- `GET /admin/users`
+- `PATCH /admin/users/:id`
 - `POST /admin/users/:id/reset-password`
+- `POST /admin/users/:id/export`
+- `DELETE /admin/users/:id`
 - `POST /admin/ownership/transfer`
 
 Roger default service-account permissions:
@@ -236,6 +258,31 @@ Minimal sync pull:
 {
   "workspace_id": "00000000-0000-4000-8000-000000000001",
   "cursor": 0
+}
+```
+
+Minimal organization create:
+
+```json
+{
+  "name": "Pipe Cam"
+}
+```
+
+Minimal organization member add:
+
+```json
+{
+  "email": "teammate@example.com",
+  "role": "member"
+}
+```
+
+Minimal organization ownership transfer:
+
+```json
+{
+  "target_user_id": "<user-id>"
 }
 ```
 
@@ -376,6 +423,13 @@ Common statuses:
 - `403` authenticated but insufficient role
 - `404` not found
 - `409` sync conflict
+
+## Important behavior notes
+
+- Human workspace lists are membership-scoped.
+- Personal workspaces are owner-isolated.
+- Organizations are not normal workspace picker entries; they are separate operating surfaces.
+- If Roger is using bearer auth and something fails, validate the current principal with `GET /auth/me` before assuming the route is broken.
 
 ## What Roger should do now
 
