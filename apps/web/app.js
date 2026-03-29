@@ -4029,6 +4029,16 @@ function isMobileViewport() {
   return window.matchMedia('(max-width: 980px)').matches;
 }
 
+function syncMobileBottomUiState() {
+  if (typeof document === 'undefined') return;
+  const blockingSurfaceOpen = Boolean(
+    document.querySelector(
+      '.mobile-create-sheet:not(.hidden), .mobile-overlay:not(.hidden), .modal:not(.hidden), #task-editor.is-open'
+    )
+  );
+  document.body.classList.toggle('mobile-bottom-ui-hidden', blockingSurfaceOpen);
+}
+
 function setMobileCreateSheetMode(mode = 'actions') {
   const taskMode = mode === 'task';
   if (mobileCreateSheetTitle) {
@@ -4052,6 +4062,7 @@ function openMobileCreateSheet({ mode = 'actions' } = {}) {
   setMobileCreateSheetMode(mode);
   mobileCreateSheet.classList.remove('hidden');
   document.body.classList.add('mobile-create-open');
+  syncMobileBottomUiState();
   if (mode === 'task') {
     requestAnimationFrame(() => {
       mobileTaskQuickAddInput?.focus();
@@ -4065,6 +4076,7 @@ function closeMobileCreateSheet() {
   }
   setMobileCreateSheetMode('actions');
   document.body.classList.remove('mobile-create-open');
+  syncMobileBottomUiState();
 }
 
 function openMobileTaskQuickAdd() {
@@ -4095,12 +4107,14 @@ function closeMobileTaskToolsModal() {
   if (!mobileTaskToolsModal) return;
   mobileTaskToolsModal.classList.add('hidden');
   mobileTaskToolsModal.setAttribute('aria-hidden', 'true');
+  syncMobileBottomUiState();
 }
 
 function closeMobileSearchModal() {
   if (!mobileSearchModal) return;
   mobileSearchModal.classList.add('hidden');
   mobileSearchModal.setAttribute('aria-hidden', 'true');
+  syncMobileBottomUiState();
 }
 
 function renderMobileSearchResults() {
@@ -4193,6 +4207,7 @@ function openMobileSearchModal() {
   closeMobileCalendarsModal();
   mobileSearchModal.classList.remove('hidden');
   mobileSearchModal.setAttribute('aria-hidden', 'false');
+  syncMobileBottomUiState();
   if (mobileSearchInput) {
     mobileSearchInput.value = getGlobalSearchQuery();
     setTimeout(() => {
@@ -4431,6 +4446,7 @@ function closeMobileCalendarsModal() {
   if (!mobileCalendarsModal) return;
   mobileCalendarsModal.classList.add('hidden');
   mobileCalendarsModal.setAttribute('aria-hidden', 'true');
+  syncMobileBottomUiState();
 }
 
 function syncMobileTaskToolsInputs() {
@@ -4475,6 +4491,7 @@ function openMobileTaskToolsModal() {
   syncMobileTaskToolsInputs();
   mobileTaskToolsModal.classList.remove('hidden');
   mobileTaskToolsModal.setAttribute('aria-hidden', 'false');
+  syncMobileBottomUiState();
   setTimeout(() => {
     mobileTaskToolsSearch?.focus();
   }, 0);
@@ -4490,6 +4507,7 @@ function openMobileCalendarsModal() {
   syncMobileCalendarsModalInputs();
   mobileCalendarsModal.classList.remove('hidden');
   mobileCalendarsModal.setAttribute('aria-hidden', 'false');
+  syncMobileBottomUiState();
 }
 
 function getViewLabel(view) {
@@ -13523,6 +13541,7 @@ function render() {
   const mobileTasksView = mobileViewport && getActiveView() === 'tasks';
   document.body.classList.toggle('mobile-scheduling-view', mobileSchedulingView);
   document.body.classList.toggle('mobile-tasks-view', mobileTasksView);
+  syncMobileBottomUiState();
   const currentSelected = getSelectedTaskIds();
   const validSelected = currentSelected.filter(id => state.tasks?.[id]);
   if (validSelected.length !== currentSelected.length) {
@@ -15793,6 +15812,7 @@ function clearWorkspaceDomainData({
   taskEditor?.classList.remove('is-open');
   document.body.classList.remove('task-editor-open');
   document.body.classList.remove('task-modal-open');
+  document.body.classList.remove('mobile-bottom-ui-hidden');
   taskEditorScrollbar?.classList.add('hidden');
   activeTaskId = null;
   const cleared = prepareLocalDataForStorage({
@@ -15828,6 +15848,7 @@ function clearWorkspaceDomainData({
 function setTaskEditorOpen(open) {
   taskEditor?.classList.toggle('is-open', open);
   document.body.classList.toggle('task-editor-open', open);
+  syncMobileBottomUiState();
 }
 
 async function hydrateAuthSession() {
@@ -28381,12 +28402,14 @@ function openTaskModal(defaults = {}) {
   setRecurrenceState('modal', nextInterval, nextUnit);
   taskModal.classList.remove('hidden');
   document.body.classList.add('task-modal-open');
+  syncMobileBottomUiState();
   modalTitle.focus();
 }
 
 function closeTaskModal() {
   taskModal.classList.add('hidden');
   document.body.classList.remove('task-modal-open');
+  syncMobileBottomUiState();
   taskModalDefaults = {};
   setRecurrenceState('modal', null, 'month');
 }

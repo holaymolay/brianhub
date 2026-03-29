@@ -68,14 +68,30 @@ test('task modal keeps the action row reachable on mobile', () => {
 test('mobile task editor owns scroll and hides the footer nav while open', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
-  assert.match(script, /function setTaskEditorOpen\(open\) \{\s*taskEditor\?\.classList\.toggle\('is-open', open\);\s*document\.body\.classList\.toggle\('task-editor-open', open\);\s*\}/s);
+  assert.match(script, /function syncMobileBottomUiState\(\) \{\s*if \(typeof document === 'undefined'\) return;\s*const blockingSurfaceOpen = Boolean\([\s\S]*#task-editor\.is-open[\s\S]*\);\s*document\.body\.classList\.toggle\('mobile-bottom-ui-hidden', blockingSurfaceOpen\);\s*\}/s);
+  assert.match(script, /function setTaskEditorOpen\(open\) \{\s*taskEditor\?\.classList\.toggle\('is-open', open\);\s*document\.body\.classList\.toggle\('task-editor-open', open\);\s*syncMobileBottomUiState\(\);\s*\}/s);
   assert.match(script, /function openTaskEditor\(taskId\) \{[\s\S]*setTaskEditorOpen\(true\);[\s\S]*updateTaskEditorScrollbar\(\);/s);
   assert.match(script, /function closeTaskEditor\(\) \{[\s\S]*setTaskEditorOpen\(false\);/s);
-  assert.match(css, /body\.task-editor-open \.mobile-nav \{[\s\S]*display: none !important;/s);
+  assert.match(css, /body\.mobile-bottom-ui-hidden \.mobile-nav \{[\s\S]*display: none !important;/s);
   assert.match(css, /body\.task-editor-open\.mobile-tasks-view #task-tree \{[\s\S]*overflow: hidden;/s);
   assert.match(css, /\.task-editor-body \{[\s\S]*overflow-y: auto;[\s\S]*overscroll-behavior: contain;[\s\S]*-webkit-overflow-scrolling: touch;/s);
   assert.match(css, /body\.task-editor-open \.task-editor \{[\s\S]*height: 100dvh;/s);
   assert.match(css, /\.task-editor-actions \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/s);
+});
+
+test('mobile bottom surfaces share one clearance contract', () => {
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(css, /:root \{[\s\S]*--mobile-safe-area-bottom: env\(safe-area-inset-bottom, 0px\);[\s\S]*--mobile-bottom-ui-clearance: calc\(var\(--mobile-bottom-ui-height\) \+ var\(--mobile-safe-area-bottom\)\);[\s\S]*--mobile-sheet-bottom-offset: calc\(var\(--mobile-bottom-ui-clearance\) \+ var\(--mobile-surface-gap\)\);/s);
+  assert.match(css, /body\.mobile-bottom-ui-hidden \{[\s\S]*--mobile-bottom-ui-height: 0px;/s);
+  assert.match(css, /\.mobile-create-sheet-card \{[\s\S]*bottom: var\(--mobile-sheet-bottom-offset\);/s);
+  assert.match(css, /\.mobile-overlay \{[\s\S]*padding: max\(0\.8rem, env\(safe-area-inset-top, 0px\)\) 0\.65rem var\(--mobile-sheet-bottom-offset\);/s);
+  assert.match(css, /\.mobile-overlay-card \{[\s\S]*max-height: min\(66dvh, calc\(100dvh - var\(--mobile-bottom-ui-clearance\) - 2rem\)\);/s);
+  assert.match(css, /#tasks-panel #task-create-menu,[\s\S]*bottom: var\(--mobile-sheet-bottom-offset\);[\s\S]*max-height: min\(62dvh, calc\(100dvh - var\(--mobile-bottom-ui-clearance\) - 1\.5rem\)\);/s);
+  assert.match(css, /body\.mobile-tasks-view #task-tree \{[\s\S]*scroll-padding-bottom: calc\(var\(--mobile-sheet-bottom-offset\) \+ 0\.35rem\);/s);
+  assert.match(script, /function openMobileCreateSheet\(\{ mode = 'actions' \} = \{\}\) \{[\s\S]*document\.body\.classList\.add\('mobile-create-open'\);\s*syncMobileBottomUiState\(\);/s);
+  assert.match(script, /function closeMobileCreateSheet\(\) \{[\s\S]*document\.body\.classList\.remove\('mobile-create-open'\);\s*syncMobileBottomUiState\(\);/s);
+  assert.match(script, /function render\(\) \{[\s\S]*document\.body\.classList\.toggle\('mobile-scheduling-view', mobileSchedulingView\);[\s\S]*document\.body\.classList\.toggle\('mobile-tasks-view', mobileTasksView\);\s*syncMobileBottomUiState\(\);/s);
 });
 
 test('mobile task tools reuse the same task state controls as desktop', () => {
@@ -122,7 +138,7 @@ test('mobile tasks view keeps the task panel as the scroll owner', () => {
   assert.match(css, /body\.mobile-tasks-view \.app-layout \{[\s\S]*height: 100%;[\s\S]*min-height: 0;/);
   assert.match(css, /body\.mobile-tasks-view \.content-panel \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
   assert.match(css, /body\.mobile-tasks-view #tasks-panel \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
-  assert.match(css, /body\.mobile-tasks-view #task-tree \{[\s\S]*overflow: auto;[\s\S]*scroll-padding-bottom: calc\(var\(--mobile-nav-safe-clearance\) \+ 1rem\);/);
+  assert.match(css, /body\.mobile-tasks-view #task-tree \{[\s\S]*overflow: auto;[\s\S]*scroll-padding-bottom: calc\(var\(--mobile-sheet-bottom-offset\) \+ 0\.35rem\);/);
 });
 
 test('mobile task rows reflow into a wrapped phone layout', () => {
@@ -156,7 +172,7 @@ test('task drag handle stays usable on touch devices', () => {
 test('responsive tasks menus render as mobile sheets and keep the task menu button visible', () => {
   const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
   assert.match(css, /#tasks-panel \.task-menu-button \{\s*opacity: 1;\s*pointer-events: auto;/s);
-  assert.match(css, /#tasks-panel #task-filter-menu,[\s\S]*#tasks-panel \.task-menu \{\s*position: fixed;[\s\S]*bottom: calc\(var\(--mobile-nav-safe-clearance\) \+ 0\.65rem\);/s);
+  assert.match(css, /#tasks-panel #task-filter-menu,[\s\S]*#tasks-panel \.task-menu \{\s*position: fixed;[\s\S]*bottom: var\(--mobile-sheet-bottom-offset\);/s);
 });
 
 test('mobile workspace management is a simple workspace switcher', () => {

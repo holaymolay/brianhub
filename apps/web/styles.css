@@ -6,8 +6,14 @@
   --muted: #9aa4b2;
   --accent: #3fa6ff;
   --border: #2b3240;
-  --mobile-nav-safe-clearance: calc(4.75rem + env(safe-area-inset-bottom, 0px));
-  --mobile-nav-fab-overhang: 0.65rem;
+  --mobile-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-nav-height: 4.75rem;
+  --mobile-surface-gap: 0.65rem;
+  --mobile-bottom-ui-height: var(--mobile-nav-height);
+  --mobile-bottom-ui-clearance: calc(var(--mobile-bottom-ui-height) + var(--mobile-safe-area-bottom));
+  --mobile-nav-safe-clearance: var(--mobile-bottom-ui-clearance);
+  --mobile-nav-fab-overhang: var(--mobile-surface-gap);
+  --mobile-sheet-bottom-offset: calc(var(--mobile-bottom-ui-clearance) + var(--mobile-surface-gap));
 }
 
 * { box-sizing: border-box; }
@@ -36,6 +42,10 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+body.mobile-bottom-ui-hidden {
+  --mobile-bottom-ui-height: 0px;
 }
 
 .app-header {
@@ -292,7 +302,7 @@ body {
   width: 100%;
   background: rgba(13, 19, 27, 0.97);
   border-top: 1px solid var(--border);
-  padding: 0.45rem 0.5rem calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  padding: 0.45rem 0.5rem calc(var(--mobile-safe-area-bottom) + 0.5rem);
   display: none;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.15rem;
@@ -398,7 +408,7 @@ body.mobile-create-open {
   position: absolute;
   left: 0.55rem;
   right: 0.55rem;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 4.9rem);
+  bottom: var(--mobile-sheet-bottom-offset);
   background: #131a23;
   border: 1px solid var(--border);
   border-radius: 1rem;
@@ -503,7 +513,7 @@ body.mobile-create-open {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: max(0.8rem, env(safe-area-inset-top, 0px)) 0.65rem calc(var(--mobile-nav-safe-clearance) + 0.6rem);
+  padding: max(0.8rem, env(safe-area-inset-top, 0px)) 0.65rem var(--mobile-sheet-bottom-offset);
 }
 
 .mobile-overlay-backdrop {
@@ -515,7 +525,7 @@ body.mobile-create-open {
 .mobile-overlay-card {
   position: relative;
   width: min(100%, 620px);
-  max-height: min(66vh, calc(100vh - var(--mobile-nav-safe-clearance) - 2rem));
+  max-height: min(66dvh, calc(100dvh - var(--mobile-bottom-ui-clearance) - 2rem));
   background: #131a23;
   border: 1px solid var(--border);
   border-radius: 1rem;
@@ -559,7 +569,7 @@ body.mobile-create-open {
 }
 
 .mobile-task-tools-card {
-  max-height: min(76vh, calc(100vh - var(--mobile-nav-safe-clearance) - 2rem));
+  max-height: min(76dvh, calc(100dvh - var(--mobile-bottom-ui-clearance) - 2rem));
 }
 
 .mobile-task-tools-body {
@@ -624,7 +634,7 @@ body.mobile-create-open {
 }
 
 .mobile-calendars-card {
-  max-height: min(62vh, calc(100vh - var(--mobile-nav-safe-clearance) - 2.5rem));
+  max-height: min(62dvh, calc(100dvh - var(--mobile-bottom-ui-clearance) - 2.5rem));
 }
 
 .mobile-calendars-actions {
@@ -6279,8 +6289,7 @@ body.task-modal-open {
   overflow: hidden;
 }
 
-body.task-modal-open .mobile-nav,
-body.task-editor-open .mobile-nav {
+body.mobile-bottom-ui-hidden .mobile-nav {
   display: none !important;
 }
 
@@ -6811,10 +6820,10 @@ body.auth-gated #auth-cancel-invite {
     left: max(0.65rem, env(safe-area-inset-left, 0px));
     right: max(0.65rem, env(safe-area-inset-right, 0px));
     top: auto;
-    bottom: calc(var(--mobile-nav-safe-clearance) + 0.65rem);
+    bottom: var(--mobile-sheet-bottom-offset);
     min-width: 0;
     width: auto;
-    max-height: min(62vh, calc(100dvh - var(--mobile-nav-safe-clearance) - 1.5rem));
+    max-height: min(62dvh, calc(100dvh - var(--mobile-bottom-ui-clearance) - 1.5rem));
     overflow-y: auto;
     border-radius: 0.9rem;
     padding: 0.55rem;
@@ -6893,7 +6902,7 @@ body.auth-gated #auth-cancel-invite {
     overflow: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    scroll-padding-bottom: calc(var(--mobile-nav-safe-clearance) + 1rem);
+    scroll-padding-bottom: calc(var(--mobile-sheet-bottom-offset) + 0.35rem);
     padding-bottom: 0.65rem;
   }
 
