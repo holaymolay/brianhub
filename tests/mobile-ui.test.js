@@ -94,6 +94,17 @@ test('mobile bottom surfaces share one clearance contract', () => {
   assert.match(script, /function render\(\) \{[\s\S]*document\.body\.classList\.toggle\('mobile-scheduling-view', mobileSchedulingView\);[\s\S]*document\.body\.classList\.toggle\('mobile-tasks-view', mobileTasksView\);\s*syncMobileBottomUiState\(\);/s);
 });
 
+test('mobile navigation exposes organizations as a first-class destination', () => {
+  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  assert.match(html, /id="mobile-nav-organizations" class="mobile-nav-button" type="button" data-view="organizations"/);
+  assert.match(html, /id="mobile-menu-organizations"/);
+  assert.match(html, /id="mobile-menu-workflows"/);
+  assert.match(script, /const mobileNavOrganizations = document\.getElementById\('mobile-nav-organizations'\);/);
+  assert.match(script, /setMobileNavButtonConfig\(mobileNavOrganizations, \{\s*view: 'organizations'/s);
+  assert.match(script, /mobileMenuOrganizations\?\.addEventListener\('click', \(\) => \{\s*closeMobileTopMenu\(\);\s*openOrganizationsPage\(\);/s);
+});
+
 test('mobile task tools reuse the same task state controls as desktop', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /tasksMobileToolsBtn\?\.addEventListener\('click', \(\) => \{\s*openMobileTaskToolsModal\(\);/s);
@@ -147,6 +158,7 @@ test('mobile task rows reflow into a wrapped phone layout', () => {
   assert.match(css, /#tasks-panel \.task-title-row \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;/);
   assert.match(css, /#tasks-panel \.task-title \{[\s\S]*flex: 1 0 100%;[\s\S]*white-space: normal;[\s\S]*-webkit-line-clamp: 3;/);
   assert.match(css, /#tasks-panel \.task-meta \{[\s\S]*display: block !important;[\s\S]*white-space: normal;/);
+  assert.match(css, /#tasks-panel \.task-item,[\s\S]*#tasks-panel \.task-menu-button \{[\s\S]*touch-action: pan-y manipulation;/s);
 });
 
 test('task reorder supports row drag on desktop and pointer drag on touch devices', () => {
@@ -159,6 +171,7 @@ test('task reorder supports row drag on desktop and pointer drag on touch device
   assert.match(script, /if \(!mobileViewport\) \{\s*item\.addEventListener\('dragstart', \(event\) => beginTaskDrag\(event, task, item\)\);\s*item\.addEventListener\('dragend', endTaskDrag\);\s*\}/s);
   assert.match(script, /handle\.draggable = !mobileViewport;/);
   assert.match(script, /handle\.addEventListener\('pointerdown', \(event\) => beginTaskPointerGesture\(event, task, item\)\);/);
+  assert.match(script, /if \(deltaY > deltaX \+ 2\) \{\s*taskPointerDragState = null;\s*return;\s*\}/s);
   assert.match(script, /async function dropTaskIntoContainer\(container\)/);
   assert.match(script, /async function dropTaskOnItem\(item, clientY\)/);
 });

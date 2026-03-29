@@ -339,6 +339,7 @@ const settingsOrgMemberStatus = document.getElementById('settings-org-member-sta
 const settingsOrgMemberList = document.getElementById('settings-org-member-list');
 const settingsOrgTransferOwner = document.getElementById('settings-org-transfer-owner');
 const settingsOrgTransferButton = document.getElementById('settings-org-transfer-button');
+const settingsOpenOrganizations = document.getElementById('settings-open-organizations');
 const taskTypeListEl = document.getElementById('task-type-list');
 const taskTypeNameInput = document.getElementById('task-type-name');
 const taskTypeAddBtn = document.getElementById('task-type-add');
@@ -351,6 +352,8 @@ const taskListListEl = document.getElementById('task-list-list');
 const newTaskListBtn = document.getElementById('new-task-list-btn');
 const newProjectBtn = document.getElementById('new-project-btn');
 const projectsOpenBtn = document.getElementById('projects-open');
+const organizationsOpenBtn = document.getElementById('organizations-open');
+const organizationListEl = document.getElementById('organization-list');
 const tasksOpenBtn = document.getElementById('tasks-open');
 const workflowsOpenBtn = document.getElementById('workflows-open');
 const workflowListEl = document.getElementById('workflow-list');
@@ -366,6 +369,7 @@ const newNoticeSidebarBtn = document.getElementById('new-notice-sidebar-btn');
 const noticesOpenBtn = document.getElementById('notices-open');
 const noticesPage = document.getElementById('notices-page');
 const workflowsPage = document.getElementById('workflows-page');
+const organizationsPage = document.getElementById('organizations-page');
 const dataTransferPage = document.getElementById('data-transfer-page');
 const auditLogPage = document.getElementById('audit-log-page');
 const automationPage = document.getElementById('automation-page');
@@ -420,6 +424,7 @@ const workspaceManageList = document.getElementById('workspace-manage-list');
 const workspaceArchivedList = document.getElementById('workspace-archived-list');
 const workspaceManageBack = document.getElementById('workspace-manage-back');
 const workspaceArchivedBack = document.getElementById('workspace-archived-back');
+const organizationsPageBack = document.getElementById('organizations-page-back');
 const workspaceManageTitle = document.getElementById('workspace-manage-title');
 const workspaceManageSubtitle = document.getElementById('workspace-manage-subtitle');
 const shoppingListTitle = document.getElementById('shopping-list-title');
@@ -488,6 +493,8 @@ const mobileTitleMenu = document.getElementById('mobile-title-menu');
 const mobileMenuTasks = document.getElementById('mobile-menu-tasks');
 const mobileMenuScheduling = document.getElementById('mobile-menu-scheduling');
 const mobileMenuNotices = document.getElementById('mobile-menu-notices');
+const mobileMenuOrganizations = document.getElementById('mobile-menu-organizations');
+const mobileMenuWorkflows = document.getElementById('mobile-menu-workflows');
 const mobileMenuSettings = document.getElementById('mobile-menu-settings');
 const mobileMenuProfile = document.getElementById('mobile-menu-profile');
 const mobileMenuWorkspaces = document.getElementById('mobile-menu-workspaces');
@@ -496,7 +503,7 @@ const mobileNav = document.getElementById('mobile-nav');
 const mobileNavPrimary = document.getElementById('mobile-nav-primary');
 const mobileNavProjects = document.getElementById('mobile-nav-projects');
 const mobileNavShopping = document.getElementById('mobile-nav-shopping');
-const mobileNavWorkflows = document.getElementById('mobile-nav-workflows');
+const mobileNavOrganizations = document.getElementById('mobile-nav-organizations');
 const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-button[data-view]'));
 const mobileNavAdd = document.getElementById('mobile-nav-add');
 const mobileCreateSheet = document.getElementById('mobile-create-sheet');
@@ -1038,6 +1045,7 @@ const NAVIGABLE_VIEWS = new Set([
   'tasks',
   'scheduling',
   'projects',
+  'organizations',
   'shopping',
   'notices',
   'workflows',
@@ -1692,6 +1700,9 @@ projectsOpenBtn?.addEventListener('click', () => {
   setActiveView('projects');
   render();
 });
+organizationsOpenBtn?.addEventListener('click', () => {
+  openOrganizationsPage();
+});
 shoppingOpenBtn?.addEventListener('click', () => {
   setShoppingPageMode('list');
   if (isMobileViewport()) {
@@ -1942,6 +1953,21 @@ mobileMenuScheduling?.addEventListener('click', () => {
 mobileMenuNotices?.addEventListener('click', () => {
   closeMobileTopMenu();
   setActiveView('notices');
+  render();
+});
+
+mobileMenuOrganizations?.addEventListener('click', () => {
+  closeMobileTopMenu();
+  openOrganizationsPage();
+});
+
+mobileMenuWorkflows?.addEventListener('click', () => {
+  closeMobileTopMenu();
+  setWorkflowViewMode('runs');
+  if (isMobileViewport()) {
+    setMobileWorkflowPanelMode('list');
+  }
+  setActiveView('workflows');
   render();
 });
 
@@ -3942,7 +3968,7 @@ function getAutomationSyntaxGuideText() {
     '  Optional: store_name, event_date, items (array of strings)',
     '- set_view',
     '  Required: view',
-    '  Allowed views: tasks, scheduling, projects, shopping, notices, workflows, data-transfer, audit-log, automation, workspaces-manage, workspaces-archived',
+    '  Allowed views: tasks, scheduling, projects, organizations, shopping, notices, workflows, data-transfer, audit-log, automation, workspaces-manage, workspaces-archived',
     '',
     'Date/time inputs:',
     '- start_at, due_at, notify_at accept ISO datetime (example: 2026-03-01T14:30:00-08:00)',
@@ -4516,6 +4542,8 @@ function getViewLabel(view) {
       return 'Scheduling';
     case 'projects':
       return 'Projects';
+    case 'organizations':
+      return 'Organizations';
     case 'shopping':
       return 'Shopping Lists';
     case 'notices':
@@ -4693,16 +4721,17 @@ function syncMobileNavStandardButtons(activeView) {
       </svg>
     `
   });
-  setMobileNavButtonConfig(mobileNavWorkflows, {
-    view: 'workflows',
-    label: 'Workflow',
-    title: 'Workflow Instances',
+  setMobileNavButtonConfig(mobileNavOrganizations, {
+    view: 'organizations',
+    label: 'Organizations',
+    title: 'Organizations',
     icon: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="4" y="4" width="7" height="7" rx="1.5"></rect>
-        <rect x="13" y="4" width="7" height="7" rx="1.5"></rect>
-        <rect x="4" y="13" width="7" height="7" rx="1.5"></rect>
-        <rect x="13" y="13" width="7" height="7" rx="1.5"></rect>
+        <circle cx="8" cy="9" r="2"></circle>
+        <circle cx="16" cy="8" r="1.7"></circle>
+        <circle cx="16" cy="15" r="1.9"></circle>
+        <path d="M5.5 18c.4-2.3 2-3.6 4.5-3.6s4.1 1.3 4.5 3.6"></path>
+        <path d="M13.6 10.7c1.8.2 3 1.2 3.5 2.9"></path>
       </svg>
     `
   });
@@ -4734,7 +4763,7 @@ function syncMobileNavSchedulingButtons() {
     `
   });
   setMobileNavButtonConfig(mobileNavShopping, { hidden: true });
-  setMobileNavButtonConfig(mobileNavWorkflows, { hidden: true });
+  setMobileNavButtonConfig(mobileNavOrganizations, { hidden: true });
 }
 
 function renderMobileNavigation() {
@@ -12609,8 +12638,6 @@ function beginTaskPointerGesture(event, task, item) {
     dragging: false,
     dropTarget: null
   };
-  event.currentTarget?.setPointerCapture?.(event.pointerId);
-  event.preventDefault();
 }
 
 function moveTaskPointerGesture(event) {
@@ -12620,6 +12647,11 @@ function moveTaskPointerGesture(event) {
   const deltaY = Math.abs(event.clientY - taskPointerDragState.startY);
   if (!taskPointerDragState.dragging) {
     if (deltaX < 6 && deltaY < 6) return;
+    if (deltaY > deltaX + 2) {
+      taskPointerDragState = null;
+      return;
+    }
+    event.currentTarget?.setPointerCapture?.(event.pointerId);
     beginTaskDrag({ target: event.target, stopPropagation() {} }, taskPointerDragState.task, taskPointerDragState.item);
     taskPointerDragState.dragging = true;
     if (draggingTaskEl) {
@@ -12635,7 +12667,9 @@ async function finishTaskPointerGesture(event, commit = false) {
   if (taskPointerDragState.pointerId !== event.pointerId) return;
   const activeGesture = taskPointerDragState;
   taskPointerDragState = null;
-  event.currentTarget?.releasePointerCapture?.(event.pointerId);
+  if (activeGesture.dragging) {
+    event.currentTarget?.releasePointerCapture?.(event.pointerId);
+  }
   if (activeGesture.dragging && commit) {
     await commitTaskPointerDrop(event.clientX, event.clientY);
   }
@@ -13552,6 +13586,7 @@ function render() {
   renderAccountMenu();
   renderProfilePage();
   renderOrganizationPanel();
+  renderOrganizationSidebarList();
   renderOrganizationsSettings();
   renderAdminPage();
   renderTaskSidebarList();
@@ -13670,6 +13705,7 @@ function renderView() {
   const showTasks = view === 'tasks';
   const showScheduling = view === 'scheduling';
   const showProjects = view === 'projects';
+  const showOrganizations = view === 'organizations';
   const showShopping = view === 'shopping';
   const showNotices = view === 'notices';
   const showWorkflows = view === 'workflows';
@@ -13685,6 +13721,7 @@ function renderView() {
   tasksPanel?.classList.toggle('hidden', !showTasks);
   schedulingPage?.classList.toggle('hidden', !showScheduling);
   projectsPage?.classList.toggle('hidden', !showProjects);
+  organizationsPage?.classList.toggle('hidden', !showOrganizations);
   shoppingPage?.classList.toggle('hidden', !showShopping);
   noticesPage?.classList.toggle('hidden', !showNotices);
   workflowsPage?.classList.toggle('hidden', !showWorkflows);
@@ -16233,6 +16270,66 @@ async function refreshSelectedOrganizationMembers(orgId = getSelectedSettingsOrg
     orgState.membersLoadingByOrgId[safeOrgId] = false;
     renderOrganizationsSettings();
   }
+}
+
+function renderOrganizationSidebarList() {
+  if (!organizationListEl) return;
+  const orgState = getOrganizationSettingsState();
+  const authenticated = isAuthenticatedActor();
+  if (authenticated && !orgState.loaded && !orgState.loading) {
+    void refreshOrganizations({ preserveSelection: true });
+  }
+  const organizations = getVisibleOrganizations();
+  const selected = getSelectedSettingsOrganization();
+  organizationListEl.innerHTML = '';
+  if (!authenticated) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Log in to see organizations.';
+    organizationListEl.appendChild(note);
+    return;
+  }
+  if (orgState.loading && !organizations.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Loading organizations...';
+    organizationListEl.appendChild(note);
+    return;
+  }
+  if (orgState.error && !organizations.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.dataset.tone = 'error';
+    note.textContent = orgState.error;
+    organizationListEl.appendChild(note);
+    return;
+  }
+  if (!organizations.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No organizations yet.';
+    organizationListEl.appendChild(note);
+    return;
+  }
+  organizations.forEach((org) => {
+    const row = document.createElement('div');
+    row.className = 'workspace-row' + (selected?.id === org.id ? ' active' : '');
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'workspace-select';
+    const roleText = getOrganizationRoleLabel(org.current_user_role);
+    const memberCount = Number.isFinite(Number(org.member_count)) ? Number(org.member_count) : 0;
+    selectBtn.textContent = `${org.name} · ${roleText}`;
+    selectBtn.title = `${org.name} · ${roleText} · ${memberCount} member${memberCount === 1 ? '' : 's'}`;
+    selectBtn.addEventListener('click', () => {
+      orgState.selectedOrgId = org.id;
+      render();
+      void refreshSelectedOrganizationMembers(org.id);
+      openOrganizationsPage();
+    });
+    row.appendChild(selectBtn);
+    organizationListEl.appendChild(row);
+  });
 }
 
 function renderOrganizationsSettings() {
@@ -25879,6 +25976,27 @@ function openProfile() {
   render();
 }
 
+function openOrganizationsPage() {
+  state.ui = state.ui ?? {};
+  const currentView = getActiveView();
+  state.ui.organizationsReturnView = currentView === 'organizations'
+    ? (state.ui.organizationsReturnView ?? 'tasks')
+    : currentView;
+  if (settingsModal && !settingsModal.classList.contains('hidden')) {
+    closeSettings();
+  }
+  setActiveView('organizations');
+  render();
+  void refreshOrganizations();
+}
+
+function closeOrganizationsPage() {
+  state.ui = state.ui ?? {};
+  const returnView = normalizeNavigationView(state.ui.organizationsReturnView ?? 'tasks');
+  setActiveView(returnView === 'organizations' ? 'tasks' : returnView);
+  render();
+}
+
 function closeProfile() {
   state.ui = state.ui ?? {};
   const returnView = normalizeNavigationView(state.ui.profileReturnView ?? 'tasks');
@@ -28544,6 +28662,7 @@ workspaceArchivedBack?.addEventListener('click', () => {
   setActiveView('tasks');
   render();
 });
+organizationsPageBack?.addEventListener('click', closeOrganizationsPage);
 shoppingAddBtn?.addEventListener('click', openShoppingItemModal);
 shoppingMobileBack?.addEventListener('click', () => {
   setMobileShoppingPanelMode('list');
@@ -28861,6 +28980,9 @@ settingsOpenAutomation?.addEventListener('click', () => {
 });
 settingsOpenHelp?.addEventListener('click', () => {
   openSettingsLinkedPage('help');
+});
+settingsOpenOrganizations?.addEventListener('click', () => {
+  openOrganizationsPage();
 });
 settingsOrgCreateButton?.addEventListener('click', () => {
   void createOrganizationFromSettings();

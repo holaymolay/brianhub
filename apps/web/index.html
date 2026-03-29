@@ -51,6 +51,8 @@
           <button id="mobile-top-menu-button" class="icon-button menu-icon mobile-top-menu-button" type="button" title="Menu">☰</button>
           <div id="mobile-top-menu" class="mobile-top-menu hidden">
             <button id="mobile-menu-notices" class="workspace-menu-item" type="button">Notices</button>
+            <button id="mobile-menu-organizations" class="workspace-menu-item" type="button">Organizations</button>
+            <button id="mobile-menu-workflows" class="workspace-menu-item" type="button">Workflows</button>
             <button id="mobile-menu-settings" class="workspace-menu-item" type="button">Settings</button>
             <button id="mobile-menu-profile" class="workspace-menu-item" type="button">Profile</button>
             <button id="mobile-menu-workspaces" class="workspace-menu-item" type="button">Workspaces</button>
@@ -121,65 +123,89 @@
       <div class="app-layout">
         <aside class="sidebar">
           <div id="tasks-sidebar-content" class="sidebar-content">
-            <div class="sidebar-header-row">
-              <button id="tasks-open" class="sidebar-section-button" type="button">My Tasks</button>
-              <button id="new-task-list-btn" class="icon-button menu-icon" type="button" title="New list">＋</button>
-            </div>
-            <div id="task-list-list" class="workspace-list"></div>
-            <div class="sidebar-divider"></div>
-            <div class="sidebar-header-row">
-              <button id="projects-open" class="sidebar-section-button" type="button">Projects</button>
-              <button id="new-project-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
-            </div>
-            <div id="project-list" class="workspace-list"></div>
-            <div class="sidebar-divider"></div>
-            <div class="sidebar-header-row">
-              <button id="workflows-open" class="sidebar-section-button" type="button">Workflows</button>
-              <div class="sidebar-header-actions">
-                <div class="workspace-menu-wrapper">
-                  <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Workflow menu">⋯</button>
-                  <div id="workflow-sidebar-menu" class="workspace-menu hidden">
-                    <button id="workflow-sidebar-manage" class="workspace-menu-item" type="button">Manage Workflows</button>
+            <section class="sidebar-section sidebar-section-tasks">
+              <div class="sidebar-header-row">
+                <button id="tasks-open" class="sidebar-section-button" type="button">My Tasks</button>
+                <button id="new-task-list-btn" class="icon-button menu-icon" type="button" title="New list">＋</button>
+              </div>
+              <div class="sidebar-section-body">
+                <div id="task-list-list" class="workspace-list sidebar-section-list"></div>
+              </div>
+            </section>
+            <section class="sidebar-section sidebar-section-projects">
+              <div class="sidebar-header-row">
+                <button id="projects-open" class="sidebar-section-button" type="button">Projects</button>
+                <button id="new-project-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
+              </div>
+              <div class="sidebar-section-body">
+                <div id="project-list" class="workspace-list sidebar-section-list"></div>
+              </div>
+            </section>
+            <section class="sidebar-section sidebar-section-organizations">
+              <div class="sidebar-header-row">
+                <button id="organizations-open" class="sidebar-section-button" type="button">Organizations</button>
+              </div>
+              <div class="sidebar-section-body">
+                <div id="organization-list" class="workspace-list sidebar-section-list"></div>
+              </div>
+            </section>
+            <section class="sidebar-section sidebar-section-workflows">
+              <div class="sidebar-header-row">
+                <button id="workflows-open" class="sidebar-section-button" type="button">Workflows</button>
+                <div class="sidebar-header-actions">
+                  <div class="workspace-menu-wrapper">
+                    <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Workflow menu">⋯</button>
+                    <div id="workflow-sidebar-menu" class="workspace-menu hidden">
+                      <button id="workflow-sidebar-manage" class="workspace-menu-item" type="button">Manage Workflows</button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            <div id="workflow-list" class="workspace-list"></div>
-            <div class="sidebar-divider"></div>
-          <div class="sidebar-header-row">
-            <button id="shopping-open" class="sidebar-section-button" type="button">Shopping Lists</button>
-            <div class="sidebar-header-actions">
-              <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
-              <div class="workspace-menu-wrapper">
-                  <button id="shopping-list-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Shopping list menu">⋯</button>
-                  <div id="shopping-list-sidebar-menu" class="workspace-menu hidden">
-                    <label class="workspace-menu-item checkbox-item">
-                      <input type="checkbox" id="show-archived-shopping" />
-                      Show completed
-                    </label>
-                  </div>
+              <div class="sidebar-section-body">
+                <div id="workflow-list" class="workspace-list sidebar-section-list"></div>
               </div>
-            </div>
-          </div>
-          <div id="task-shopping-inbox" class="task-shopping-inbox sidebar-shopping-inbox">
-            <div class="task-shopping-inbox-compose">
-              <input
-                id="task-shopping-inbox-input"
-                class="setting-input"
-                type="text"
-                placeholder="Quick Add"
-                autocomplete="off"
-              />
-              <button id="task-shopping-inbox-add" class="subtle-button" type="button" aria-label="Add inbox item">＋</button>
-            </div>
-          </div>
-          <div id="shopping-list-list" class="workspace-list"></div>
-          <div class="sidebar-divider"></div>
-          <div class="sidebar-header-row">
-            <button id="notices-open" class="sidebar-section-button" type="button">Notices</button>
-            <button id="new-notice-sidebar-btn" class="icon-button menu-icon" type="button" title="New notice">＋</button>
-            </div>
-            <div id="notice-list" class="workspace-list"></div>
+            </section>
+            <section class="sidebar-section sidebar-section-shopping">
+              <div class="sidebar-header-row">
+                <button id="shopping-open" class="sidebar-section-button" type="button">Shopping Lists</button>
+                <div class="sidebar-header-actions">
+                  <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
+                  <div class="workspace-menu-wrapper">
+                    <button id="shopping-list-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Shopping list menu">⋯</button>
+                    <div id="shopping-list-sidebar-menu" class="workspace-menu hidden">
+                      <label class="workspace-menu-item checkbox-item">
+                        <input type="checkbox" id="show-archived-shopping" />
+                        Show completed
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="sidebar-section-body sidebar-section-body-shopping">
+                <div id="task-shopping-inbox" class="task-shopping-inbox sidebar-shopping-inbox">
+                  <div class="task-shopping-inbox-compose">
+                    <input
+                      id="task-shopping-inbox-input"
+                      class="setting-input"
+                      type="text"
+                      placeholder="Quick Add"
+                      autocomplete="off"
+                    />
+                    <button id="task-shopping-inbox-add" class="subtle-button" type="button" aria-label="Add inbox item">＋</button>
+                  </div>
+                </div>
+                <div id="shopping-list-list" class="workspace-list sidebar-section-list"></div>
+              </div>
+            </section>
+            <section class="sidebar-section sidebar-section-notices">
+              <div class="sidebar-header-row">
+                <button id="notices-open" class="sidebar-section-button" type="button">Notices</button>
+                <button id="new-notice-sidebar-btn" class="icon-button menu-icon" type="button" title="New notice">＋</button>
+              </div>
+              <div class="sidebar-section-body">
+                <div id="notice-list" class="workspace-list sidebar-section-list"></div>
+              </div>
+            </section>
           </div>
           <div id="scheduling-sidebar-content" class="sidebar-content hidden">
             <div class="sidebar-header-row">
@@ -444,6 +470,60 @@
               </div>
             </div>
             <div id="workflow-detail" class="workflow-detail"></div>
+          </section>
+          <section id="organizations-page" class="panel hidden">
+            <div class="panel-header">
+              <h2>Organizations</h2>
+              <button id="organizations-page-back" class="subtle-button" type="button">← Back</button>
+            </div>
+            <div class="organization-summary-grid">
+              <div class="organization-summary-card">
+                <div class="setting-label">Selected organization</div>
+                <div id="settings-org-name" class="organization-summary-value">No organization selected</div>
+                <div id="settings-org-role" class="sidebar-note">Create an organization to start collaborating.</div>
+              </div>
+              <div class="organization-summary-card">
+                <div class="setting-label">Owner</div>
+                <div id="settings-org-owner" class="organization-summary-value">—</div>
+                <div id="settings-org-member-count" class="sidebar-note">0 members</div>
+              </div>
+            </div>
+            <div class="organization-actions organization-create-row">
+              <input id="settings-org-create-name" class="setting-input organization-grow" type="text" placeholder="New organization name" />
+              <button id="settings-org-create-button" class="subtle-button" type="button">New organization</button>
+            </div>
+            <div id="settings-org-status" class="sidebar-note"></div>
+            <div class="organization-console">
+              <div class="organization-console-card">
+                <div class="setting-label">Your organizations</div>
+                <div id="settings-org-list" class="workspace-list"></div>
+              </div>
+              <div class="organization-console-card">
+                <div id="settings-org-empty" class="sidebar-note">Create an organization to manage members, roles, and ownership.</div>
+                <div id="settings-org-detail" class="hidden">
+                  <div class="setting-row organization-add-row">
+                    <input id="settings-org-edit-name" class="setting-input organization-grow" type="text" placeholder="Organization name" />
+                    <button id="settings-org-save-button" class="subtle-button" type="button">Save organization</button>
+                  </div>
+                  <div class="sidebar-note organization-callout">Add existing BrianHub users by email, then promote them to admin if they should help manage the organization.</div>
+                  <div class="setting-row team-add-row organization-add-row">
+                    <input id="settings-org-member-email" class="setting-input organization-grow" type="email" placeholder="Existing user email" />
+                    <select id="settings-org-member-role" class="setting-input">
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button id="settings-org-member-add" class="subtle-button" type="button">Add member</button>
+                  </div>
+                  <div id="settings-org-member-status" class="sidebar-note"></div>
+                  <div id="settings-org-member-list" class="workspace-list"></div>
+                  <div class="setting-row organization-add-row">
+                    <select id="settings-org-transfer-owner" class="setting-input organization-grow"></select>
+                    <button id="settings-org-transfer-button" class="subtle-button" type="button">Transfer ownership</button>
+                  </div>
+                  <div class="sidebar-note organization-callout">Only the current organization owner can transfer ownership.</div>
+                </div>
+              </div>
+            </div>
           </section>
           <section id="data-transfer-page" class="panel hidden">
             <div class="panel-header">
@@ -920,16 +1000,17 @@
         </span>
         <span class="mobile-nav-label">Shopping Lists</span>
       </button>
-      <button id="mobile-nav-workflows" class="mobile-nav-button" type="button" data-view="workflows" title="Workflow Instances">
+      <button id="mobile-nav-organizations" class="mobile-nav-button" type="button" data-view="organizations" title="Organizations">
         <span class="mobile-nav-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4" y="4" width="7" height="7" rx="1.5"></rect>
-            <rect x="13" y="4" width="7" height="7" rx="1.5"></rect>
-            <rect x="4" y="13" width="7" height="7" rx="1.5"></rect>
-            <rect x="13" y="13" width="7" height="7" rx="1.5"></rect>
+            <circle cx="8" cy="9" r="2"></circle>
+            <circle cx="16" cy="8" r="1.7"></circle>
+            <circle cx="16" cy="15" r="1.9"></circle>
+            <path d="M5.5 18c.4-2.3 2-3.6 4.5-3.6s4.1 1.3 4.5 3.6"></path>
+            <path d="M13.6 10.7c1.8.2 3 1.2 3.5 2.9"></path>
           </svg>
         </span>
-        <span class="mobile-nav-label">Workflow</span>
+        <span class="mobile-nav-label">Organizations</span>
       </button>
       <button id="mobile-nav-add" class="mobile-nav-add" type="button" title="Create">
         <span class="mobile-nav-add-plus">+</span>
@@ -1621,53 +1702,9 @@
                 <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
               </summary>
               <div class="settings-accordion-content">
-                <div class="organization-summary-grid">
-                  <div class="organization-summary-card">
-                    <div class="setting-label">Selected organization</div>
-                    <div id="settings-org-name" class="organization-summary-value">No organization selected</div>
-                    <div id="settings-org-role" class="sidebar-note">Create an organization to start collaborating.</div>
-                  </div>
-                  <div class="organization-summary-card">
-                    <div class="setting-label">Owner</div>
-                    <div id="settings-org-owner" class="organization-summary-value">—</div>
-                    <div id="settings-org-member-count" class="sidebar-note">0 members</div>
-                  </div>
-                </div>
-                <div class="organization-actions organization-create-row">
-                  <input id="settings-org-create-name" class="setting-input organization-grow" type="text" placeholder="New organization name" />
-                  <button id="settings-org-create-button" class="subtle-button" type="button">New organization</button>
-                </div>
-                <div id="settings-org-status" class="sidebar-note"></div>
-                <div class="organization-console">
-                  <div class="organization-console-card">
-                    <div class="setting-label">Your organizations</div>
-                    <div id="settings-org-list" class="workspace-list"></div>
-                  </div>
-                  <div class="organization-console-card">
-                    <div id="settings-org-empty" class="sidebar-note">Create an organization to manage members, roles, and ownership.</div>
-                    <div id="settings-org-detail" class="hidden">
-                      <div class="setting-row organization-add-row">
-                        <input id="settings-org-edit-name" class="setting-input organization-grow" type="text" placeholder="Organization name" />
-                        <button id="settings-org-save-button" class="subtle-button" type="button">Save organization</button>
-                      </div>
-                      <div class="sidebar-note organization-callout">Add existing BrianHub users by email, then promote them to admin if they should help manage the organization.</div>
-                      <div class="setting-row team-add-row organization-add-row">
-                        <input id="settings-org-member-email" class="setting-input organization-grow" type="email" placeholder="Existing user email" />
-                        <select id="settings-org-member-role" class="setting-input">
-                          <option value="member">Member</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                        <button id="settings-org-member-add" class="subtle-button" type="button">Add member</button>
-                      </div>
-                      <div id="settings-org-member-status" class="sidebar-note"></div>
-                      <div id="settings-org-member-list" class="workspace-list"></div>
-                      <div class="setting-row organization-add-row">
-                        <select id="settings-org-transfer-owner" class="setting-input organization-grow"></select>
-                        <button id="settings-org-transfer-button" class="subtle-button" type="button">Transfer ownership</button>
-                      </div>
-                      <div class="sidebar-note organization-callout">Only the current organization owner can transfer ownership.</div>
-                    </div>
-                  </div>
+                <div class="sidebar-note organization-callout">Organizations live in their own surface so you can switch into them and manage members, roles, and ownership without blending them into workspace settings.</div>
+                <div class="organization-actions">
+                  <button id="settings-open-organizations" class="subtle-button" type="button">Open organizations</button>
                 </div>
               </div>
             </details>
