@@ -122,6 +122,10 @@ function normalizeWorkspaceRecordType(value) {
   return type === 'shared' ? 'shared' : 'personal';
 }
 
+function normalizeWorkspaceOrganizationId(value) {
+  return optionalUuid(value, 'organization_id');
+}
+
 function normalizeOrgRole(value) {
   const role = String(value ?? '').trim().toLowerCase();
   if (!role) return 'member';
@@ -598,6 +602,134 @@ const ORG_DETAIL_COLUMNS = `
   ) AS INTEGER) AS member_count
 `;
 
+async function getOrgRow(db, id) {
+  const safeOrgId = assertUuid(id, 'org_id');
+  return getRow(
+    db,
+    `SELECT ${ORG_DETAIL_COLUMNS}
+       FROM orgs o
+       LEFT JOIN users owner ON owner.id = o.owner_user_id
+      WHERE o.id = ?
+      LIMIT 1`,
+    [safeOrgId]
+  );
+}
+
+async function getOrgSurfaceWorkspace(db, orgId) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  return getRow(
+    db,
+    'SELECT * FROM workspaces WHERE organization_id = ? LIMIT 1',
+    [safeOrgId]
+  );
+}
+
+function mapOrgMembershipRoleToWorkspaceRole(role) {
+  return normalizeOrgMembershipRole(role) === 'member' ? 'member' : 'manager';
+}
+
+async function listActiveOrgMembershipRows(db, orgId) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  return getRows(
+    db,
+    `SELECT om.*
+       FROM org_memberships om
+       JOIN users u ON u.id = om.user_id
+      WHERE om.org_id = ?
+        AND om.archived = 0
+        AND u.archived = 0
+      ORDER BY om.created_at ASC, om.id ASC`,
+    [safeOrgId]
+  );
+}
+
+async function syncOrgSurfaceWorkspaceMemberships(db, orgId, surfaceWorkspace = null) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const workspace = surfaceWorkspace ?? await getOrgSurfaceWorkspace(db, safeOrgId);
+  if (!workspace?.id) return null;
+  const memberships = await listActiveOrgMembershipRows(db, safeOrgId);
+  const targetByUserId = new Map(
+    memberships.map((membership) => [
+      membership.user_id,
+      mapOrgMembershipRoleToWorkspaceRole(membership.role)
+    ])
+  );
+  const existing = await getRows(
+    db,
+    'SELECT * FROM workspace_memberships WHERE workspace_id = ?',
+    [workspace.id]
+  );
+  for (const [userId, role] of targetByUserId.entries()) {
+    const current = existing.find((membership) => membership.user_id === userId) ?? null;
+    if (!current || Number(current.archived) || current.role !== role) {
+      await createWorkspaceMembership(
+        db,
+        {
+          workspace_id: workspace.id,
+          user_id: userId,
+          role,
+          archived: 0
+        },
+        null
+      );
+    }
+  }
+  for (const membership of existing) {
+    if (!targetByUserId.has(membership.user_id) && !Number(membership.archived)) {
+      await updateWorkspaceMembership(
+        db,
+        membership.id,
+        { archived: true },
+        null
+      );
+    }
+  }
+  return getOrgSurfaceWorkspace(db, safeOrgId);
+}
+
+async function ensureOrgSurfaceWorkspace(db, orgId) {
+  const safeOrgId = assertUuid(orgId, 'org_id');
+  const org = await getOrgRow(db, safeOrgId);
+  if (!org) return null;
+  let surface = await getOrgSurfaceWorkspace(db, safeOrgId);
+  if (!surface) {
+    const ownerUser = org.owner_user_id ? await getUserById(db, org.owner_user_id) : null;
+    const workspaceOrgId = ownerUser?.org_id ?? DEFAULT_ORG_ID;
+    surface = await createWorkspace(
+      db,
+      {
+        name: org.name,
+        type: 'shared',
+        org_id: workspaceOrgId,
+        creator_user_id: org.owner_user_id ?? null,
+        organization_id: safeOrgId
+      },
+      null
+    );
+  }
+  if (surface.name !== org.name || Number(surface.archived)) {
+    await run(
+      db,
+      'UPDATE workspaces SET name = ?, archived = 0, updated_at = ? WHERE id = ?',
+      [org.name, nowIso(), surface.id]
+    );
+    surface = await getOrgSurfaceWorkspace(db, safeOrgId);
+  }
+  return syncOrgSurfaceWorkspaceMemberships(db, safeOrgId, surface);
+}
+
+async function attachOrgSurfaceWorkspace(db, org) {
+  if (!org?.id) return null;
+  const surface = await ensureOrgSurfaceWorkspace(db, org.id);
+  return {
+    ...org,
+    surface_workspace_id: surface?.id ?? null,
+    surface_workspace_name: surface?.name ?? null,
+    surface_workspace_type: surface?.type ?? null,
+    surface_workspace_org_id: surface?.org_id ?? null
+  };
+}
+
 async function getOrgMembershipRow(db, orgId, userId, { includeArchived = false } = {}) {
   const safeOrgId = assertUuid(orgId, 'org_id');
   const safeUserId = assertUuid(userId, 'user_id');
@@ -846,12 +978,14 @@ export async function createWorkspace(
     type,
     org_id: orgId = DEFAULT_ORG_ID,
     org_name,
-    creator_user_id: creatorUserId = null
+    creator_user_id: creatorUserId = null,
+    organization_id: organizationId = null
   },
   clientId = null
 ) {
   const safeOrgId = assertUuid(orgId ?? DEFAULT_ORG_ID, 'org_id');
   const safeCreatorUserId = optionalUuid(creatorUserId, 'creator_user_id');
+  const safeOrganizationId = normalizeWorkspaceOrganizationId(organizationId);
   if (providedId) {
     const existing = await getWorkspace(db, assertUuid(providedId, 'workspace id'), safeOrgId);
     if (existing) return existing;
@@ -869,12 +1003,18 @@ export async function createWorkspace(
       throw new Error('creator_user_id must belong to the same organization');
     }
   }
+  if (safeOrganizationId) {
+    const org = await getOrgRow(db, safeOrganizationId);
+    if (!org) {
+      throw new Error('organization_id not found');
+    }
+  }
   await db.transaction(async (tx) => {
     await ensureOrg(tx, safeOrgId, org_name ?? (safeOrgId === DEFAULT_ORG_ID ? 'Default' : safeOrgId));
     await run(
       tx,
-      'INSERT INTO workspaces (id, org_id, owner_user_id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, safeOrgId, normalizedType === 'personal' ? safeCreatorUserId : null, name, type, 0, timestamp, timestamp]
+      'INSERT INTO workspaces (id, org_id, organization_id, owner_user_id, name, type, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, safeOrgId, safeOrganizationId, normalizedType === 'personal' ? safeCreatorUserId : null, name, type, 0, timestamp, timestamp]
     );
     await seedWorkspaceStatuses(tx, id);
     await seedWorkspaceTaskTypes(tx, id);
@@ -900,30 +1040,23 @@ export async function listWorkspaces(db, orgId = DEFAULT_ORG_ID) {
 }
 
 export async function getOrg(db, id) {
-  const safeOrgId = assertUuid(id, 'org_id');
-  return getRow(
-    db,
-    `SELECT ${ORG_DETAIL_COLUMNS}
-       FROM orgs o
-       LEFT JOIN users owner ON owner.id = o.owner_user_id
-      WHERE o.id = ?
-      LIMIT 1`,
-    [safeOrgId]
-  );
+  const org = await getOrgRow(db, id);
+  return attachOrgSurfaceWorkspace(db, org);
 }
 
 export async function listOrgs(db, { userId = null } = {}) {
   const safeUserId = optionalUuid(userId, 'user_id');
   if (!safeUserId) {
-    return getRows(
+    const rows = await getRows(
       db,
       `SELECT ${ORG_DETAIL_COLUMNS}
          FROM orgs o
          LEFT JOIN users owner ON owner.id = o.owner_user_id
         ORDER BY lower(o.name) ASC`
     );
+    return Promise.all(rows.map((row) => attachOrgSurfaceWorkspace(db, row)));
   }
-  return getRows(
+  const rows = await getRows(
     db,
     `SELECT ${ORG_DETAIL_COLUMNS},
        om.role AS current_user_role
@@ -935,11 +1068,12 @@ export async function listOrgs(db, { userId = null } = {}) {
      ORDER BY lower(o.name) ASC`,
     [safeUserId]
   );
+  return Promise.all(rows.map((row) => attachOrgSurfaceWorkspace(db, row)));
 }
 
 export async function createOrg(db, data, clientId = null) {
   const id = ensureUuid(data?.id, 'org id');
-  const existing = await getOrg(db, id);
+  const existing = await getOrgRow(db, id);
   if (existing) return existing;
   const name = normalizeRequiredText(data?.name, 'name', 256);
   const ownerUserId = assertUuid(data?.owner_user_id, 'owner_user_id');
@@ -956,6 +1090,7 @@ export async function createOrg(db, data, clientId = null) {
     );
     await ensureOrgMembership(tx, id, ownerUserId, 'owner');
   });
+  await ensureOrgSurfaceWorkspace(db, id);
   if (clientId) {
     // Org records are global, so only log when a workspace context is supplied by caller.
     const workspaceId = optionalUuid(data?.workspace_id, 'workspace_id');
@@ -968,7 +1103,7 @@ export async function createOrg(db, data, clientId = null) {
 
 export async function updateOrg(db, id, patch, clientId = null) {
   const safeOrgId = assertUuid(id, 'org_id');
-  const existing = await getOrg(db, safeOrgId);
+  const existing = await getOrgRow(db, safeOrgId);
   if (!existing) return null;
   const nextName = patch?.name !== undefined
     ? normalizeRequiredText(patch.name, 'name', 256)
@@ -985,6 +1120,7 @@ export async function updateOrg(db, id, patch, clientId = null) {
       await recordChange(db, workspaceId, 'org', safeOrgId, 'update', { name: nextName }, clientId);
     }
   }
+  await ensureOrgSurfaceWorkspace(db, safeOrgId);
   return getOrg(db, safeOrgId);
 }
 
@@ -1030,7 +1166,7 @@ export async function listOrgMembers(db, orgId, { includeArchived = false } = {}
 
 export async function addOrgMember(db, orgId, data = {}) {
   const safeOrgId = assertUuid(orgId, 'org_id');
-  const org = await getOrg(db, safeOrgId);
+  const org = await getOrgRow(db, safeOrgId);
   if (!org) {
     throw new Error('organization not found');
   }
@@ -1047,6 +1183,7 @@ export async function addOrgMember(db, orgId, data = {}) {
     throw new Error('user not found');
   }
   await ensureOrgMembership(db, safeOrgId, user.id, role);
+  await ensureOrgSurfaceWorkspace(db, safeOrgId);
   return getRow(
     db,
     `SELECT
@@ -1085,6 +1222,7 @@ export async function updateOrgMember(db, orgId, userId, patch = {}) {
     'UPDATE org_memberships SET role = ?, archived = ?, updated_at = ? WHERE id = ?',
     [nextRole, nextArchived, nowIso(), existing.id]
   );
+  await ensureOrgSurfaceWorkspace(db, safeOrgId);
   return getRow(
     db,
     `SELECT
@@ -1119,13 +1257,14 @@ export async function removeOrgMember(db, orgId, userId) {
     'UPDATE org_memberships SET archived = 1, updated_at = ? WHERE id = ?',
     [nowIso(), existing.id]
   );
+  await ensureOrgSurfaceWorkspace(db, safeOrgId);
   return true;
 }
 
 export async function transferOrgOwnership(db, orgId, targetUserId) {
   const safeOrgId = assertUuid(orgId, 'org_id');
   const safeTargetUserId = assertUuid(targetUserId, 'target_user_id');
-  const org = await getOrg(db, safeOrgId);
+  const org = await getOrgRow(db, safeOrgId);
   if (!org) return null;
   const targetMembership = await getOrgMembershipRow(db, safeOrgId, safeTargetUserId);
   if (!targetMembership) {
@@ -1150,6 +1289,7 @@ export async function transferOrgOwnership(db, orgId, targetUserId) {
       [safeTargetUserId, timestamp, safeOrgId]
     );
   });
+  await ensureOrgSurfaceWorkspace(db, safeOrgId);
   return getOrg(db, safeOrgId);
 }
 

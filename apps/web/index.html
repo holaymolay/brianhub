@@ -473,57 +473,18 @@
           </section>
           <section id="organizations-page" class="panel hidden">
             <div class="panel-header">
-              <h2>Organizations</h2>
-              <button id="organizations-page-back" class="subtle-button" type="button">← Back</button>
-            </div>
-            <div class="organization-summary-grid">
-              <div class="organization-summary-card">
-                <div class="setting-label">Selected organization</div>
-                <div id="settings-org-name" class="organization-summary-value">No organization selected</div>
-                <div id="settings-org-role" class="sidebar-note">Create an organization to start collaborating.</div>
+              <div>
+                <h2>Organizations</h2>
+                <div class="sidebar-note">Open an organization to work inside its shared surface.</div>
               </div>
-              <div class="organization-summary-card">
-                <div class="setting-label">Owner</div>
-                <div id="settings-org-owner" class="organization-summary-value">—</div>
-                <div id="settings-org-member-count" class="sidebar-note">0 members</div>
+              <div class="organization-page-actions">
+                <button id="organizations-page-manage" class="subtle-button" type="button">Manage organizations</button>
+                <button id="organizations-page-back" class="subtle-button" type="button">← Back</button>
               </div>
             </div>
-            <div class="organization-actions organization-create-row">
-              <input id="settings-org-create-name" class="setting-input organization-grow" type="text" placeholder="New organization name" />
-              <button id="settings-org-create-button" class="subtle-button" type="button">New organization</button>
-            </div>
-            <div id="settings-org-status" class="sidebar-note"></div>
-            <div class="organization-console">
-              <div class="organization-console-card">
-                <div class="setting-label">Your organizations</div>
-                <div id="settings-org-list" class="workspace-list"></div>
-              </div>
-              <div class="organization-console-card">
-                <div id="settings-org-empty" class="sidebar-note">Create an organization to manage members, roles, and ownership.</div>
-                <div id="settings-org-detail" class="hidden">
-                  <div class="setting-row organization-add-row">
-                    <input id="settings-org-edit-name" class="setting-input organization-grow" type="text" placeholder="Organization name" />
-                    <button id="settings-org-save-button" class="subtle-button" type="button">Save organization</button>
-                  </div>
-                  <div class="sidebar-note organization-callout">Add existing BrianHub users by email, then promote them to admin if they should help manage the organization.</div>
-                  <div class="setting-row team-add-row organization-add-row">
-                    <input id="settings-org-member-email" class="setting-input organization-grow" type="email" placeholder="Existing user email" />
-                    <select id="settings-org-member-role" class="setting-input">
-                      <option value="member">Member</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                    <button id="settings-org-member-add" class="subtle-button" type="button">Add member</button>
-                  </div>
-                  <div id="settings-org-member-status" class="sidebar-note"></div>
-                  <div id="settings-org-member-list" class="workspace-list"></div>
-                  <div class="setting-row organization-add-row">
-                    <select id="settings-org-transfer-owner" class="setting-input organization-grow"></select>
-                    <button id="settings-org-transfer-button" class="subtle-button" type="button">Transfer ownership</button>
-                  </div>
-                  <div class="sidebar-note organization-callout">Only the current organization owner can transfer ownership.</div>
-                </div>
-              </div>
-            </div>
+            <div id="organizations-page-status" class="sidebar-note"></div>
+            <div id="organizations-page-empty" class="sidebar-note hidden">No organizations yet. Create one in Settings.</div>
+            <div id="organizations-page-list" class="organization-surface-list"></div>
           </section>
           <section id="data-transfer-page" class="panel hidden">
             <div class="panel-header">
@@ -1702,9 +1663,55 @@
                 <span class="settings-accordion-chevron" aria-hidden="true">▾</span>
               </summary>
               <div class="settings-accordion-content">
-                <div class="sidebar-note organization-callout">Organizations live in their own surface so you can switch into them and manage members, roles, and ownership without blending them into workspace settings.</div>
-                <div class="organization-actions">
+                <div class="sidebar-note organization-callout">Create organizations here, manage members and privileges here, then open them in the sidebar or the Organizations page to do real work inside them.</div>
+                <div class="organization-summary-grid">
+                  <div class="organization-summary-card">
+                    <div class="setting-label">Selected organization</div>
+                    <div id="settings-org-name" class="organization-summary-value">No organization selected</div>
+                    <div id="settings-org-role" class="sidebar-note">Create an organization to start collaborating.</div>
+                  </div>
+                  <div class="organization-summary-card">
+                    <div class="setting-label">Owner</div>
+                    <div id="settings-org-owner" class="organization-summary-value">—</div>
+                    <div id="settings-org-member-count" class="sidebar-note">0 members</div>
+                  </div>
+                </div>
+                <div class="organization-actions organization-create-row">
+                  <input id="settings-org-create-name" class="setting-input organization-grow" type="text" placeholder="New organization name" />
+                  <button id="settings-org-create-button" class="subtle-button" type="button">New organization</button>
                   <button id="settings-open-organizations" class="subtle-button" type="button">Open organizations</button>
+                </div>
+                <div id="settings-org-status" class="sidebar-note"></div>
+                <div class="organization-console">
+                  <div class="organization-console-card">
+                    <div class="setting-label">Your organizations</div>
+                    <div id="settings-org-list" class="workspace-list"></div>
+                  </div>
+                  <div class="organization-console-card">
+                    <div id="settings-org-empty" class="sidebar-note">Create an organization to manage members, roles, and ownership.</div>
+                    <div id="settings-org-detail" class="hidden">
+                      <div class="setting-row organization-add-row">
+                        <input id="settings-org-edit-name" class="setting-input organization-grow" type="text" placeholder="Organization name" />
+                        <button id="settings-org-save-button" class="subtle-button" type="button">Save organization</button>
+                      </div>
+                      <div class="sidebar-note organization-callout">Add existing BrianHub users by email, then promote them to admin if they should help manage the organization.</div>
+                      <div class="setting-row team-add-row organization-add-row">
+                        <input id="settings-org-member-email" class="setting-input organization-grow" type="email" placeholder="Existing user email" />
+                        <select id="settings-org-member-role" class="setting-input">
+                          <option value="member">Member</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                        <button id="settings-org-member-add" class="subtle-button" type="button">Add member</button>
+                      </div>
+                      <div id="settings-org-member-status" class="sidebar-note"></div>
+                      <div id="settings-org-member-list" class="workspace-list"></div>
+                      <div class="setting-row organization-add-row">
+                        <select id="settings-org-transfer-owner" class="setting-input organization-grow"></select>
+                        <button id="settings-org-transfer-button" class="subtle-button" type="button">Transfer ownership</button>
+                      </div>
+                      <div class="sidebar-note organization-callout">Only the current organization owner can transfer ownership.</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </details>

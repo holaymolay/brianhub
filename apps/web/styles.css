@@ -1665,6 +1665,51 @@ body.api-help-body {
   gap: 0.6rem;
 }
 
+.organization-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.organization-surface-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.organization-surface-card {
+  border: 1px solid rgba(154, 166, 186, 0.22);
+  border-radius: 0.8rem;
+  background: rgba(13, 21, 34, 0.45);
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.organization-surface-card.active {
+  border-color: rgba(80, 140, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(80, 140, 255, 0.22);
+}
+
+.organization-surface-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.organization-surface-card-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.organization-surface-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
 .organization-grow {
   flex: 1 1 220px;
   width: auto;

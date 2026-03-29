@@ -1384,6 +1384,8 @@ test('organization settings support create, membership management, and ownership
   const createdOrg = createOrgRes.json();
   assert.equal(createdOrg.name, 'Pipe Cam');
   assert.equal(createdOrg.owner_user_id, orgOwner.auth.user.id);
+  assert.equal(typeof createdOrg.surface_workspace_id, 'string');
+  assert.equal(createdOrg.surface_workspace_name, 'Pipe Cam');
 
   const ownerOrgsRes = await server.inject({
     method: 'GET',
@@ -1395,6 +1397,17 @@ test('organization settings support create, membership management, and ownership
   assert.equal(ownerOrgsRes.statusCode, 200);
   const ownerOrgEntry = ownerOrgsRes.json().find((org) => org.id === createdOrg.id);
   assert.equal(ownerOrgEntry.current_user_role, 'owner');
+  assert.equal(ownerOrgEntry.surface_workspace_id, createdOrg.surface_workspace_id);
+
+  const ownerWorkspacesRes = await server.inject({
+    method: 'GET',
+    url: '/workspaces',
+    headers: {
+      cookie: orgOwner.cookie
+    }
+  });
+  assert.equal(ownerWorkspacesRes.statusCode, 200);
+  assert.equal(ownerWorkspacesRes.json().some((workspace) => workspace.id === createdOrg.surface_workspace_id), false);
 
   const addAdminRes = await server.inject({
     method: 'POST',
@@ -1433,6 +1446,20 @@ test('organization settings support create, membership management, and ownership
   });
   assert.equal(adminMembersRes.statusCode, 200);
   assert.equal(adminMembersRes.json().count, 3);
+
+  const adminTaskRes = await server.inject({
+    method: 'POST',
+    url: '/tasks',
+    headers: {
+      cookie: orgAdmin.cookie
+    },
+    payload: {
+      workspace_id: createdOrg.surface_workspace_id,
+      title: 'Org surface task'
+    }
+  });
+  assert.equal(adminTaskRes.statusCode, 200);
+  assert.equal(adminTaskRes.json().workspace_id, createdOrg.surface_workspace_id);
 
   const promoteMemberRes = await server.inject({
     method: 'PATCH',

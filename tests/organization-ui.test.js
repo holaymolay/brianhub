@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-test('settings expose a workspace collaboration section and link out to a dedicated organizations surface', () => {
+test('settings expose workspace collaboration controls and in-settings organization management', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
   assert.match(html, /<span class="settings-accordion-title">Workspaces<\/span>/);
   assert.match(html, /This section is workspace-scoped\. It does not create or manage organizations\./);
@@ -14,8 +14,6 @@ test('settings expose a workspace collaboration section and link out to a dedica
   assert.match(html, /id="organization-create-shared"/);
   assert.match(html, /<span class="settings-accordion-title">Organizations<\/span>/);
   assert.match(html, /id="settings-open-organizations"/);
-  assert.match(html, /id="organizations-page"/);
-  assert.match(html, /id="organizations-page-back"/);
   assert.match(html, /id="settings-org-create-name"/);
   assert.match(html, /id="settings-org-create-button"/);
   assert.match(html, /id="settings-org-list"/);
@@ -27,6 +25,10 @@ test('settings expose a workspace collaboration section and link out to a dedica
   assert.match(html, /id="settings-org-member-list"/);
   assert.match(html, /id="settings-org-transfer-owner"/);
   assert.match(html, /id="settings-org-transfer-button"/);
+  assert.match(html, /id="organizations-page"/);
+  assert.match(html, /id="organizations-page-manage"/);
+  assert.match(html, /id="organizations-page-back"/);
+  assert.match(html, /id="organizations-page-list"/);
 });
 
 test('workspace creation uses a dedicated modal with personal and shared types', () => {
@@ -56,11 +58,13 @@ test('workspace member flow still supports invites by email and local placeholde
   assert.match(script, /user = await createUserRecord\(\{ display_name: name, email: email \|\| null \}\);/);
 });
 
-test('organization settings script supports create, membership management, and ownership transfer', () => {
+test('organization settings script supports create, membership management, ownership transfer, and opening org surfaces', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /function getOrganizationSettingsState\(\)/);
   assert.match(script, /async function refreshOrganizations\(\{ preserveSelection = true \} = \{\}\)/);
   assert.match(script, /async function refreshSelectedOrganizationMembers\(orgId = getSelectedSettingsOrganization\(\)\?\.id \?\? ''\)/);
+  assert.match(script, /function renderOrganizationsPage\(\)/);
+  assert.match(script, /async function openOrganizationSurface\(orgInput\)/);
   assert.match(script, /function openOrganizationsPage\(\)/);
   assert.match(script, /function closeOrganizationsPage\(\)/);
   assert.match(script, /function renderOrganizationSidebarList\(\)/);
@@ -75,6 +79,8 @@ test('organization settings script supports create, membership management, and o
   assert.match(script, /async function transferSelectedOrganizationOwnership\(\)/);
   assert.match(script, /await api\.transferOrgOwnership\(selected\.id, \{ target_user_id: targetUserId \}\)/);
   assert.match(script, /organizationsOpenBtn\?\.addEventListener\('click', \(\) => \{\s*openOrganizationsPage\(\);/s);
+  assert.match(script, /selectBtn\.addEventListener\('click', \(\) => \{\s*void openOrganizationSurface\(org\);/s);
+  assert.match(script, /organizationsPageManage\?\.addEventListener\('click', \(\) => \{\s*openSettings\(\);/s);
   assert.match(script, /settingsOpenOrganizations\?\.addEventListener\('click', \(\) => \{\s*openOrganizationsPage\(\);/s);
 });
 

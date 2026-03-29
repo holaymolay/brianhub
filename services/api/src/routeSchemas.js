@@ -278,6 +278,10 @@ const orgResponseSchema = {
     owner_email: nullableString(320),
     current_user_role: nullableString(64),
     member_count: integerSchema,
+    surface_workspace_id: nullableUuidSchema,
+    surface_workspace_name: nullableString(256),
+    surface_workspace_type: nullableString(64),
+    surface_workspace_org_id: nullableUuidSchema,
     created_at: nullableDateTimeSchema,
     updated_at: nullableDateTimeSchema
   }

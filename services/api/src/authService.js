@@ -10,6 +10,12 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+async function tableHasColumn(db, tableName, columnName) {
+  const rows = await db.query(`PRAGMA table_info(${tableName})`);
+  const safeColumn = String(columnName ?? '').trim().toLowerCase();
+  return rows.some((row) => String(row?.name ?? '').trim().toLowerCase() === safeColumn);
+}
+
 function normalizeEmail(value) {
   const text = String(value ?? '').trim().toLowerCase();
   if (!text) return null;
@@ -863,6 +869,9 @@ export async function acceptInviteRegistration(
 }
 
 export async function listUserWorkspaces(db, userId) {
+  const excludesOrgSurfaceWorkspaces = (await tableHasColumn(db, 'workspaces', 'organization_id'))
+    ? 'AND w.organization_id IS NULL'
+    : '';
   return db.query(
     `SELECT w.*,
             CASE
@@ -870,11 +879,12 @@ export async function listUserWorkspaces(db, userId) {
               ELSE wm.role
             END AS role
        FROM workspaces w
-       LEFT JOIN workspace_memberships wm
+      LEFT JOIN workspace_memberships wm
          ON wm.workspace_id = w.id
         AND wm.user_id = ?
         AND wm.archived = 0
       WHERE w.archived = 0
+        ${excludesOrgSurfaceWorkspaces}
         AND (
           (lower(coalesce(w.type, 'personal')) = 'personal' AND w.owner_user_id = ?)
           OR

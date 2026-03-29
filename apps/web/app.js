@@ -370,6 +370,10 @@ const noticesOpenBtn = document.getElementById('notices-open');
 const noticesPage = document.getElementById('notices-page');
 const workflowsPage = document.getElementById('workflows-page');
 const organizationsPage = document.getElementById('organizations-page');
+const organizationsPageList = document.getElementById('organizations-page-list');
+const organizationsPageStatus = document.getElementById('organizations-page-status');
+const organizationsPageEmpty = document.getElementById('organizations-page-empty');
+const organizationsPageManage = document.getElementById('organizations-page-manage');
 const dataTransferPage = document.getElementById('data-transfer-page');
 const auditLogPage = document.getElementById('audit-log-page');
 const automationPage = document.getElementById('automation-page');
@@ -8742,15 +8746,18 @@ async function loadWorkspaces() {
     workspaces = [localWorkspace];
   }
   const normalized = workspaces.map(normalizeWorkspace);
+  const previousWorkspace = state.workspace ? normalizeWorkspace(state.workspace) : null;
   state.workspaces = normalized;
   const preferredId = state.ui?.activeWorkspaceId;
   state.workspace = normalized.find(ws => ws.id === preferredId && !ws.archived)
+    ?? ((previousWorkspace?.id === preferredId && previousWorkspace?.organization_id) ? previousWorkspace : null)
     ?? normalized.find(ws => !ws.archived)
     ?? normalized[0];
   reapplyPendingLocalChanges(localSnapshot);
   const resolvedWorkspaces = (state.workspaces ?? []).map(normalizeWorkspace);
   state.workspaces = resolvedWorkspaces;
   state.workspace = resolvedWorkspaces.find(ws => ws.id === preferredId && !ws.archived)
+    ?? ((previousWorkspace?.id === preferredId && previousWorkspace?.organization_id) ? previousWorkspace : null)
     ?? resolvedWorkspaces.find(ws => !ws.archived)
     ?? resolvedWorkspaces[0]
     ?? null;
@@ -8880,6 +8887,9 @@ async function refreshWorkspace() {
 async function selectWorkspace(workspace) {
   state.workspace = workspace;
   state.ui.activeWorkspaceId = workspace.id;
+  if (workspace?.organization_id) {
+    getOrganizationSettingsState().selectedOrgId = workspace.organization_id;
+  }
   state.ui.activeProjectId = null;
   clearActiveWorkflowChecklistInstanceId();
   state.ui.syncCursor = 0;
@@ -8895,6 +8905,7 @@ function normalizeWorkspace(workspace) {
     ...workspace,
     type: normalizeWorkspaceType(workspace?.type),
     org_id: workspace.org_id ?? DEFAULT_ORG_ID,
+    organization_id: workspace.organization_id ?? null,
     archived: Boolean(workspace.archived)
   };
 }
@@ -13587,6 +13598,7 @@ function render() {
   renderProfilePage();
   renderOrganizationPanel();
   renderOrganizationSidebarList();
+  renderOrganizationsPage();
   renderOrganizationsSettings();
   renderAdminPage();
   renderTaskSidebarList();
@@ -16060,6 +16072,7 @@ function renderAccountMenu() {
 }
 
 function getWorkspaceTypeLabelForWorkspace(workspace) {
+  if (workspace?.organization_id) return 'Organization surface';
   const type = normalizeWorkspaceType(workspace?.type);
   if (type === 'personal') return 'Personal workspace';
   if (type === 'shared') return 'Shared workspace';
@@ -16114,7 +16127,11 @@ function normalizeOrganizationRecord(org) {
   return {
     ...org,
     current_user_role: normalizeOrganizationRole(org.current_user_role),
-    member_count: Number.isFinite(Number(org.member_count)) ? Number(org.member_count) : 0
+    member_count: Number.isFinite(Number(org.member_count)) ? Number(org.member_count) : 0,
+    surface_workspace_id: String(org.surface_workspace_id ?? '').trim() || null,
+    surface_workspace_name: String(org.surface_workspace_name ?? '').trim() || null,
+    surface_workspace_type: normalizeWorkspaceType(org.surface_workspace_type ?? 'shared'),
+    surface_workspace_org_id: String(org.surface_workspace_org_id ?? org.id ?? DEFAULT_ORG_ID).trim() || DEFAULT_ORG_ID
   };
 }
 
@@ -16160,6 +16177,26 @@ function isVisibleOrganizationRecord(org) {
 
 function getVisibleOrganizations() {
   return getOrganizationSettingsState().items.filter(isVisibleOrganizationRecord);
+}
+
+function getActiveOrganizationId() {
+  const activeWorkspaceOrgId = String(state.workspace?.organization_id ?? '').trim();
+  if (activeWorkspaceOrgId) return activeWorkspaceOrgId;
+  return String(getOrganizationSettingsState().selectedOrgId ?? '').trim() || null;
+}
+
+function buildOrganizationSurfaceWorkspace(org) {
+  if (!org?.surface_workspace_id) return null;
+  const role = normalizeOrganizationRole(org.current_user_role) === 'member' ? 'member' : 'manager';
+  return normalizeWorkspace({
+    id: org.surface_workspace_id,
+    name: org.surface_workspace_name || org.name,
+    type: org.surface_workspace_type || 'shared',
+    org_id: org.surface_workspace_org_id || DEFAULT_ORG_ID,
+    organization_id: org.id,
+    archived: 0,
+    role
+  });
 }
 
 function getSelectedSettingsOrganization() {
@@ -16311,9 +16348,10 @@ function renderOrganizationSidebarList() {
     organizationListEl.appendChild(note);
     return;
   }
+  const activeOrganizationId = getActiveOrganizationId();
   organizations.forEach((org) => {
     const row = document.createElement('div');
-    row.className = 'workspace-row' + (selected?.id === org.id ? ' active' : '');
+    row.className = 'workspace-row' + (activeOrganizationId === org.id || selected?.id === org.id ? ' active' : '');
     const selectBtn = document.createElement('button');
     selectBtn.type = 'button';
     selectBtn.className = 'workspace-select';
@@ -16322,10 +16360,7 @@ function renderOrganizationSidebarList() {
     selectBtn.textContent = `${org.name} · ${roleText}`;
     selectBtn.title = `${org.name} · ${roleText} · ${memberCount} member${memberCount === 1 ? '' : 's'}`;
     selectBtn.addEventListener('click', () => {
-      orgState.selectedOrgId = org.id;
-      render();
-      void refreshSelectedOrganizationMembers(org.id);
-      openOrganizationsPage();
+      void openOrganizationSurface(org);
     });
     row.appendChild(selectBtn);
     organizationListEl.appendChild(row);
@@ -16541,6 +16576,108 @@ function renderOrganizationsSettings() {
   if (settingsOrgTransferButton) {
     settingsOrgTransferButton.disabled = !canTransferSelected || !selectedMembers.some((member) => member.role !== 'owner' && !member.archived && !member.user_archived);
   }
+}
+
+function renderOrganizationsPage() {
+  if (!organizationsPageList) return;
+  const orgState = getOrganizationSettingsState();
+  const authenticated = isAuthenticatedActor();
+  const organizations = getVisibleOrganizations();
+  const activeOrganizationId = getActiveOrganizationId();
+
+  if (organizationsPageStatus) {
+    organizationsPageStatus.textContent = authenticated
+      ? (orgState.loading && !organizations.length ? 'Loading organizations...' : '')
+      : 'Log in to open organizations.';
+    if (orgState.error) {
+      organizationsPageStatus.textContent = orgState.error;
+      organizationsPageStatus.dataset.tone = 'error';
+    } else {
+      delete organizationsPageStatus.dataset.tone;
+    }
+  }
+  if (organizationsPageEmpty) {
+    organizationsPageEmpty.classList.toggle('hidden', !authenticated || orgState.loading || organizations.length > 0);
+  }
+  organizationsPageList.innerHTML = '';
+  if (!authenticated || (orgState.loading && !organizations.length) || (!organizations.length && !orgState.error)) {
+    return;
+  }
+  organizations.forEach((org) => {
+    const card = document.createElement('section');
+    card.className = 'organization-surface-card';
+    if (activeOrganizationId === org.id) {
+      card.classList.add('active');
+    }
+
+    const header = document.createElement('div');
+    header.className = 'organization-surface-card-head';
+
+    const titleWrap = document.createElement('div');
+    const title = document.createElement('h3');
+    title.textContent = org.name;
+    const subtitle = document.createElement('div');
+    subtitle.className = 'sidebar-note';
+    subtitle.textContent = `${getOrganizationRoleLabel(org.current_user_role)} · ${org.member_count} member${org.member_count === 1 ? '' : 's'}`;
+    titleWrap.append(title, subtitle);
+    header.appendChild(titleWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'organization-surface-card-actions';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'subtle-button';
+    openBtn.textContent = 'Open';
+    openBtn.addEventListener('click', () => {
+      void openOrganizationSurface(org);
+    });
+    actions.appendChild(openBtn);
+
+    const manageBtn = document.createElement('button');
+    manageBtn.type = 'button';
+    manageBtn.className = 'subtle-button';
+    manageBtn.textContent = 'Manage';
+    manageBtn.addEventListener('click', () => {
+      state.ui = state.ui ?? {};
+      state.ui.organizations = state.ui.organizations ?? {};
+      state.ui.organizations.selectedOrgId = org.id;
+      openSettings();
+    });
+    actions.appendChild(manageBtn);
+
+    header.appendChild(actions);
+    card.appendChild(header);
+
+    const owner = document.createElement('div');
+    owner.className = 'sidebar-note';
+    owner.textContent = `Owner: ${org.owner_display_name?.trim() || org.owner_email?.trim() || 'Unknown owner'}`;
+    card.appendChild(owner);
+
+    organizationsPageList.appendChild(card);
+  });
+}
+
+async function openOrganizationSurface(orgInput) {
+  const orgState = getOrganizationSettingsState();
+  const org = normalizeOrganizationRecord(orgInput)
+    ?? getVisibleOrganizations().find((item) => item.id === String(orgInput ?? '').trim())
+    ?? null;
+  if (!org) {
+    openOrganizationsPage();
+    return;
+  }
+  orgState.selectedOrgId = org.id;
+  const workspace = buildOrganizationSurfaceWorkspace(org);
+  if (!workspace?.id) {
+    showToast({ type: 'error', message: 'This organization does not have an operating surface yet.' });
+    openOrganizationsPage();
+    return;
+  }
+  await selectWorkspace(workspace);
+  setActiveView('tasks');
+  render();
+  void refreshSelectedOrganizationMembers(org.id);
 }
 
 function syncWorkspaceCreateTypeNote() {
@@ -25982,6 +26119,10 @@ function openOrganizationsPage() {
   state.ui.organizationsReturnView = currentView === 'organizations'
     ? (state.ui.organizationsReturnView ?? 'tasks')
     : currentView;
+  const activeOrganizationId = String(state.workspace?.organization_id ?? '').trim();
+  if (activeOrganizationId) {
+    getOrganizationSettingsState().selectedOrgId = activeOrganizationId;
+  }
   if (settingsModal && !settingsModal.classList.contains('hidden')) {
     closeSettings();
   }
@@ -28663,6 +28804,9 @@ workspaceArchivedBack?.addEventListener('click', () => {
   render();
 });
 organizationsPageBack?.addEventListener('click', closeOrganizationsPage);
+organizationsPageManage?.addEventListener('click', () => {
+  openSettings();
+});
 shoppingAddBtn?.addEventListener('click', openShoppingItemModal);
 shoppingMobileBack?.addEventListener('click', () => {
   setMobileShoppingPanelMode('list');
