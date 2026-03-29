@@ -509,6 +509,8 @@ const mobileNavProjects = document.getElementById('mobile-nav-projects');
 const mobileNavShopping = document.getElementById('mobile-nav-shopping');
 const mobileNavOrganizations = document.getElementById('mobile-nav-organizations');
 const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-button[data-view]'));
+const sidebarSections = Array.from(document.querySelectorAll('.sidebar-section[data-sidebar-section]'));
+const sidebarSectionToggleButtons = Array.from(document.querySelectorAll('.sidebar-section-toggle[data-sidebar-toggle]'));
 const mobileNavAdd = document.getElementById('mobile-nav-add');
 const mobileCreateSheet = document.getElementById('mobile-create-sheet');
 const mobileCreateSheetBackdrop = document.getElementById('mobile-create-sheet-backdrop');
@@ -1873,6 +1875,16 @@ mobileNavButtons.forEach((button) => {
       clearActiveWorkflowChecklistInstanceId();
     }
     setActiveView(view);
+    render();
+  });
+});
+
+sidebarSectionToggleButtons.forEach((button) => {
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const sectionKey = String(button.dataset.sidebarToggle ?? '').trim();
+    if (!sectionKey) return;
+    setSidebarSectionExpanded(sectionKey, !isSidebarSectionExpanded(sectionKey));
     render();
   });
 });
@@ -13629,6 +13641,7 @@ function render() {
   renderNoticeSidebarList();
   renderNoticesPageList();
   renderWorkflowsPage();
+  syncSidebarSectionExpansion();
   renderNoticeBellMenu();
   renderTaskFilter();
   renderTaskTools();
@@ -16237,6 +16250,40 @@ function getCurrentWorkspaceScopedView() {
   return ['tasks', 'projects', 'shopping', 'notices', 'workflows', 'scheduling'].includes(activeView)
     ? activeView
     : 'tasks';
+}
+
+function getSidebarSectionState() {
+  state.ui = state.ui ?? {};
+  if (!state.ui.sidebarSections || typeof state.ui.sidebarSections !== 'object') {
+    state.ui.sidebarSections = {};
+  }
+  return state.ui.sidebarSections;
+}
+
+function isSidebarSectionExpanded(sectionKey) {
+  const key = String(sectionKey ?? '').trim();
+  if (!key) return true;
+  return getSidebarSectionState()[key] !== false;
+}
+
+function setSidebarSectionExpanded(sectionKey, expanded) {
+  const key = String(sectionKey ?? '').trim();
+  if (!key) return;
+  getSidebarSectionState()[key] = Boolean(expanded);
+}
+
+function syncSidebarSectionExpansion() {
+  sidebarSections.forEach((section) => {
+    const sectionKey = String(section.dataset.sidebarSection ?? '').trim();
+    if (!sectionKey) return;
+    const expanded = isSidebarSectionExpanded(sectionKey);
+    section.classList.toggle('is-collapsed', !expanded);
+    const toggleButton = section.querySelector('.sidebar-section-toggle');
+    if (toggleButton) {
+      toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      toggleButton.title = expanded ? 'Collapse section' : 'Expand section';
+    }
+  });
 }
 
 function buildOrganizationSurfaceWorkspace(org) {
@@ -26222,8 +26269,7 @@ async function openOrganizationsEntry({ autoOpenSingle = false } = {}) {
     if (visibleOrganizations.length === 1) {
       const [singleOrganization] = visibleOrganizations;
       if (getActiveOrganizationId() === singleOrganization.id) {
-        setActiveView(getCurrentWorkspaceScopedView());
-        render();
+        await closeOrganizationSurface();
         return;
       }
       await openOrganizationSurface(singleOrganization);

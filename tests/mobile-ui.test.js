@@ -104,6 +104,7 @@ test('mobile navigation exposes organizations as a first-class destination', () 
   assert.match(script, /setMobileNavButtonConfig\(mobileNavOrganizations, \{\s*view: 'organizations'/s);
   assert.match(script, /if \(view === 'organizations'\) \{\s*void openOrganizationsEntry\(\{ autoOpenSingle: true \}\);\s*return;\s*\}/s);
   assert.match(script, /mobileMenuOrganizations\?\.addEventListener\('click', \(\) => \{\s*closeMobileTopMenu\(\);\s*void openOrganizationsEntry\(\{ autoOpenSingle: true \}\);/s);
+  assert.match(script, /if \(getActiveOrganizationId\(\) === singleOrganization\.id\) \{\s*await closeOrganizationSurface\(\);\s*return;\s*\}/s);
 });
 
 test('mobile task tools reuse the same task state controls as desktop', () => {
