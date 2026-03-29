@@ -13515,7 +13515,9 @@ function render() {
     setActiveView('workspaces-manage');
   }
   const mobileSchedulingView = mobileViewport && getActiveView() === 'scheduling';
+  const mobileTasksView = mobileViewport && getActiveView() === 'tasks';
   document.body.classList.toggle('mobile-scheduling-view', mobileSchedulingView);
+  document.body.classList.toggle('mobile-tasks-view', mobileTasksView);
   const currentSelected = getSelectedTaskIds();
   const validSelected = currentSelected.filter(id => state.tasks?.[id]);
   if (validSelected.length !== currentSelected.length) {

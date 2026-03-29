@@ -100,6 +100,26 @@ test('mobile task tools replace the cramped toolbar on phones', () => {
   assert.match(css, /#tasks-panel \.tasks-toolbar \{\s*display: none;/s);
 });
 
+test('mobile tasks view keeps the task panel as the scroll owner', () => {
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(script, /const mobileTasksView = mobileViewport && getActiveView\(\) === 'tasks';/);
+  assert.match(script, /document\.body\.classList\.toggle\('mobile-tasks-view', mobileTasksView\);/);
+  assert.match(css, /body\.mobile-tasks-view \.app-main \{[\s\S]*overflow: hidden;[\s\S]*flex: 1 1 auto;/);
+  assert.match(css, /body\.mobile-tasks-view \.app-layout \{[\s\S]*height: 100%;[\s\S]*min-height: 0;/);
+  assert.match(css, /body\.mobile-tasks-view \.content-panel \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
+  assert.match(css, /body\.mobile-tasks-view #tasks-panel \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
+  assert.match(css, /body\.mobile-tasks-view #task-tree \{[\s\S]*overflow: auto;[\s\S]*scroll-padding-bottom: calc\(var\(--mobile-nav-safe-clearance\) \+ 1rem\);/);
+});
+
+test('mobile task rows reflow into a wrapped phone layout', () => {
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(css, /#tasks-panel \.task-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /#tasks-panel \.task-title-row \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;/);
+  assert.match(css, /#tasks-panel \.task-title \{[\s\S]*flex: 1 0 100%;[\s\S]*white-space: normal;[\s\S]*-webkit-line-clamp: 3;/);
+  assert.match(css, /#tasks-panel \.task-meta \{[\s\S]*display: block !important;[\s\S]*white-space: normal;/);
+});
+
 test('task reorder supports row drag on desktop and pointer drag on touch devices', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /let taskPointerDragState = null;/);

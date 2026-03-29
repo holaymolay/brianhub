@@ -6688,6 +6688,11 @@ body.auth-gated #auth-cancel-invite {
     min-height: 0;
   }
 
+  body.mobile-tasks-view .app-main {
+    overflow: hidden;
+    flex: 1 1 auto;
+  }
+
   body.mobile-scheduling-view .app-main {
     padding: 0;
     flex: 1 1 auto;
@@ -6699,6 +6704,11 @@ body.auth-gated #auth-cancel-invite {
     gap: 0.75rem;
     min-width: 0;
     height: auto;
+  }
+
+  body.mobile-tasks-view .app-layout {
+    height: 100%;
+    min-height: 0;
   }
 
   body.mobile-scheduling-view .app-layout {
@@ -6836,6 +6846,30 @@ body.auth-gated #auth-cancel-invite {
     padding-bottom: 0.6rem;
   }
 
+  body.mobile-tasks-view .content-panel {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.mobile-tasks-view .content-panel > section {
+    overflow: hidden;
+  }
+
+  body.mobile-tasks-view #tasks-panel {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.mobile-tasks-view #task-tree {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scroll-padding-bottom: calc(var(--mobile-nav-safe-clearance) + 1rem);
+    padding-bottom: 0.65rem;
+  }
+
   #tasks-panel #task-tree,
   #tasks-panel .task-list,
   #tasks-panel .task-group-list,
@@ -6849,30 +6883,46 @@ body.auth-gated #auth-cancel-invite {
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    gap: 0.45rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.45rem 0.5rem;
     align-items: flex-start;
   }
 
   #tasks-panel .task-main {
     min-width: 0;
     max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
     flex: 1 1 auto;
-    flex-wrap: wrap;
     align-items: flex-start;
-    row-gap: 0.25rem;
+    row-gap: 0.28rem;
   }
 
   #tasks-panel .task-title-row {
     width: 100%;
     min-width: 0;
     max-width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.35rem;
   }
 
   #tasks-panel .task-title {
     min-width: 0;
     max-width: 100%;
-    flex: 1 1 auto;
-    display: block;
+    order: 10;
+    flex: 1 0 100%;
+    display: -webkit-box;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: clip;
+    word-break: break-word;
+    line-height: 1.32;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
   }
 
   #tasks-panel .task-status-tag {
@@ -6880,11 +6930,15 @@ body.auth-gated #auth-cancel-invite {
   }
 
   #tasks-panel .task-meta {
+    display: block !important;
+    width: 100%;
     max-width: 100%;
     flex: 1 1 100%;
-    white-space: nowrap;
+    white-space: normal;
     overflow: hidden;
-    text-overflow: ellipsis;
+    text-overflow: clip;
+    line-height: 1.3;
+    color: var(--muted);
   }
 
   #tasks-panel .task-type-badge {
@@ -6896,6 +6950,7 @@ body.auth-gated #auth-cancel-invite {
 
   #tasks-panel .task-actions {
     flex: 0 0 auto;
+    align-self: flex-start;
     margin-left: 0;
     gap: 0.25rem;
   }
