@@ -901,6 +901,17 @@
 	                        <div class="admin-service-list-panel">
 	                          <div class="admin-service-list-heading">Existing tokens</div>
 	                          <div class="sidebar-note">Existing tokens only show metadata. Raw secrets disappear after the one-time issuance step.</div>
+                            <div class="setting-row admin-users-toolbar">
+                              <input id="admin-service-token-search" class="setting-input admin-invite-input" type="search" placeholder="Search tokens by name or id" />
+                              <select id="admin-service-token-filter" class="setting-input admin-invite-input">
+                                <option value="all">All statuses</option>
+                                <option value="active">Active</option>
+                                <option value="expiring">Expiring soon</option>
+                                <option value="never-used">Never used</option>
+                                <option value="expired">Expired</option>
+                                <option value="revoked">Revoked</option>
+                              </select>
+                            </div>
 	                          <div id="admin-service-token-list-summary" class="sidebar-note"></div>
 	                          <div id="admin-service-tokens-list" class="workspace-list"></div>
 	                        </div>

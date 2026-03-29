@@ -95,6 +95,8 @@ test('admin console exposes service-worker, token, and workspace-grant controls'
   assert.match(html, /id="admin-service-token-inherit"/);
   assert.match(html, /id="admin-service-token-reveal"/);
   assert.match(html, /id="admin-service-token-acknowledge"/);
+  assert.match(html, /id="admin-service-token-search"/);
+  assert.match(html, /id="admin-service-token-filter"/);
   assert.match(html, /id="admin-service-token-list-summary"/);
   assert.match(html, /id="admin-service-token-create-actions"/);
   assert.match(html, /id="admin-service-token-manage-actions"/);
@@ -159,6 +161,10 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /function normalizeAdminServiceTokenEditorMode\(mode\)/);
   assert.match(appScript, /function getAdminServiceTokenEditorMode\(\)/);
   assert.match(appScript, /function setAdminServiceTokenEditorMode\(mode\)/);
+  assert.match(appScript, /function getAdminServiceTokenSearchQuery\(\)/);
+  assert.match(appScript, /function normalizeAdminServiceTokenStatusFilter\(filter\)/);
+  assert.match(appScript, /function getAdminServiceTokenStatusFilter\(\)/);
+  assert.match(appScript, /function getFilteredAdminServiceTokens\(\)/);
   assert.match(appScript, /function buildAdminServiceTokenPayload/);
   assert.match(appScript, /function formatApiTokenTone\(status\)/);
   assert.match(appScript, /function getServiceWorkerTokenAccessLabel\(token\)/);
@@ -176,6 +182,8 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /adminServiceAccountRogerPreset\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceTokenModeIssue\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceTokenModeManage\?\.addEventListener\('click'/);
+  assert.match(appScript, /adminServiceTokenSearch\?\.addEventListener\('input'/);
+  assert.match(appScript, /adminServiceTokenFilter\?\.addEventListener\('change'/);
   assert.match(appScript, /adminServiceTokenRotate\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceGrantAdd\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceActivityRefresh\?\.addEventListener\('click'/);
@@ -225,6 +233,9 @@ test('admin console auto-selects existing service accounts and surfaces summary 
   assert.match(appScript, /metaParts\.push\(\s*workerSummary\.total/);
   assert.match(appScript, /renderAdminUsersList\(\);\s*renderAdminUserEditor\(\);\s*renderAdminServiceAccountsList\(\);/);
   assert.match(appScript, /const tokens = \[\.\.\.adminState\.serviceAccountTokens\]\.sort\(compareAdminServiceTokens\);/);
+  assert.match(appScript, /const filteredTokens = getFilteredAdminServiceTokens\(\);/);
+  assert.match(appScript, /summaryParts = \[`\$\{filteredTokens\.length\} shown`, `\$\{tokens\.length\} total`, `\$\{activeCount\} active`\];/);
+  assert.match(appScript, /No issued tokens match the current search\/filter\./);
   assert.match(appScript, /badges\.appendChild\(createAdminServiceChip\('Never used', 'muted'\)\);/);
   assert.match(appScript, /badges\.appendChild\(createAdminServiceChip\('Superseded', 'warning'\)\);/);
   assert.match(appScript, /buildAdminServiceActivityFilterOptions\(activityEvents\)\.forEach\(\(option\) => \{/);

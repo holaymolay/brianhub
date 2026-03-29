@@ -770,6 +770,8 @@ const adminServiceTokenSave = document.getElementById('admin-service-token-save'
 const adminServiceTokenRotate = document.getElementById('admin-service-token-rotate');
 const adminServiceTokenRevoke = document.getElementById('admin-service-token-revoke');
 const adminServiceTokenManageActions = document.getElementById('admin-service-token-manage-actions');
+const adminServiceTokenSearch = document.getElementById('admin-service-token-search');
+const adminServiceTokenFilter = document.getElementById('admin-service-token-filter');
 const adminServiceTokensList = document.getElementById('admin-service-tokens-list');
 const adminServiceTokenListSummary = document.getElementById('admin-service-token-list-summary');
 const adminServiceGrantsStatus = document.getElementById('admin-service-grants-status');
@@ -17657,6 +17659,8 @@ function getAdminState() {
   if (typeof adminState.selectedServiceAccountId !== 'string') adminState.selectedServiceAccountId = '';
   if (typeof adminState.selectedServiceAccountTokenId !== 'string') adminState.selectedServiceAccountTokenId = '';
   if (typeof adminState.serviceAccountTokenEditorMode !== 'string') adminState.serviceAccountTokenEditorMode = 'issue';
+  if (typeof adminState.serviceAccountTokenSearchQuery !== 'string') adminState.serviceAccountTokenSearchQuery = '';
+  if (typeof adminState.serviceAccountTokenStatusFilter !== 'string') adminState.serviceAccountTokenStatusFilter = 'all';
   if (typeof adminState.serviceAccountActivityFilter !== 'string') adminState.serviceAccountActivityFilter = 'all';
   if (typeof adminState.revealedServiceToken !== 'string') adminState.revealedServiceToken = '';
   if (typeof adminState.revealedServiceTokenPendingConfirmation !== 'boolean') adminState.revealedServiceTokenPendingConfirmation = false;
@@ -17962,6 +17966,40 @@ function setAdminServiceTokenEditorMode(mode) {
   getAdminState().serviceAccountTokenEditorMode = normalizeAdminServiceTokenEditorMode(mode);
 }
 
+function getAdminServiceTokenSearchQuery() {
+  return String(getAdminState().serviceAccountTokenSearchQuery ?? '').trim().toLowerCase();
+}
+
+function normalizeAdminServiceTokenStatusFilter(filter) {
+  const value = String(filter ?? '').trim();
+  return ['all', 'active', 'expiring', 'never-used', 'expired', 'revoked'].includes(value) ? value : 'all';
+}
+
+function getAdminServiceTokenStatusFilter() {
+  return normalizeAdminServiceTokenStatusFilter(getAdminState().serviceAccountTokenStatusFilter);
+}
+
+function getFilteredAdminServiceTokens() {
+  const tokens = [...(getAdminState().serviceAccountTokens ?? [])].sort(compareAdminServiceTokens);
+  const query = getAdminServiceTokenSearchQuery();
+  const statusFilter = getAdminServiceTokenStatusFilter();
+  return tokens.filter((token) => {
+    if (statusFilter === 'active' && formatApiTokenStatus(token) !== 'active') return false;
+    if (statusFilter === 'expiring' && !isAdminServiceTokenExpiringSoon(token)) return false;
+    if (statusFilter === 'never-used' && !(formatApiTokenStatus(token) === 'active' && !token.last_used_at)) return false;
+    if (statusFilter === 'expired' && formatApiTokenStatus(token) !== 'expired') return false;
+    if (statusFilter === 'revoked' && formatApiTokenStatus(token) !== 'revoked') return false;
+    if (!query) return true;
+    const haystack = [
+      token.label ?? '',
+      token.token_public_id ?? '',
+      formatApiTokenStatus(token),
+      getServiceWorkerTokenAccessLabel(token)
+    ].join(' ').toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
 function getServiceAccountSummary(account) {
   return normalizeServiceAccountSummary(account?.summary);
 }
@@ -17970,6 +18008,8 @@ function resetAdminServiceAccountDetailState() {
   const adminState = getAdminState();
   adminState.selectedServiceAccountTokenId = '';
   adminState.serviceAccountTokenEditorMode = 'issue';
+  adminState.serviceAccountTokenSearchQuery = '';
+  adminState.serviceAccountTokenStatusFilter = 'all';
   adminState.serviceAccountTokens = [];
   adminState.serviceAccountTokensError = '';
   adminState.serviceAccountTokensLoading = false;
@@ -19408,8 +19448,16 @@ function renderAdminServiceAccountTokensList() {
   if (!adminServiceTokensList) return;
   const adminState = getAdminState();
   const selectedAccount = getSelectedAdminServiceAccount();
+  const query = getAdminServiceTokenSearchQuery();
+  const statusFilter = getAdminServiceTokenStatusFilter();
   adminServiceTokensList.innerHTML = '';
   setAdminServiceTokenListSummary('');
+  if (adminServiceTokenSearch && document.activeElement !== adminServiceTokenSearch) {
+    adminServiceTokenSearch.value = adminState.serviceAccountTokenSearchQuery ?? '';
+  }
+  if (adminServiceTokenFilter) {
+    adminServiceTokenFilter.value = statusFilter;
+  }
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
@@ -19446,6 +19494,7 @@ function renderAdminServiceAccountTokensList() {
     return;
   }
   const tokens = [...adminState.serviceAccountTokens].sort(compareAdminServiceTokens);
+  const filteredTokens = getFilteredAdminServiceTokens();
   const activeCount = tokens.filter((token) => formatApiTokenStatus(token) === 'active').length;
   const expiredCount = tokens.filter((token) => formatApiTokenStatus(token) === 'expired').length;
   const revokedCount = tokens.filter((token) => formatApiTokenStatus(token) === 'revoked').length;
@@ -19455,14 +19504,23 @@ function renderAdminServiceAccountTokensList() {
     .map((token) => token?.last_used_at)
     .filter(Boolean)
     .sort((left, right) => Date.parse(String(right)) - Date.parse(String(left)))[0] ?? null;
-  const summaryParts = [`${tokens.length} total`, `${activeCount} active`];
+  const summaryParts = [`${filteredTokens.length} shown`, `${tokens.length} total`, `${activeCount} active`];
   if (expiredCount) summaryParts.push(`${expiredCount} expired`);
   if (revokedCount) summaryParts.push(`${revokedCount} revoked`);
   if (neverUsedCount) summaryParts.push(`${neverUsedCount} never used`);
   if (expiringSoonCount) summaryParts.push(`${expiringSoonCount} expiring soon`);
   if (latestUse) summaryParts.push(`last used ${formatNoticeDateTimeDisplay(latestUse)}`);
+  if (statusFilter !== 'all') summaryParts.push(`filter: ${statusFilter.replace(/-/g, ' ')}`);
+  if (query) summaryParts.push(`search: “${query}”`);
   setAdminServiceTokenListSummary(summaryParts.join(' • '));
-  tokens.forEach((token) => {
+  if (!filteredTokens.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No issued tokens match the current search/filter.';
+    adminServiceTokensList.appendChild(note);
+    return;
+  }
+  filteredTokens.forEach((token) => {
     const row = document.createElement('div');
     row.className = 'workspace-row notice-row admin-user-row admin-service-token-row';
     row.classList.toggle('active', token.id === adminState.selectedServiceAccountTokenId);
@@ -31168,6 +31226,14 @@ adminServiceTokenModeManage?.addEventListener('click', () => {
   renderAdminServiceTokenEditor();
   setAdminServiceTokenStatus('Managing issued token.');
   renderAdminServiceAccountSummary();
+});
+adminServiceTokenSearch?.addEventListener('input', () => {
+  getAdminState().serviceAccountTokenSearchQuery = String(adminServiceTokenSearch.value ?? '');
+  renderAdminServiceAccountTokensList();
+});
+adminServiceTokenFilter?.addEventListener('change', () => {
+  getAdminState().serviceAccountTokenStatusFilter = normalizeAdminServiceTokenStatusFilter(adminServiceTokenFilter.value);
+  renderAdminServiceAccountTokensList();
 });
 adminServiceTokenInherit?.addEventListener('change', () => {
   const selectedToken = getSelectedAdminServiceAccountToken();
