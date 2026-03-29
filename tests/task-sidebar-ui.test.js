@@ -40,4 +40,8 @@ test('desktop sidebar uses per-section scrolling and exposes organizations', () 
   assert.match(script, /function renderOrganizationSidebarList\(\)/);
   assert.match(script, /selectBtn\.textContent = `\$\{org\.name\} · \$\{roleText\}`;/);
   assert.match(script, /organizationsOpenBtn\?\.addEventListener\('click', \(\) => \{\s*openOrganizationsPage\(\);/s);
+  assert.match(script, /function renderWorkspaceList\(\) \{\s*workspaceListEl\.innerHTML = '';\s*const workspaceAnchor = getCurrentWorkspaceAnchor\(\);/s);
+  assert.match(script, /const labelWorkspace = workspaceAnchor \?\? state\.workspace;/);
+  assert.match(script, /const workspaces = getWorkspaceBackboneList\(\);/);
+  assert.doesNotMatch(script, /const workspaces = \(state\.workspaces \?\? \[state\.workspace\]\)\.filter\(ws => !ws\.archived\);/);
 });

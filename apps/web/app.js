@@ -8762,6 +8762,7 @@ async function loadWorkspaces() {
     ?? resolvedWorkspaces[0]
     ?? null;
   state.ui.activeWorkspaceId = state.workspace?.id ?? null;
+  rememberWorkspaceAnchor(state.workspace);
   if (createdWorkspace?.id) {
     await ensureWorkspaceCreatorMembership(createdWorkspace);
   }
@@ -8884,18 +8885,24 @@ async function refreshWorkspace() {
   await maybePromptTemplate();
 }
 
-async function selectWorkspace(workspace) {
+async function selectWorkspace(workspace, { preserveView = false } = {}) {
   state.workspace = workspace;
   state.ui.activeWorkspaceId = workspace.id;
   if (workspace?.organization_id) {
     getOrganizationSettingsState().selectedOrgId = workspace.organization_id;
+  } else {
+    rememberWorkspaceAnchor(workspace);
   }
   state.ui.activeProjectId = null;
   clearActiveWorkflowChecklistInstanceId();
   state.ui.syncCursor = 0;
   state.ui.aiSuggestions = [];
   state.ui.aiSuggestionNotes = '';
-  setActiveView('tasks');
+  if (!preserveView) {
+    setActiveView('tasks');
+  } else {
+    setActiveView(getCurrentWorkspaceScopedView());
+  }
   await refreshWorkspace();
   await primeSyncCursor();
 }
@@ -16179,10 +16186,51 @@ function getVisibleOrganizations() {
   return getOrganizationSettingsState().items.filter(isVisibleOrganizationRecord);
 }
 
+function getWorkspaceBackboneList() {
+  return (state.workspaces ?? []).filter((workspace) => !workspace.archived);
+}
+
+function getCurrentWorkspaceAnchorId() {
+  state.ui = state.ui ?? {};
+  const currentWorkspace = normalizeWorkspace(state.workspace);
+  if (currentWorkspace?.id && !currentWorkspace.organization_id) {
+    state.ui.lastNonOrganizationWorkspaceId = currentWorkspace.id;
+    return currentWorkspace.id;
+  }
+  const savedId = String(state.ui.lastNonOrganizationWorkspaceId ?? '').trim();
+  if (savedId) return savedId;
+  const fallbackWorkspace = getWorkspaceBackboneList()[0] ?? null;
+  if (fallbackWorkspace?.id) {
+    state.ui.lastNonOrganizationWorkspaceId = fallbackWorkspace.id;
+    return fallbackWorkspace.id;
+  }
+  return null;
+}
+
+function getCurrentWorkspaceAnchor() {
+  const anchorId = getCurrentWorkspaceAnchorId();
+  if (!anchorId) return null;
+  return getWorkspaceBackboneList().find((workspace) => workspace.id === anchorId) ?? null;
+}
+
+function rememberWorkspaceAnchor(workspace) {
+  const normalizedWorkspace = normalizeWorkspace(workspace);
+  if (!normalizedWorkspace?.id || normalizedWorkspace.organization_id) return;
+  state.ui = state.ui ?? {};
+  state.ui.lastNonOrganizationWorkspaceId = normalizedWorkspace.id;
+}
+
 function getActiveOrganizationId() {
   const activeWorkspaceOrgId = String(state.workspace?.organization_id ?? '').trim();
   if (activeWorkspaceOrgId) return activeWorkspaceOrgId;
-  return String(getOrganizationSettingsState().selectedOrgId ?? '').trim() || null;
+  return null;
+}
+
+function getCurrentWorkspaceScopedView() {
+  const activeView = getActiveView();
+  return ['tasks', 'projects', 'shopping', 'notices', 'workflows', 'scheduling'].includes(activeView)
+    ? activeView
+    : 'tasks';
 }
 
 function buildOrganizationSurfaceWorkspace(org) {
@@ -16317,7 +16365,6 @@ function renderOrganizationSidebarList() {
     void refreshOrganizations({ preserveSelection: true });
   }
   const organizations = getVisibleOrganizations();
-  const selected = getSelectedSettingsOrganization();
   organizationListEl.innerHTML = '';
   if (!authenticated) {
     const note = document.createElement('div');
@@ -16351,7 +16398,7 @@ function renderOrganizationSidebarList() {
   const activeOrganizationId = getActiveOrganizationId();
   organizations.forEach((org) => {
     const row = document.createElement('div');
-    row.className = 'workspace-row' + (activeOrganizationId === org.id || selected?.id === org.id ? ' active' : '');
+    row.className = 'workspace-row' + (activeOrganizationId === org.id ? ' active' : '');
     const selectBtn = document.createElement('button');
     selectBtn.type = 'button';
     selectBtn.className = 'workspace-select';
@@ -16360,6 +16407,10 @@ function renderOrganizationSidebarList() {
     selectBtn.textContent = `${org.name} · ${roleText}`;
     selectBtn.title = `${org.name} · ${roleText} · ${memberCount} member${memberCount === 1 ? '' : 's'}`;
     selectBtn.addEventListener('click', () => {
+      if (activeOrganizationId === org.id) {
+        void closeOrganizationSurface();
+        return;
+      }
       void openOrganizationSurface(org);
     });
     row.appendChild(selectBtn);
@@ -16628,8 +16679,12 @@ function renderOrganizationsPage() {
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
     openBtn.className = 'subtle-button';
-    openBtn.textContent = 'Open';
+    openBtn.textContent = activeOrganizationId === org.id ? 'Return to workspace' : 'Open';
     openBtn.addEventListener('click', () => {
+      if (activeOrganizationId === org.id) {
+        void closeOrganizationSurface();
+        return;
+      }
       void openOrganizationSurface(org);
     });
     actions.appendChild(openBtn);
@@ -16674,10 +16729,27 @@ async function openOrganizationSurface(orgInput) {
     openOrganizationsPage();
     return;
   }
-  await selectWorkspace(workspace);
-  setActiveView('tasks');
+  rememberWorkspaceAnchor(state.workspace);
+  const surfaceView = getCurrentWorkspaceScopedView();
+  await selectWorkspace(workspace, { preserveView: true });
+  setActiveView(surfaceView);
   render();
   void refreshSelectedOrganizationMembers(org.id);
+}
+
+async function closeOrganizationSurface() {
+  const activeOrganizationId = getActiveOrganizationId();
+  if (!activeOrganizationId) return;
+  const anchorWorkspace = getCurrentWorkspaceAnchor();
+  getOrganizationSettingsState().selectedOrgId = '';
+  if (!anchorWorkspace?.id) {
+    render();
+    return;
+  }
+  const surfaceView = getCurrentWorkspaceScopedView();
+  await selectWorkspace(anchorWorkspace, { preserveView: true });
+  setActiveView(surfaceView);
+  render();
 }
 
 function syncWorkspaceCreateTypeNote() {
@@ -25030,14 +25102,17 @@ function countDescendants(task) {
 
 function renderWorkspaceList() {
   workspaceListEl.innerHTML = '';
-  if (!state.workspace) return;
+  const workspaceAnchor = getCurrentWorkspaceAnchor();
+  const activeWorkspaceId = workspaceAnchor?.id ?? state.workspace?.id ?? null;
+  if (!state.workspace && !workspaceAnchor) return;
   const header = document.createElement('div');
   header.className = 'workspace-dropdown-header';
   header.textContent = 'Workspaces';
   workspaceListEl.appendChild(header);
-  const workspaces = (state.workspaces ?? [state.workspace]).filter(ws => !ws.archived);
+  const workspaces = getWorkspaceBackboneList();
   if (workspaceDropdownButton) {
-    const label = state.workspace.archived ? `${state.workspace.name} (archived)` : state.workspace.name;
+    const labelWorkspace = workspaceAnchor ?? state.workspace;
+    const label = labelWorkspace?.archived ? `${labelWorkspace.name} (archived)` : (labelWorkspace?.name ?? 'Workspaces');
     workspaceDropdownButton.textContent = `${label} ▾`;
   }
   if (!workspaces.length) {
@@ -25050,7 +25125,7 @@ function renderWorkspaceList() {
 
   workspaces.forEach(workspace => {
     const row = document.createElement('div');
-    row.className = 'workspace-row' + (workspace.id === state.workspace.id ? ' active' : '');
+    row.className = 'workspace-row' + (workspace.id === activeWorkspaceId ? ' active' : '');
 
     const selectBtn = document.createElement('button');
     selectBtn.type = 'button';
@@ -25078,7 +25153,7 @@ function renderWorkspaceManageList() {
       ? 'Choose the workspace you want to work in.'
       : 'Rename, convert between personal and shared, archive, or delete active workspaces.';
   }
-  const workspaces = (state.workspaces ?? []).filter(ws => !ws.archived);
+  const workspaces = getWorkspaceBackboneList();
   if (!workspaces.length) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-note';
@@ -25115,7 +25190,7 @@ function renderWorkspaceArchivedList() {
 
 function createWorkspaceManageRow(workspace, isArchivedView) {
   const row = document.createElement('div');
-  row.className = 'workspace-row workspace-manage-row' + (workspace.id === state.workspace?.id ? ' active' : '');
+  row.className = 'workspace-row workspace-manage-row' + (workspace.id === getCurrentWorkspaceAnchorId() ? ' active' : '');
 
   const info = document.createElement('div');
   info.className = 'workspace-manage-info';
@@ -25218,12 +25293,12 @@ function createWorkspaceManageRow(workspace, isArchivedView) {
 
 function createWorkspaceMobileSwitchRow(workspace) {
   const row = document.createElement('div');
-  row.className = 'workspace-row workspace-manage-row workspace-switch-row' + (workspace.id === state.workspace?.id ? ' active' : '');
+  row.className = 'workspace-row workspace-manage-row workspace-switch-row' + (workspace.id === getCurrentWorkspaceAnchorId() ? ' active' : '');
 
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'workspace-switch-button';
-  button.disabled = workspace.id === state.workspace?.id;
+  button.disabled = workspace.id === getCurrentWorkspaceAnchorId();
 
   const copy = document.createElement('div');
   copy.className = 'workspace-manage-copy';
@@ -25244,12 +25319,12 @@ function createWorkspaceMobileSwitchRow(workspace) {
 
   const badge = document.createElement('span');
   badge.className = 'workspace-badge';
-  badge.textContent = workspace.id === state.workspace?.id ? 'Current' : 'Open';
+  badge.textContent = workspace.id === getCurrentWorkspaceAnchorId() ? 'Current' : 'Open';
 
   button.appendChild(copy);
   button.appendChild(badge);
   button.addEventListener('click', async () => {
-    if (workspace.id === state.workspace?.id) return;
+    if (workspace.id === getCurrentWorkspaceAnchorId()) return;
     await selectWorkspace(workspace);
     render();
   });
