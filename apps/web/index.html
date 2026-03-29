@@ -799,6 +799,19 @@
 	                    <button id="admin-service-account-new" class="subtle-button" type="button">New worker</button>
 	                    <button id="admin-service-account-roger-preset" class="subtle-button" type="button">Roger preset</button>
 	                  </div>
+                    <div class="setting-row admin-users-toolbar">
+                      <input id="admin-service-accounts-search" class="setting-input admin-invite-input" type="search" placeholder="Search workers by name, alias, or description" />
+                    </div>
+                    <div class="setting-row admin-users-toolbar">
+                      <select id="admin-service-accounts-filter" class="setting-input admin-invite-input">
+                        <option value="all">All readiness states</option>
+                        <option value="ready">Ready</option>
+                        <option value="needs-workspace">Needs workspace</option>
+                        <option value="needs-token">Needs token</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                    </div>
+                    <div id="admin-service-accounts-summary" class="sidebar-note admin-console-summary"></div>
 	                  <div id="admin-service-accounts-list" class="workspace-list"></div>
 	                </div>
 	                <div class="settings-section admin-service-workspace">

@@ -727,6 +727,9 @@ const adminUserDelete = document.getElementById('admin-user-delete');
 const adminOwnershipTransfer = document.getElementById('admin-ownership-transfer');
 const adminServiceAccountsStatus = document.getElementById('admin-service-accounts-status');
 const adminServiceAccountsRefresh = document.getElementById('admin-service-accounts-refresh');
+const adminServiceAccountsSearch = document.getElementById('admin-service-accounts-search');
+const adminServiceAccountsFilter = document.getElementById('admin-service-accounts-filter');
+const adminServiceAccountsSummary = document.getElementById('admin-service-accounts-summary');
 const adminServiceAccountNew = document.getElementById('admin-service-account-new');
 const adminServiceAccountRogerPreset = document.getElementById('admin-service-account-roger-preset');
 const adminServiceAccountSelect = document.getElementById('admin-service-account-select');
@@ -17630,6 +17633,8 @@ function getAdminState() {
   if (typeof adminState.statusTone !== 'string') adminState.statusTone = 'info';
   if (typeof adminState.selectedUserId !== 'string') adminState.selectedUserId = '';
   if (typeof adminState.usersSearchQuery !== 'string') adminState.usersSearchQuery = '';
+  if (typeof adminState.serviceAccountsSearchQuery !== 'string') adminState.serviceAccountsSearchQuery = '';
+  if (typeof adminState.serviceAccountsReadinessFilter !== 'string') adminState.serviceAccountsReadinessFilter = 'all';
   if (typeof adminState.selectedServiceAccountId !== 'string') adminState.selectedServiceAccountId = '';
   if (typeof adminState.selectedServiceAccountTokenId !== 'string') adminState.selectedServiceAccountTokenId = '';
   if (typeof adminState.serviceAccountTokenEditorMode !== 'string') adminState.serviceAccountTokenEditorMode = 'issue';
@@ -17674,6 +17679,17 @@ function getFilteredAdminUsers() {
     ].join(' ').toLowerCase();
     return haystack.includes(query);
   });
+}
+
+function getAdminServiceAccountsSearchQuery() {
+  return String(getAdminState().serviceAccountsSearchQuery ?? '').trim().toLowerCase();
+}
+
+function getAdminServiceAccountsReadinessFilter() {
+  const value = String(getAdminState().serviceAccountsReadinessFilter ?? 'all').trim();
+  return ['all', 'ready', 'needs-workspace', 'needs-token', 'disabled'].includes(value)
+    ? value
+    : 'all';
 }
 
 function syncAdminServiceAccountSelectionForUser() {
@@ -17792,6 +17808,37 @@ function getVisibleAdminServiceAccounts() {
   const accounts = Array.isArray(adminState.serviceAccounts) ? adminState.serviceAccounts : [];
   if (!selectedUser?.id) return accounts;
   return accounts.filter((account) => String(account.created_by_user_id ?? '').trim() === selectedUser.id);
+}
+
+function getFilteredAdminServiceAccounts() {
+  const accounts = getVisibleAdminServiceAccounts();
+  const searchQuery = getAdminServiceAccountsSearchQuery();
+  const readinessFilter = getAdminServiceAccountsReadinessFilter();
+  return accounts.filter((account) => {
+    const readiness = getServiceWorkerReadinessState(account);
+    if (readinessFilter !== 'all') {
+      const readinessKey = String(readiness.label ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '-');
+      if (readinessKey !== readinessFilter) return false;
+    }
+    if (!searchQuery) return true;
+    const haystack = [
+      account.display_name ?? '',
+      account.description ?? '',
+      ...(Array.isArray(account.aliases)
+        ? account.aliases.flatMap((alias) => [
+          alias?.alias_type ?? '',
+          alias?.alias_value ?? '',
+          alias?.metadata && typeof alias.metadata === 'object' && !Array.isArray(alias.metadata)
+            ? Object.values(alias.metadata).join(' ')
+            : ''
+        ])
+        : [])
+    ].join(' ').toLowerCase();
+    return haystack.includes(searchQuery);
+  });
 }
 
 function buildRogerServiceAccountAliasPreset() {
@@ -18434,6 +18481,13 @@ function setAdminUsersSummary(message = '') {
   adminUsersSummary.classList.toggle('hidden', !safeMessage);
 }
 
+function setAdminServiceAccountsSummary(message = '') {
+  if (!adminServiceAccountsSummary) return;
+  const safeMessage = String(message ?? '').trim();
+  adminServiceAccountsSummary.textContent = safeMessage;
+  adminServiceAccountsSummary.classList.toggle('hidden', !safeMessage);
+}
+
 function setAdminServiceActivitySummary(message = '') {
   if (!adminServiceActivitySummary) return;
   const safeMessage = String(message ?? '').trim();
@@ -18775,7 +18829,17 @@ function renderAdminServiceAccountsList() {
   const adminState = getAdminState();
   const selectedUser = getSelectedAdminUser();
   const visibleAccounts = getVisibleAdminServiceAccounts();
+  const filteredAccounts = getFilteredAdminServiceAccounts();
+  const searchQuery = getAdminServiceAccountsSearchQuery();
+  const readinessFilter = getAdminServiceAccountsReadinessFilter();
+  if (adminServiceAccountsSearch && document.activeElement !== adminServiceAccountsSearch) {
+    adminServiceAccountsSearch.value = adminState.serviceAccountsSearchQuery ?? '';
+  }
+  if (adminServiceAccountsFilter) {
+    adminServiceAccountsFilter.value = readinessFilter;
+  }
   adminServiceAccountsList.innerHTML = '';
+  setAdminServiceAccountsSummary('');
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
@@ -18797,6 +18861,23 @@ function renderAdminServiceAccountsList() {
     adminServiceAccountsList.appendChild(note);
     return;
   }
+  if (visibleAccounts.length) {
+    const readyCount = visibleAccounts.filter((account) => getServiceWorkerReadinessState(account).label === 'Ready').length;
+    const warningCount = visibleAccounts.filter((account) => {
+      const label = getServiceWorkerReadinessState(account).label;
+      return label === 'Needs workspace' || label === 'Needs token';
+    }).length;
+    const disabledCount = visibleAccounts.filter((account) => getServiceWorkerReadinessState(account).label === 'Disabled').length;
+    const summaryParts = [`${filteredAccounts.length} shown`, `${visibleAccounts.length} total`, `${readyCount} ready`];
+    if (warningCount) summaryParts.push(`${warningCount} need setup`);
+    if (disabledCount) summaryParts.push(`${disabledCount} disabled`);
+    if (readinessFilter !== 'all') {
+      const filterLabel = readinessFilter.replace(/-/g, ' ');
+      summaryParts.push(`filter: ${filterLabel}`);
+    }
+    if (searchQuery) summaryParts.push(`search: “${searchQuery}”`);
+    setAdminServiceAccountsSummary(summaryParts.join(' • '));
+  }
   if (!visibleAccounts.length) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
@@ -18806,7 +18887,14 @@ function renderAdminServiceAccountsList() {
     adminServiceAccountsList.appendChild(note);
     return;
   }
-  visibleAccounts.forEach((account) => {
+  if (!filteredAccounts.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'No service workers match the current search/filter.';
+    adminServiceAccountsList.appendChild(note);
+    return;
+  }
+  filteredAccounts.forEach((account) => {
     const summary = getServiceAccountSummary(account);
     const readiness = getServiceWorkerReadinessState(account);
     const row = document.createElement('button');
@@ -30483,6 +30571,14 @@ adminOwnershipTransfer?.addEventListener('click', () => {
 });
 adminServiceAccountsRefresh?.addEventListener('click', () => {
   void refreshAdminServiceAccounts();
+});
+adminServiceAccountsSearch?.addEventListener('input', () => {
+  getAdminState().serviceAccountsSearchQuery = String(adminServiceAccountsSearch.value ?? '');
+  renderAdminServiceAccountsList();
+});
+adminServiceAccountsFilter?.addEventListener('change', () => {
+  getAdminState().serviceAccountsReadinessFilter = String(adminServiceAccountsFilter.value ?? 'all');
+  renderAdminServiceAccountsList();
 });
 adminServiceAccountNew?.addEventListener('click', () => {
   setAdminServiceAccountsStatus('Creating a new service worker.');
