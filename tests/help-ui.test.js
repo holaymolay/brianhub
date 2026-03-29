@@ -119,10 +119,15 @@ test('admin console auto-selects existing service accounts and surfaces summary 
   const appScript = readRepoFile('apps/web/app.js');
   assert.match(appScript, /function getAdminOrgId\(\)\s*\{\s*return getAuthState\(\)\.user\?\.org_id \?\? DEFAULT_ORG_ID;\s*\}/);
   assert.match(appScript, /function normalizeServiceAccountSummary\(/);
+  assert.match(appScript, /function getVisibleAdminServiceAccounts\(\)/);
+  assert.match(appScript, /created_by_user_id: account\.created_by_user_id \? String\(account\.created_by_user_id\)\.trim\(\) : ''/);
+  assert.match(appScript, /return accounts\.filter\(\(account\) => String\(account\.created_by_user_id \?\? ''\)\.trim\(\) === selectedUser\.id\);/);
+  assert.match(appScript, /function syncAdminServiceAccountSelectionForUser\(\)/);
   assert.match(appScript, /function resetAdminServiceAccountDetailState\(/);
   assert.match(appScript, /summary\.active_token_count/);
   assert.match(appScript, /summary\.effective_workspace_count/);
-  assert.match(appScript, /serviceAccounts\.length\)\s*\{\s*adminState\.selectedServiceAccountId = serviceAccounts\[0\]\?\.id \?\? '';/);
+  assert.match(appScript, /visibleAccounts\.length\)\s*\{\s*adminState\.selectedServiceAccountId = visibleAccounts\[0\]\?\.id \?\? '';/);
+  assert.match(appScript, /No service workers for \$\{selectedUser\.email \?\? selectedUser\.display_name \?\? 'this user'\} yet\./);
   assert.match(appScript, /refreshAdminServiceAccountActivity\(\)/);
   assert.match(appScript, /This worker has no tokens yet and cannot connect to BrianHub until you generate its first token\./);
 });

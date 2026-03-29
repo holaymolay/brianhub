@@ -17210,6 +17210,15 @@ function getSelectedAdminUser() {
   return adminState.users.find((user) => user.id === adminState.selectedUserId) ?? null;
 }
 
+function syncAdminServiceAccountSelectionForUser() {
+  const adminState = getAdminState();
+  const visibleAccounts = getVisibleAdminServiceAccounts();
+  if (!visibleAccounts.some((account) => account.id === adminState.selectedServiceAccountId)) {
+    adminState.selectedServiceAccountId = visibleAccounts[0]?.id ?? '';
+    resetAdminServiceAccountDetailState();
+  }
+}
+
 function normalizeServiceAccountPermissionKeys(values = []) {
   if (!Array.isArray(values)) return [];
   return Array.from(new Set(values
@@ -17261,6 +17270,7 @@ function normalizeServiceAccountRecord(account) {
   if (!account || typeof account !== 'object') return null;
   return {
     ...account,
+    created_by_user_id: account.created_by_user_id ? String(account.created_by_user_id).trim() : '',
     display_name: String(account.display_name ?? '').trim(),
     description: account.description ? String(account.description) : '',
     permissions: normalizeServiceAccountPermissionKeys(account.permissions ?? []),
@@ -17308,6 +17318,14 @@ function normalizeServiceAccountActivityEventRecord(event) {
       ? event.metadata
       : {}
   };
+}
+
+function getVisibleAdminServiceAccounts() {
+  const adminState = getAdminState();
+  const selectedUser = getSelectedAdminUser();
+  const accounts = Array.isArray(adminState.serviceAccounts) ? adminState.serviceAccounts : [];
+  if (!selectedUser?.id) return accounts;
+  return accounts.filter((account) => String(account.created_by_user_id ?? '').trim() === selectedUser.id);
 }
 
 function buildRogerServiceAccountAliasPreset() {
@@ -17853,8 +17871,22 @@ function renderAdminUsersList() {
     row.classList.toggle('active', user.id === adminState.selectedUserId);
     row.addEventListener('click', () => {
       adminState.selectedUserId = user.id;
+      syncAdminServiceAccountSelectionForUser();
       renderAdminUsersList();
       renderAdminUserEditor();
+      renderAdminServiceAccountsList();
+      renderAdminServiceAccountEditor();
+      if (adminState.selectedServiceAccountId) {
+        void refreshAdminServiceAccountTokens();
+        void refreshAdminServiceAccountWorkspaceGrants();
+        void refreshAdminServiceAccountActivity();
+      } else {
+        renderAdminServiceAccountTokensList();
+        renderAdminServiceTokenEditor();
+        renderAdminServiceWorkspaceGrantEditor();
+        renderAdminServiceWorkspaceGrantsList();
+        renderAdminServiceActivityList();
+      }
     });
 
     const info = document.createElement('div');
@@ -18005,6 +18037,8 @@ function resetAdminServiceTokenForm(token = null) {
 function renderAdminServiceAccountsList() {
   if (!adminServiceAccountsList) return;
   const adminState = getAdminState();
+  const selectedUser = getSelectedAdminUser();
+  const visibleAccounts = getVisibleAdminServiceAccounts();
   adminServiceAccountsList.innerHTML = '';
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
@@ -18027,14 +18061,16 @@ function renderAdminServiceAccountsList() {
     adminServiceAccountsList.appendChild(note);
     return;
   }
-  if (!adminState.serviceAccounts.length) {
+  if (!visibleAccounts.length) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'No service workers yet.';
+    note.textContent = selectedUser
+      ? `No service workers for ${selectedUser.email ?? selectedUser.display_name ?? 'this user'} yet.`
+      : 'No service workers yet.';
     adminServiceAccountsList.appendChild(note);
     return;
   }
-  adminState.serviceAccounts.forEach((account) => {
+  visibleAccounts.forEach((account) => {
     const summary = getServiceAccountSummary(account);
     const row = document.createElement('button');
     row.type = 'button';
@@ -18085,7 +18121,8 @@ function renderAdminServiceAccountsList() {
 function renderAdminServiceAccountEditor() {
   const adminState = getAdminState();
   const isOwnerActor = isCurrentActorOwnerSuperAdmin();
-  const accounts = adminState.serviceAccounts ?? [];
+  const selectedUser = getSelectedAdminUser();
+  const accounts = getVisibleAdminServiceAccounts();
   if (adminServiceAccountSelect) {
     const currentOptionsKey = accounts.map((account) => `${account.id}:${account.display_name}`).join('|');
     if (adminServiceAccountSelect.dataset.optionsKey !== currentOptionsKey) {
@@ -18143,7 +18180,11 @@ function renderAdminServiceAccountEditor() {
   if (!adminServiceAccountsStatus?.dataset.tone) {
     setAdminServiceAccountsStatus(
       isOwnerActor
-        ? 'Choose a service worker on the left, then manage its identity, workspace access, and token lifecycle here.'
+        ? (
+          selectedUser
+            ? `Showing service workers for ${selectedUser.email ?? selectedUser.display_name ?? 'the selected user'}.`
+            : 'Choose a service worker on the left, then manage its identity, workspace access, and token lifecycle here.'
+        )
         : 'Owner access required to manage service workers.'
     );
   }
@@ -18580,17 +18621,20 @@ async function refreshAdminServiceAccounts({ preferredServiceAccountId = null } 
         .sort((left, right) => String(left.display_name ?? '').localeCompare(String(right.display_name ?? '')))
       : [];
     adminState.serviceAccounts = serviceAccounts;
-    if (previousSelection && serviceAccounts.some((account) => account.id === previousSelection)) {
+    const visibleAccounts = getVisibleAdminServiceAccounts();
+    if (previousSelection && visibleAccounts.some((account) => account.id === previousSelection)) {
       adminState.selectedServiceAccountId = previousSelection;
-    } else if (serviceAccounts.length) {
-      adminState.selectedServiceAccountId = serviceAccounts[0]?.id ?? '';
+    } else if (visibleAccounts.length) {
+      adminState.selectedServiceAccountId = visibleAccounts[0]?.id ?? '';
     } else {
       adminState.selectedServiceAccountId = '';
     }
     setAdminServiceAccountsStatus(
-      serviceAccounts.length
-        ? `Loaded ${serviceAccounts.length} service worker${serviceAccounts.length === 1 ? '' : 's'}.`
-        : 'No service workers yet.'
+      visibleAccounts.length
+        ? `Loaded ${visibleAccounts.length} service worker${visibleAccounts.length === 1 ? '' : 's'}.`
+        : (getSelectedAdminUser()
+          ? `No service workers for ${getSelectedAdminUser()?.email ?? getSelectedAdminUser()?.display_name ?? 'this user'} yet.`
+          : 'No service workers yet.')
     );
   } catch (err) {
     adminState.serviceAccounts = [];
@@ -19104,6 +19148,7 @@ async function refreshAdminUsers() {
     if (!adminState.selectedUserId || !adminState.users.some((user) => user.id === adminState.selectedUserId)) {
       adminState.selectedUserId = adminState.users[0]?.id ?? '';
     }
+    syncAdminServiceAccountSelectionForUser();
     setAdminUsersStatus('');
   } catch (err) {
     adminState.usersError = err?.message ?? 'Unable to load users.';
@@ -19112,6 +19157,8 @@ async function refreshAdminUsers() {
     adminState.usersLoaded = true;
     renderAdminUsersList();
     renderAdminUserEditor();
+    renderAdminServiceAccountsList();
+    renderAdminServiceAccountEditor();
     renderAccountMenu();
   }
 }
@@ -29514,8 +29561,22 @@ adminUsersRefresh?.addEventListener('click', () => {
 adminUserSelect?.addEventListener('change', () => {
   const adminState = getAdminState();
   adminState.selectedUserId = adminUserSelect.value || '';
+  syncAdminServiceAccountSelectionForUser();
   renderAdminUsersList();
   renderAdminUserEditor();
+  renderAdminServiceAccountsList();
+  renderAdminServiceAccountEditor();
+  if (adminState.selectedServiceAccountId) {
+    void refreshAdminServiceAccountTokens();
+    void refreshAdminServiceAccountWorkspaceGrants();
+    void refreshAdminServiceAccountActivity();
+  } else {
+    renderAdminServiceAccountTokensList();
+    renderAdminServiceTokenEditor();
+    renderAdminServiceWorkspaceGrantEditor();
+    renderAdminServiceWorkspaceGrantsList();
+    renderAdminServiceActivityList();
+  }
 });
 adminUserSave?.addEventListener('click', () => {
   void submitAdminUserUpdate();

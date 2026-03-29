@@ -247,6 +247,7 @@ const authUserResponseSchema = {
   properties: {
     id: uuidSchema,
     org_id: uuidSchema,
+    created_by_user_id: nullableUuidSchema,
     display_name: nonEmptyString(256),
     email: nonEmptyString(320),
     org_role: nullableString(64)
@@ -502,6 +503,7 @@ const serviceAccountResponseSchema = {
   properties: {
     id: uuidSchema,
     org_id: uuidSchema,
+    created_by_user_id: nullableUuidSchema,
     display_name: nonEmptyString(256),
     description: nullableString(1024),
     permissions: permissionKeyArraySchema,

@@ -167,6 +167,7 @@ function sanitizeServiceAccount(row, aliases = []) {
   return {
     id: row.id,
     org_id: row.org_id,
+    created_by_user_id: row.created_by_user_id ?? null,
     display_name: row.display_name,
     description: row.description ?? null,
     permissions: normalizePermissionKeys(parseJsonArray(row.permissions_json)),
@@ -486,8 +487,8 @@ export async function createServiceAccount(
   await db.transaction(async (tx) => {
     await tx.exec(
       `INSERT INTO service_accounts (
-        id, org_id, display_name, description, permissions_json, archived, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, org_id, display_name, description, permissions_json, archived, created_by_user_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.org_id,
@@ -495,6 +496,7 @@ export async function createServiceAccount(
         row.description,
         row.permissions_json,
         row.archived,
+        row.created_by_user_id,
         row.created_at,
         row.updated_at
       ]

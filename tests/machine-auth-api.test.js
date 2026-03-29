@@ -296,6 +296,8 @@ test('service-account activity records lifecycle changes and bearer-token access
   assert.equal(serviceAccountsRes.statusCode, 200);
   const listedAccount = serviceAccountsRes.json().service_accounts.find((entry) => entry.id === serviceAccount.id);
   assert.ok(listedAccount);
+  assert.ok(Object.prototype.hasOwnProperty.call(listedAccount, 'created_by_user_id'));
+  assert.equal(listedAccount.created_by_user_id ?? null, serviceAccount.created_by_user_id ?? null);
   assert.equal(listedAccount.summary.token_count, 1);
   assert.equal(listedAccount.summary.active_token_count, 1);
   assert.equal(listedAccount.summary.workspace_grant_count, 1);
