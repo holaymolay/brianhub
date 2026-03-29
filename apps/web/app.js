@@ -772,6 +772,7 @@ const adminServiceTokenManageActions = document.getElementById('admin-service-to
 const adminServiceTokensList = document.getElementById('admin-service-tokens-list');
 const adminServiceTokenListSummary = document.getElementById('admin-service-token-list-summary');
 const adminServiceGrantsStatus = document.getElementById('admin-service-grants-status');
+const adminServiceGrantsSummary = document.getElementById('admin-service-grants-summary');
 const adminServiceGrantWorkspace = document.getElementById('admin-service-grant-workspace');
 const adminServiceGrantAdd = document.getElementById('admin-service-grant-add');
 const adminServiceGrantsList = document.getElementById('admin-service-grants-list');
@@ -18095,20 +18096,103 @@ function getAdminOrgId() {
   return getAuthState().user?.org_id ?? DEFAULT_ORG_ID;
 }
 
+function getAdminGrantableOrganizationSurfaceWorkspaces(orgId = getAdminOrgId()) {
+  return getVisibleOrganizations()
+    .map(buildOrganizationSurfaceWorkspace)
+    .filter((workspace) => workspace && workspace.org_id === orgId && !workspace.archived);
+}
+
 function getAvailableGrantWorkspaces(serviceAccount = null) {
   const orgId = serviceAccount?.org_id ?? getAdminOrgId();
   const selectedAccount = getSelectedAdminServiceAccount();
   const grantedWorkspaceIds = selectedAccount && serviceAccount?.id === selectedAccount.id
     ? new Set((getAdminState().serviceAccountWorkspaceGrants ?? []).map((grant) => grant.workspace_id))
     : new Set();
-  return (state.workspaces ?? [])
-    .filter((workspace) =>
-      workspace
-      && workspace.org_id === orgId
-      && !workspace.archived
-      && !grantedWorkspaceIds.has(workspace.id)
-    )
+  const candidates = [
+    ...(state.workspaces ?? []),
+    ...getAdminGrantableOrganizationSurfaceWorkspaces(orgId)
+  ];
+  const byId = new Map();
+  candidates.forEach((workspace) => {
+    const normalized = normalizeWorkspace(workspace);
+    if (!normalized?.id) return;
+    if (normalized.org_id !== orgId) return;
+    if (normalized.archived) return;
+    if (grantedWorkspaceIds.has(normalized.id)) return;
+    if (!byId.has(normalized.id)) {
+      byId.set(normalized.id, normalized);
+    }
+  });
+  return [...byId.values()]
     .sort((left, right) => String(left.name ?? '').localeCompare(String(right.name ?? '')));
+}
+
+function getAdminServiceWorkspaceScopeLabel(workspace, { short = false } = {}) {
+  if (workspace?.organization_id) {
+    return short ? 'Org surface' : 'Organization surface';
+  }
+  const type = normalizeWorkspaceType(workspace?.type);
+  if (type === 'personal') return short ? 'Personal' : 'Personal workspace';
+  if (type === 'shared') return short ? 'Shared' : 'Shared workspace';
+  return short ? getWorkspaceTypeLabelForWorkspace(workspace) : getWorkspaceTypeLabelForWorkspace(workspace);
+}
+
+function getAdminServiceWorkspaceScopeTone(workspace) {
+  if (workspace?.organization_id) return 'info';
+  const type = normalizeWorkspaceType(workspace?.type);
+  if (type === 'personal') return 'success';
+  if (type === 'shared') return 'muted';
+  return 'muted';
+}
+
+function formatAdminServiceWorkspaceOptionLabel(workspace) {
+  const name = String(workspace?.name ?? '').trim() || String(workspace?.id ?? '').trim() || 'Workspace';
+  return `${name} · ${getAdminServiceWorkspaceScopeLabel(workspace)}`;
+}
+
+function getAdminServiceWorkspaceScopeCounts(workspaces = []) {
+  return (Array.isArray(workspaces) ? workspaces : []).reduce((counts, workspace) => {
+    if (workspace?.organization_id) {
+      counts.orgSurface += 1;
+      return counts;
+    }
+    const type = normalizeWorkspaceType(workspace?.type);
+    if (type === 'personal') {
+      counts.personal += 1;
+      return counts;
+    }
+    if (type === 'shared') {
+      counts.shared += 1;
+      return counts;
+    }
+    counts.other += 1;
+    return counts;
+  }, {
+    personal: 0,
+    shared: 0,
+    orgSurface: 0,
+    other: 0
+  });
+}
+
+function findAdminServiceWorkspaceRecord(workspaceId) {
+  const safeWorkspaceId = String(workspaceId ?? '').trim();
+  if (!safeWorkspaceId) return null;
+  const effectiveWorkspaces = getAdminState().serviceAccountEffectiveWorkspaces ?? [];
+  const effectiveMatch = effectiveWorkspaces.find((workspace) => workspace?.id === safeWorkspaceId);
+  if (effectiveMatch) return normalizeWorkspace(effectiveMatch);
+  const visibleMatch = (state.workspaces ?? []).find((workspace) => workspace?.id === safeWorkspaceId);
+  if (visibleMatch) return normalizeWorkspace(visibleMatch);
+  const orgSurfaceMatch = getAdminGrantableOrganizationSurfaceWorkspaces().find((workspace) => workspace?.id === safeWorkspaceId);
+  if (orgSurfaceMatch) return normalizeWorkspace(orgSurfaceMatch);
+  return null;
+}
+
+function setAdminServiceGrantsSummary(message = '') {
+  if (!adminServiceGrantsSummary) return;
+  const safeMessage = String(message ?? '').trim();
+  adminServiceGrantsSummary.textContent = safeMessage;
+  adminServiceGrantsSummary.classList.toggle('hidden', !safeMessage);
 }
 
 function formatApiTokenStatus(token) {
@@ -18470,6 +18554,9 @@ function buildAdminServiceSummaryStats() {
   const effectiveWorkspaces = detailGrantsLoaded
     ? (adminState.serviceAccountEffectiveWorkspaces ?? []).length
     : selectedSummary.effective_workspace_count;
+  const workspaceScopeCounts = detailGrantsLoaded
+    ? getAdminServiceWorkspaceScopeCounts(adminState.serviceAccountEffectiveWorkspaces ?? [])
+    : null;
   return [
     {
       label: 'Worker access',
@@ -18480,7 +18567,14 @@ function buildAdminServiceSummaryStats() {
       label: 'Workspace access',
       value: String(effectiveWorkspaces),
       meta: selectedAccount
-        ? `${explicitGrants} explicit grant${explicitGrants === 1 ? '' : 's'}`
+        ? workspaceScopeCounts
+          ? [
+            `${explicitGrants} explicit grant${explicitGrants === 1 ? '' : 's'}`,
+            workspaceScopeCounts.personal ? `${workspaceScopeCounts.personal} personal` : '',
+            workspaceScopeCounts.shared ? `${workspaceScopeCounts.shared} shared` : '',
+            workspaceScopeCounts.orgSurface ? `${workspaceScopeCounts.orgSurface} org surface${workspaceScopeCounts.orgSurface === 1 ? '' : 's'}` : ''
+          ].filter(Boolean).join(' • ')
+          : `${explicitGrants} explicit grant${explicitGrants === 1 ? '' : 's'}`
         : 'Grant after the account is saved'
     },
     {
@@ -19495,6 +19589,8 @@ function renderAdminServiceWorkspaceGrantEditor() {
   const selectedAccount = getSelectedAdminServiceAccount();
   const workspaces = getAvailableGrantWorkspaces(selectedAccount);
   const effectiveWorkspaces = getAdminState().serviceAccountEffectiveWorkspaces ?? [];
+  const workspaceScopeCounts = getAdminServiceWorkspaceScopeCounts(effectiveWorkspaces);
+  const explicitGrantCount = (getAdminState().serviceAccountWorkspaceGrants ?? []).length;
   const effectiveCount = effectiveWorkspaces.length;
   if (adminServiceGrantWorkspace) {
     const currentOptionsKey = workspaces.map((workspace) => `${workspace.id}:${workspace.name}`).join('|');
@@ -19508,7 +19604,7 @@ function renderAdminServiceWorkspaceGrantEditor() {
       workspaces.forEach((workspace) => {
         const option = document.createElement('option');
         option.value = workspace.id;
-        option.textContent = workspace.name || workspace.id;
+        option.textContent = formatAdminServiceWorkspaceOptionLabel(workspace);
         adminServiceGrantWorkspace.appendChild(option);
       });
       adminServiceGrantWorkspace.dataset.optionsKey = currentOptionsKey;
@@ -19525,12 +19621,27 @@ function renderAdminServiceWorkspaceGrantEditor() {
       adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip('No workspace access yet', 'muted'));
     } else {
       effectiveWorkspaces.slice(0, 10).forEach((workspace) => {
-        adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip(workspace.name || workspace.id, 'success'));
+        adminServiceEffectiveWorkspaces.appendChild(
+          createAdminServiceChip(
+            `${workspace.name || workspace.id} · ${getAdminServiceWorkspaceScopeLabel(workspace, { short: true })}`,
+            getAdminServiceWorkspaceScopeTone(workspace)
+          )
+        );
       });
       if (effectiveWorkspaces.length > 10) {
         adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip(`+${effectiveWorkspaces.length - 10} more`, 'muted'));
       }
     }
+  }
+  if (selectedAccount) {
+    const summaryParts = [`${effectiveCount} effective`];
+    if (explicitGrantCount) summaryParts.push(`${explicitGrantCount} explicit grant${explicitGrantCount === 1 ? '' : 's'}`);
+    if (workspaceScopeCounts.personal) summaryParts.push(`${workspaceScopeCounts.personal} personal`);
+    if (workspaceScopeCounts.shared) summaryParts.push(`${workspaceScopeCounts.shared} shared`);
+    if (workspaceScopeCounts.orgSurface) summaryParts.push(`${workspaceScopeCounts.orgSurface} org surface${workspaceScopeCounts.orgSurface === 1 ? '' : 's'}`);
+    setAdminServiceGrantsSummary(summaryParts.join(' • '));
+  } else {
+    setAdminServiceGrantsSummary('');
   }
   if (!adminServiceGrantsStatus?.dataset.tone) {
     setAdminServiceGrantsStatus(
@@ -19548,6 +19659,7 @@ function renderAdminServiceWorkspaceGrantsList() {
   if (!adminServiceGrantsList) return;
   const adminState = getAdminState();
   const selectedAccount = getSelectedAdminServiceAccount();
+  const effectiveWorkspaceIds = new Set((adminState.serviceAccountEffectiveWorkspaces ?? []).map((workspace) => workspace?.id).filter(Boolean));
   adminServiceGrantsList.innerHTML = '';
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
@@ -19585,20 +19697,35 @@ function renderAdminServiceWorkspaceGrantsList() {
     return;
   }
   adminState.serviceAccountWorkspaceGrants.forEach((grant) => {
+    const workspaceRecord = findAdminServiceWorkspaceRecord(grant.workspace_id);
+    const effective = effectiveWorkspaceIds.has(grant.workspace_id);
     const row = document.createElement('div');
     row.className = 'workspace-row notice-row';
     const info = document.createElement('div');
     info.className = 'notice-row-info';
     const title = document.createElement('div');
     title.className = 'notice-row-title';
-    title.textContent = grant.workspace_name;
+    title.textContent = workspaceRecord?.name || grant.workspace_name || grant.workspace_id;
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
     const metaParts = [grant.workspace_id];
+    if (workspaceRecord) metaParts.push(getAdminServiceWorkspaceScopeLabel(workspaceRecord));
     if (grant.created_at) metaParts.push(`granted ${formatNoticeDateTimeDisplay(grant.created_at)}`);
     meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
+    const badges = document.createElement('div');
+    badges.className = 'admin-service-chip-row';
+    if (workspaceRecord) {
+      badges.appendChild(
+        createAdminServiceChip(
+          getAdminServiceWorkspaceScopeLabel(workspaceRecord, { short: true }),
+          getAdminServiceWorkspaceScopeTone(workspaceRecord)
+        )
+      );
+    }
+    badges.appendChild(createAdminServiceChip(effective ? 'Effective now' : 'Inactive', effective ? 'success' : 'warning'));
+    info.appendChild(badges);
     row.appendChild(info);
     const actions = document.createElement('div');
     actions.className = 'admin-service-row-actions';

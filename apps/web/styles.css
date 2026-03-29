@@ -2196,6 +2196,12 @@ body.api-help-body {
   background: rgba(19, 53, 34, 0.52);
 }
 
+.admin-service-chip.is-info {
+  border-color: rgba(109, 167, 255, 0.3);
+  color: #d8e8ff;
+  background: rgba(15, 42, 80, 0.46);
+}
+
 .admin-service-chip.is-warning {
   border-color: rgba(226, 182, 101, 0.32);
   color: #ffe7b9;
