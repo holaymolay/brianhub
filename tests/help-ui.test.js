@@ -81,6 +81,7 @@ test('admin console exposes service-worker, token, and workspace-grant controls'
   assert.match(html, /id="admin-service-token-editor-title"/);
   assert.match(html, /id="admin-service-token-inherit"/);
   assert.match(html, /id="admin-service-token-reveal"/);
+  assert.match(html, /id="admin-service-token-acknowledge"/);
   assert.match(html, /<h4>Workspace access<\/h4>/);
   assert.match(html, /id="admin-service-grant-workspace"/);
   assert.match(html, /id="admin-service-effective-workspaces"/);
@@ -107,7 +108,10 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /function setAdminServiceTokenState/);
   assert.match(appScript, /function buildAdminServiceTokenPayload/);
   assert.match(appScript, /function presentAdminServiceToken\(rawToken, actionLabel = 'created'\)/);
-  assert.match(appScript, /window\.prompt\(\s*`Copy this \$\{actionLabel\} token now\./);
+  assert.match(appScript, /function confirmAbandonPendingAdminServiceTokenReveal\(/);
+  assert.match(appScript, /function acknowledgeAdminServiceTokenReveal\(/);
+  assert.match(appScript, /window\.addEventListener\('beforeunload', \(event\) => \{/);
+  assert.match(appScript, /adminServiceTokenAcknowledge\?\.addEventListener\('click', \(\) => \{/);
   assert.match(appScript, /void refreshAdminServiceAccounts\(\);/);
   assert.match(appScript, /adminServiceAccountRogerPreset\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceTokenRotate\?\.addEventListener\('click'/);

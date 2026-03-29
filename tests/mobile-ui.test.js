@@ -7,6 +7,7 @@ test('tasks page exposes a dedicated mobile add button', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
   assert.match(html, /id="tasks-mobile-add-btn"/);
   assert.match(html, /class="panel-header tasks-mobile-header"/);
+  assert.match(html, /id="mobile-nav-add"[\s\S]*<span class="mobile-nav-add-label" aria-hidden="true"><\/span>/);
 });
 
 test('tasks page exposes a dedicated mobile tools sheet', () => {
@@ -48,6 +49,17 @@ test('mobile create sheet exposes a task quick-add form', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
   assert.match(html, /id="mobile-task-quick-add-form"/);
   assert.match(html, /id="mobile-task-quick-add-input"/);
+});
+
+test('mobile add button surfaces task context in tasks view', () => {
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(script, /const mobileNavAddLabel = document\.querySelector\('#mobile-nav-add \.mobile-nav-add-label'\);/);
+  assert.match(script, /mobileNavAdd\.classList\.toggle\('is-task-context', taskQuickAdd\);/);
+  assert.match(script, /mobileNavAddLabel\.textContent = taskQuickAdd \? 'Task' : '';/);
+  assert.match(css, /\.mobile-nav-add-label \{/);
+  assert.match(css, /\.mobile-nav-add\.is-task-context \{[\s\S]*min-width: 4\.85rem;/s);
+  assert.match(css, /\.mobile-nav-add\.is-task-context \.mobile-nav-add-label \{\s*display: inline;/s);
 });
 
 test('mobile quick add opens the task quick-add form directly from tasks view', () => {
@@ -99,14 +111,18 @@ test('mobile bottom surfaces share one clearance contract', () => {
 test('mobile navigation exposes organizations as a first-class destination', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
   assert.match(html, /id="mobile-nav-organizations" class="mobile-nav-button" type="button" data-view="organizations"/);
   assert.match(html, /id="mobile-menu-organizations"/);
+  assert.match(html, /id="organization-context-banner"/);
   assert.match(html, /id="mobile-menu-workflows"/);
   assert.match(script, /const mobileNavOrganizations = document\.getElementById\('mobile-nav-organizations'\);/);
   assert.match(script, /setMobileNavButtonConfig\(mobileNavOrganizations, \{\s*view: 'organizations'/s);
   assert.match(script, /if \(view === 'organizations'\) \{\s*void openOrganizationsEntry\(\{ autoOpenSingle: true \}\);\s*return;\s*\}/s);
   assert.match(script, /mobileMenuOrganizations\?\.addEventListener\('click', \(\) => \{\s*closeMobileTopMenu\(\);\s*void openOrganizationsEntry\(\{ autoOpenSingle: true \}\);/s);
   assert.match(script, /if \(getActiveOrganizationId\(\) === singleOrganization\.id\) \{\s*await closeOrganizationSurface\(\);\s*return;\s*\}/s);
+  assert.match(css, /\.organization-context-banner \{/);
+  assert.match(css, /@media \(max-width: 980px\) \{[\s\S]*\.organization-context-banner \{[\s\S]*flex-direction: column;/s);
 });
 
 test('mobile task tools reuse the same task state controls as desktop', () => {

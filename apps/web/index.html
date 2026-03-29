@@ -118,6 +118,17 @@
         <button class="module-nav-item" type="button" disabled title="Coming soon">Knowledge</button>
       </div>
     </nav>
+    <section id="organization-context-banner" class="organization-context-banner hidden" aria-live="polite">
+      <div class="organization-context-copy">
+        <div class="organization-context-kicker">Organization in focus</div>
+        <div id="organization-context-name" class="organization-context-name">Organization</div>
+        <div id="organization-context-meta" class="organization-context-meta"></div>
+      </div>
+      <div class="organization-context-actions">
+        <button id="organization-context-manage" class="subtle-button" type="button">Org settings</button>
+        <button id="organization-context-return" class="subtle-button" type="button">Back to workspace</button>
+      </div>
+    </section>
 
     <main class="app-main">
       <div class="app-layout">
@@ -130,6 +141,7 @@
                   class="sidebar-section-button"
                   type="button"
                   data-sidebar-toggle="tasks"
+                  data-sidebar-label="My Tasks"
                   aria-controls="sidebar-section-body-tasks"
                   aria-expanded="true"
                 >
@@ -150,6 +162,7 @@
                   class="sidebar-section-button"
                   type="button"
                   data-sidebar-toggle="projects"
+                  data-sidebar-label="Projects"
                   aria-controls="sidebar-section-body-projects"
                   aria-expanded="true"
                 >
@@ -170,6 +183,7 @@
                   class="sidebar-section-button"
                   type="button"
                   data-sidebar-toggle="organizations"
+                  data-sidebar-label="Organizations"
                   aria-controls="sidebar-section-body-organizations"
                   aria-expanded="true"
                 >
@@ -187,6 +201,7 @@
                   class="sidebar-section-button"
                   type="button"
                   data-sidebar-toggle="workflows"
+                  data-sidebar-label="Workflows"
                   aria-controls="sidebar-section-body-workflows"
                   aria-expanded="true"
                 >
@@ -212,6 +227,7 @@
                   class="sidebar-section-button"
                   type="button"
                   data-sidebar-toggle="shopping"
+                  data-sidebar-label="Shopping Lists"
                   aria-controls="sidebar-section-body-shopping"
                   aria-expanded="true"
                 >
@@ -253,6 +269,7 @@
                   class="sidebar-section-button"
                   type="button"
                   data-sidebar-toggle="notices"
+                  data-sidebar-label="Notices"
                   aria-controls="sidebar-section-body-notices"
                   aria-expanded="true"
                 >
@@ -826,10 +843,13 @@
 	                      <div id="admin-service-token-reveal-wrap" class="admin-service-token-reveal hidden">
 	                        <div class="admin-service-token-reveal-copy">
 	                          <div class="setting-label">Copy this raw token now</div>
-	                          <div class="sidebar-note">BrianHub will not show this secret again after this success state.</div>
+	                          <div class="sidebar-note">BrianHub will not show this secret again. Copy it before leaving this page, switching workers, or selecting a different token.</div>
 	                        </div>
 	                        <input id="admin-service-token-reveal" class="setting-input admin-invite-input" type="text" readonly placeholder="New token is shown once here" />
-	                        <button id="admin-service-token-copy" class="subtle-button" type="button">Copy token</button>
+	                        <div class="admin-service-token-reveal-actions">
+	                          <button id="admin-service-token-copy" class="subtle-button" type="button">Copy token</button>
+	                          <button id="admin-service-token-acknowledge" class="subtle-button" type="button">I stored this token</button>
+	                        </div>
 	                      </div>
 	                      <div id="admin-service-token-state" class="admin-service-callout admin-service-token-state">Save the worker first. Tokens are issued under a worker, not as standalone credentials.</div>
 	                      <div class="admin-service-token-grid">
@@ -1035,6 +1055,7 @@
       </button>
       <button id="mobile-nav-add" class="mobile-nav-add" type="button" title="Create">
         <span class="mobile-nav-add-plus">+</span>
+        <span class="mobile-nav-add-label" aria-hidden="true"></span>
       </button>
     </nav>
 

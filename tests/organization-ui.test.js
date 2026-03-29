@@ -29,6 +29,11 @@ test('settings expose workspace collaboration controls and in-settings organizat
   assert.match(html, /id="organizations-page-manage"/);
   assert.match(html, /id="organizations-page-back"/);
   assert.match(html, /id="organizations-page-list"/);
+  assert.match(html, /id="organization-context-banner"/);
+  assert.match(html, /id="organization-context-name"/);
+  assert.match(html, /id="organization-context-meta"/);
+  assert.match(html, /id="organization-context-manage"/);
+  assert.match(html, /id="organization-context-return"/);
 });
 
 test('workspace creation uses a dedicated modal with personal and shared types', () => {
@@ -65,8 +70,11 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /function getCurrentWorkspaceAnchorId\(\)/);
   assert.match(script, /function getCurrentWorkspaceAnchor\(\)/);
   assert.match(script, /function rememberWorkspaceAnchor\(workspace\)/);
+  assert.match(script, /function getActiveOrganizationRecord\(\)/);
   assert.match(script, /async function refreshOrganizations\(\{ preserveSelection = true \} = \{\}\)/);
   assert.match(script, /async function refreshSelectedOrganizationMembers\(orgId = getSelectedSettingsOrganization\(\)\?\.id \?\? ''\)/);
+  assert.match(script, /function renderOrganizationContextBanner\(\)/);
+  assert.match(script, /document\.body\.classList\.toggle\('organization-surface-active', active\);/);
   assert.match(script, /function renderOrganizationsPage\(\)/);
   assert.match(script, /async function openOrganizationSurface\(orgInput\)/);
   assert.match(script, /async function closeOrganizationSurface\(\)/);
@@ -92,6 +100,11 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /if \(visibleOrganizations\.length === 1\) \{\s*const \[singleOrganization\] = visibleOrganizations;[\s\S]*await openOrganizationSurface\(singleOrganization\);/s);
   assert.match(script, /organizationsPageManage\?\.addEventListener\('click', \(\) => \{\s*openSettings\(\);/s);
   assert.match(script, /settingsOpenOrganizations\?\.addEventListener\('click', \(\) => \{\s*openOrganizationsPage\(\);/s);
+  assert.match(script, /const canManage = orgRole === 'owner' \|\| orgRole === 'admin';/);
+  assert.match(script, /manageBtn\.textContent = canManage \? 'Manage' : 'Settings';/);
+  assert.match(script, /manageBtn\.title = canManage[\s\S]*'Manage organization members, roles, and ownership\.'[\s\S]*'View organization settings and membership\.';/s);
+  assert.match(script, /organizationContextReturn\?\.addEventListener\('click', \(\) => \{\s*void closeOrganizationSurface\(\);/s);
+  assert.match(script, /organizationContextManage\?\.addEventListener\('click', \(\) => \{\s*const activeOrganizationId = getActiveOrganizationId\(\);[\s\S]*openSettings\(\);/s);
 });
 
 test('workspace management shows type-aware metadata and conversion controls', () => {

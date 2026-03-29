@@ -374,6 +374,11 @@ const organizationsPageList = document.getElementById('organizations-page-list')
 const organizationsPageStatus = document.getElementById('organizations-page-status');
 const organizationsPageEmpty = document.getElementById('organizations-page-empty');
 const organizationsPageManage = document.getElementById('organizations-page-manage');
+const organizationContextBanner = document.getElementById('organization-context-banner');
+const organizationContextName = document.getElementById('organization-context-name');
+const organizationContextMeta = document.getElementById('organization-context-meta');
+const organizationContextManage = document.getElementById('organization-context-manage');
+const organizationContextReturn = document.getElementById('organization-context-return');
 const dataTransferPage = document.getElementById('data-transfer-page');
 const auditLogPage = document.getElementById('audit-log-page');
 const automationPage = document.getElementById('automation-page');
@@ -512,6 +517,7 @@ const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-butto
 const sidebarSections = Array.from(document.querySelectorAll('.sidebar-section[data-sidebar-section]'));
 const sidebarSectionButtons = Array.from(document.querySelectorAll('.sidebar-section-button[data-sidebar-toggle]'));
 const mobileNavAdd = document.getElementById('mobile-nav-add');
+const mobileNavAddLabel = document.querySelector('#mobile-nav-add .mobile-nav-add-label');
 const mobileCreateSheet = document.getElementById('mobile-create-sheet');
 const mobileCreateSheetBackdrop = document.getElementById('mobile-create-sheet-backdrop');
 const mobileCreateSheetTitle = document.getElementById('mobile-create-sheet-title');
@@ -737,6 +743,7 @@ const adminServiceTokenPermissions = document.getElementById('admin-service-toke
 const adminServiceTokenRevealWrap = document.getElementById('admin-service-token-reveal-wrap');
 const adminServiceTokenReveal = document.getElementById('admin-service-token-reveal');
 const adminServiceTokenCopy = document.getElementById('admin-service-token-copy');
+const adminServiceTokenAcknowledge = document.getElementById('admin-service-token-acknowledge');
 const adminServiceTokenCreate = document.getElementById('admin-service-token-create');
 const adminServiceTokenSave = document.getElementById('admin-service-token-save');
 const adminServiceTokenRotate = document.getElementById('admin-service-token-rotate');
@@ -968,6 +975,7 @@ let draggingWorkflowPhaseMeta = null;
 let draggingWorkflowPhaseEl = null;
 let draggingShoppingInboxItemId = null;
 let activeShoppingItemEditorId = null;
+const taskCompletionAnimationTimers = new Map();
 let activeShoppingItemEditorMode = 'edit';
 let activeShoppingItemActionsId = null;
 let draggingShoppingListItemId = null;
@@ -2874,17 +2882,15 @@ function presentAdminServiceToken(rawToken, actionLabel = 'created') {
   const safeToken = String(rawToken ?? '').trim();
   setAdminServiceTokenReveal(safeToken);
   if (!safeToken) return false;
+  if (adminServiceTokenRevealWrap) {
+    adminServiceTokenRevealWrap.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
   if (adminServiceTokenReveal) {
     adminServiceTokenReveal.value = safeToken;
     adminServiceTokenReveal.focus();
     adminServiceTokenReveal.select();
   }
-  if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
-    window.prompt(
-      `Copy this ${actionLabel} token now. BrianHub will not show the raw secret again after this success step.`,
-      safeToken
-    );
-  }
+  setAdminServiceTokenStatus(`Token ${actionLabel}. Copy it now because BrianHub will not show the raw secret again.`, 'warning');
   return true;
 }
 
@@ -4880,6 +4886,10 @@ function renderMobileNavigation() {
     const taskQuickAdd = activeView === 'tasks';
     mobileNavAdd.title = taskQuickAdd ? 'Add task' : 'Create';
     mobileNavAdd.setAttribute('aria-label', taskQuickAdd ? 'Add task' : 'Create');
+    mobileNavAdd.classList.toggle('is-task-context', taskQuickAdd);
+    if (mobileNavAddLabel) {
+      mobileNavAddLabel.textContent = taskQuickAdd ? 'Task' : '';
+    }
   }
   mobileNavButtons.forEach((button) => {
     const view = String(button.dataset.view ?? '').trim();
@@ -7922,6 +7932,62 @@ function formatTaskDueMeta(dueAt) {
   const date = new Date(dueAt);
   if (Number.isNaN(date.getTime())) return 'No due';
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function getTaskDueVisualState(task, statusKey = normalizeTaskStatusValue(task?.status)) {
+  if (!task?.due_at || isDoneStatusKey(statusKey)) return '';
+  const dueDate = new Date(task.due_at);
+  if (Number.isNaN(dueDate.getTime())) return '';
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const upcomingEnd = new Date(todayStart);
+  upcomingEnd.setDate(upcomingEnd.getDate() + 7);
+  if (dueDate.getTime() < todayStart.getTime()) return 'overdue';
+  if (dueDate.getTime() < tomorrowStart.getTime()) return 'due-today';
+  if (dueDate.getTime() < upcomingEnd.getTime()) return 'upcoming';
+  return '';
+}
+
+function getRecentlyCompletedTasksState() {
+  state.ui = state.ui ?? {};
+  if (!state.ui.recentlyCompletedTasks || typeof state.ui.recentlyCompletedTasks !== 'object') {
+    state.ui.recentlyCompletedTasks = {};
+  }
+  return state.ui.recentlyCompletedTasks;
+}
+
+function isTaskJustCompleted(taskId) {
+  const safeTaskId = String(taskId ?? '').trim();
+  if (!safeTaskId) return false;
+  const completionState = getRecentlyCompletedTasksState();
+  const expiresAt = Number(completionState[safeTaskId] ?? 0);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    delete completionState[safeTaskId];
+    return false;
+  }
+  return true;
+}
+
+function markTaskJustCompleted(taskId) {
+  const safeTaskId = String(taskId ?? '').trim();
+  if (!safeTaskId) return;
+  const completionState = getRecentlyCompletedTasksState();
+  const expiresAt = Date.now() + 2200;
+  completionState[safeTaskId] = expiresAt;
+  const existingTimer = taskCompletionAnimationTimers.get(safeTaskId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+  const timerId = setTimeout(() => {
+    taskCompletionAnimationTimers.delete(safeTaskId);
+    if (completionState[safeTaskId] === expiresAt) {
+      delete completionState[safeTaskId];
+      render();
+    }
+  }, 2250);
+  taskCompletionAnimationTimers.set(safeTaskId, timerId);
 }
 
 function formatTaskRepeatMeta(interval, unit) {
@@ -13699,6 +13765,7 @@ function render() {
   renderProfilePage();
   renderOrganizationPanel();
   renderOrganizationSidebarList();
+  renderOrganizationContextBanner();
   renderOrganizationsPage();
   renderOrganizationsSettings();
   renderAdminPage();
@@ -13717,6 +13784,7 @@ function render() {
   renderNoticeSidebarList();
   renderNoticesPageList();
   renderWorkflowsPage();
+  syncSidebarSectionLabels();
   syncSidebarSectionExpansion();
   renderNoticeBellMenu();
   renderTaskFilter();
@@ -16327,6 +16395,27 @@ function getActiveOrganizationId() {
   return null;
 }
 
+function getActiveOrganizationRecord() {
+  const activeOrganizationId = getActiveOrganizationId();
+  if (!activeOrganizationId) return null;
+  const visibleOrganizations = getVisibleOrganizations();
+  const matchingOrganization = visibleOrganizations.find((org) => org.id === activeOrganizationId) ?? null;
+  if (matchingOrganization) return matchingOrganization;
+  const activeWorkspace = normalizeWorkspace(state.workspace);
+  return normalizeOrganizationRecord({
+    id: activeOrganizationId,
+    name: activeWorkspace?.name ?? 'Organization',
+    current_user_role: 'member',
+    member_count: 0,
+    surface_workspace_id: activeWorkspace?.id ?? null,
+    surface_workspace_name: activeWorkspace?.name ?? null,
+    surface_workspace_type: activeWorkspace?.type ?? 'shared',
+    surface_workspace_org_id: activeWorkspace?.org_id ?? DEFAULT_ORG_ID,
+    owner_display_name: '',
+    owner_email: ''
+  });
+}
+
 function getCurrentWorkspaceScopedView() {
   const activeView = getActiveView();
   return ['tasks', 'projects', 'shopping', 'notices', 'workflows', 'scheduling'].includes(activeView)
@@ -16367,6 +16456,47 @@ function getExpandedSidebarSectionKey() {
   const explicitKey = String(sidebarState.expandedKey ?? '').trim();
   if (explicitKey) return explicitKey;
   return getSidebarFocusedSectionKey() || 'tasks';
+}
+
+function getSidebarSectionCount(sectionKey) {
+  switch (String(sectionKey ?? '').trim()) {
+    case 'tasks':
+      return getTaskSidebarLists().length;
+    case 'projects':
+      return state.workspace ? getProjectsForWorkspace().length : 0;
+    case 'organizations':
+      return getVisibleOrganizations().length;
+    case 'workflows':
+      return state.workspace ? getWorkflowsForWorkspace().length : 0;
+    case 'shopping': {
+      if (!state.workspace) return 0;
+      const showArchived = Boolean(state.ui?.showArchivedShoppingLists);
+      return (state.shoppingLists ?? []).filter((list) =>
+        list.workspace_id === state.workspace.id
+        && shouldShowShoppingListInSidebar(list, { showArchived })
+      ).length;
+    }
+    case 'notices':
+      if (!state.workspace) return 0;
+      return (state.notices ?? []).filter((notice) =>
+        notice.workspace_id === state.workspace.id && !notice.dismissed_at
+      ).length;
+    default:
+      return 0;
+  }
+}
+
+function syncSidebarSectionLabels() {
+  sidebarSections.forEach((section) => {
+    const sectionKey = String(section.dataset.sidebarSection ?? '').trim();
+    const toggleButton = section.querySelector('.sidebar-section-button[data-sidebar-toggle]');
+    const label = toggleButton?.querySelector('.sidebar-section-button-label');
+    if (!toggleButton || !label) return;
+    const baseLabel = String(toggleButton.dataset.sidebarLabel ?? label.textContent ?? '').trim() || 'Section';
+    const expanded = isSidebarSectionExpanded(sectionKey);
+    const count = getSidebarSectionCount(sectionKey);
+    label.textContent = !expanded && count > 0 ? `${baseLabel} (${count})` : baseLabel;
+  });
 }
 
 function isSidebarSectionExpanded(sectionKey) {
@@ -16642,6 +16772,36 @@ function renderOrganizationSidebarList() {
   });
 }
 
+function renderOrganizationContextBanner() {
+  if (!organizationContextBanner) return;
+  const activeOrganization = getActiveOrganizationRecord();
+  const activeOrganizationId = String(activeOrganization?.id ?? '').trim();
+  const active = Boolean(activeOrganizationId);
+  document.body.classList.toggle('organization-surface-active', active);
+  organizationContextBanner.classList.toggle('hidden', !active);
+  if (!active) return;
+  const role = normalizeOrganizationRole(activeOrganization?.current_user_role);
+  const anchorWorkspace = getCurrentWorkspaceAnchor();
+  if (organizationContextName) {
+    organizationContextName.textContent = activeOrganization?.name ?? 'Organization';
+  }
+  if (organizationContextMeta) {
+    const metaParts = [getOrganizationRoleLabel(role)];
+    if (anchorWorkspace?.name) {
+      metaParts.push(`return to ${anchorWorkspace.name}`);
+    }
+    organizationContextMeta.textContent = metaParts.join(' • ');
+  }
+  if (organizationContextManage) {
+    organizationContextManage.textContent = role === 'owner' || role === 'admin' ? 'Manage org' : 'Org settings';
+  }
+  if (organizationContextReturn) {
+    organizationContextReturn.textContent = anchorWorkspace?.name
+      ? `Back to ${anchorWorkspace.name}`
+      : 'Back to workspace';
+  }
+}
+
 function renderOrganizationsSettings() {
   const orgState = getOrganizationSettingsState();
   const authenticated = isAuthenticatedActor();
@@ -16899,6 +17059,8 @@ function renderOrganizationsPage() {
 
     const actions = document.createElement('div');
     actions.className = 'organization-surface-card-actions';
+    const orgRole = normalizeOrganizationRole(org.current_user_role);
+    const canManage = orgRole === 'owner' || orgRole === 'admin';
 
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
@@ -16916,7 +17078,10 @@ function renderOrganizationsPage() {
     const manageBtn = document.createElement('button');
     manageBtn.type = 'button';
     manageBtn.className = 'subtle-button';
-    manageBtn.textContent = 'Manage';
+    manageBtn.textContent = canManage ? 'Manage' : 'Settings';
+    manageBtn.title = canManage
+      ? 'Manage organization members, roles, and ownership.'
+      : 'View organization settings and membership.';
     manageBtn.addEventListener('click', () => {
       state.ui = state.ui ?? {};
       state.ui.organizations = state.ui.organizations ?? {};
@@ -17360,6 +17525,8 @@ function getAdminState() {
   if (typeof adminState.selectedServiceAccountId !== 'string') adminState.selectedServiceAccountId = '';
   if (typeof adminState.selectedServiceAccountTokenId !== 'string') adminState.selectedServiceAccountTokenId = '';
   if (typeof adminState.revealedServiceToken !== 'string') adminState.revealedServiceToken = '';
+  if (typeof adminState.revealedServiceTokenPendingConfirmation !== 'boolean') adminState.revealedServiceTokenPendingConfirmation = false;
+  if (typeof adminState.revealedServiceTokenCopied !== 'boolean') adminState.revealedServiceTokenCopied = false;
   return adminState;
 }
 
@@ -17629,7 +17796,29 @@ function setAdminServiceTokenReveal(token = '') {
     adminServiceTokenReveal.value = safeToken;
   }
   adminServiceTokenRevealWrap?.classList.toggle('hidden', !safeToken);
-  getAdminState().revealedServiceToken = safeToken;
+  const adminState = getAdminState();
+  adminState.revealedServiceToken = safeToken;
+  adminState.revealedServiceTokenPendingConfirmation = Boolean(safeToken);
+  adminState.revealedServiceTokenCopied = false;
+  if (adminServiceTokenAcknowledge) {
+    adminServiceTokenAcknowledge.disabled = !safeToken;
+  }
+}
+
+function hasPendingAdminServiceTokenReveal() {
+  const adminState = getAdminState();
+  return Boolean(adminState.revealedServiceToken && adminState.revealedServiceTokenPendingConfirmation);
+}
+
+function confirmAbandonPendingAdminServiceTokenReveal(message = 'A newly generated raw token is still visible. BrianHub will never show it again once you leave this step. Continue?') {
+  if (!hasPendingAdminServiceTokenReveal()) return true;
+  return confirm(message);
+}
+
+function acknowledgeAdminServiceTokenReveal() {
+  const adminState = getAdminState();
+  adminState.revealedServiceTokenPendingConfirmation = false;
+  setAdminServiceTokenReveal('');
 }
 
 function setAdminServiceTokenState(message, tone = 'info') {
@@ -18249,6 +18438,7 @@ function renderAdminServiceAccountsList() {
     row.classList.toggle('active', account.id === adminState.selectedServiceAccountId);
     row.addEventListener('click', () => {
       if (adminState.selectedServiceAccountId === account.id) return;
+      if (!confirmAbandonPendingAdminServiceTokenReveal()) return;
       adminState.selectedServiceAccountId = account.id;
       resetAdminServiceAccountDetailState();
       renderAdminServiceAccountsList();
@@ -18408,6 +18598,7 @@ function renderAdminServiceAccountTokensList() {
     row.className = 'workspace-row notice-row admin-user-row';
     row.classList.toggle('active', token.id === adminState.selectedServiceAccountTokenId);
     row.addEventListener('click', () => {
+      if (!confirmAbandonPendingAdminServiceTokenReveal()) return;
       adminState.selectedServiceAccountTokenId = token.id;
       setAdminServiceTokenReveal('');
       renderAdminServiceAccountTokensList();
@@ -18439,7 +18630,9 @@ function renderAdminServiceTokenEditor() {
   const isOwnerActor = isCurrentActorOwnerSuperAdmin();
   const selectedAccount = getSelectedAdminServiceAccount();
   const selectedToken = getSelectedAdminServiceAccountToken();
-  const tokens = getAdminState().serviceAccountTokens ?? [];
+  const adminState = getAdminState();
+  const tokens = adminState.serviceAccountTokens ?? [];
+  const pendingReveal = hasPendingAdminServiceTokenReveal();
   if (selectedToken) {
     if (adminServiceTokenLabel && document.activeElement !== adminServiceTokenLabel) {
       adminServiceTokenLabel.value = selectedToken.label ?? '';
@@ -18468,7 +18661,8 @@ function renderAdminServiceTokenEditor() {
   if (adminServiceTokenSave) adminServiceTokenSave.disabled = !isOwnerActor || !selectedToken;
   if (adminServiceTokenRotate) adminServiceTokenRotate.disabled = !isOwnerActor || !selectedToken || Boolean(selectedToken?.revoked_at);
   if (adminServiceTokenRevoke) adminServiceTokenRevoke.disabled = !isOwnerActor || !selectedToken || Boolean(selectedToken?.revoked_at);
-  if (adminServiceTokenCopy) adminServiceTokenCopy.disabled = !getAdminState().revealedServiceToken;
+  if (adminServiceTokenCopy) adminServiceTokenCopy.disabled = !adminState.revealedServiceToken;
+  if (adminServiceTokenAcknowledge) adminServiceTokenAcknowledge.disabled = !adminState.revealedServiceToken;
   if (adminServiceTokenNew) adminServiceTokenNew.textContent = 'Generate new token';
   if (adminServiceTokenCreate) adminServiceTokenCreate.textContent = 'Generate token';
   if (adminServiceTokenSave) adminServiceTokenSave.textContent = 'Update token';
@@ -18484,6 +18678,14 @@ function renderAdminServiceTokenEditor() {
   }
   if (!selectedAccount) {
     setAdminServiceTokenState('Save the worker first. Tokens are issued under a service worker, not as standalone credentials.', 'muted');
+  } else if (pendingReveal) {
+    const copied = adminState.revealedServiceTokenCopied;
+    setAdminServiceTokenState(
+      copied
+        ? 'The raw token was copied. Confirm that you stored it safely, then dismiss this one-time reveal panel.'
+        : 'A new raw token is visible right now. Copy it before you leave this screen because BrianHub will never show it again.',
+      'warning'
+    );
   } else if (!tokens.length) {
     setAdminServiceTokenState('This worker has no tokens yet and cannot connect to BrianHub until you generate its first token.', 'warning');
   } else if (selectedToken) {
@@ -18499,7 +18701,9 @@ function renderAdminServiceTokenEditor() {
   }
   if (!adminServiceTokenStatus?.dataset.tone) {
     setAdminServiceTokenStatus(
-      selectedAccount
+      pendingReveal
+        ? 'Copy the raw token, store it somewhere safe, then confirm before leaving this screen.'
+        : selectedAccount
         ? selectedToken
           ? 'Update this token, regenerate it, or revoke it. Regeneration immediately invalidates the old secret.'
           : 'Generate the first bearer token for this worker. Leave matching on unless you need a narrower token.'
@@ -18978,6 +19182,7 @@ async function refreshAdminServiceAccountActivity() {
 }
 
 function startNewAdminServiceAccountDraft(draft = null) {
+  if (!confirmAbandonPendingAdminServiceTokenReveal()) return;
   const adminState = getAdminState();
   adminState.selectedServiceAccountId = '';
   resetAdminServiceAccountDetailState();
@@ -19180,15 +19385,18 @@ async function revokeAdminSelectedServiceToken() {
 }
 
 async function copyAdminServiceTokenToClipboard() {
-  const token = String(getAdminState().revealedServiceToken ?? '').trim();
+  const adminState = getAdminState();
+  const token = String(adminState.revealedServiceToken ?? '').trim();
   if (!token) {
     setAdminServiceTokenStatus('No raw token is available to copy.', 'error');
     return;
   }
   try {
     await copyTextToClipboard(token);
-    setAdminServiceTokenStatus('Raw token copied to clipboard.');
+    adminState.revealedServiceTokenCopied = true;
+    setAdminServiceTokenStatus('Raw token copied to clipboard. Confirm you stored it before leaving this screen.', 'warning');
     showToast({ type: 'success', message: 'Raw token copied to clipboard.' });
+    renderAdminServiceTokenEditor();
   } catch (err) {
     const message = err?.message ?? 'Could not copy token.';
     setAdminServiceTokenStatus(message, 'error');
@@ -25741,14 +25949,10 @@ function renderTask(task, options = {}) {
   if (rowMetaDue) {
     rowMetaDue.textContent = dueMeta;
     rowMetaDue.title = task.due_at ? `Due ${dueMeta}` : 'No due date';
-    const dueDate = task.due_at ? new Date(task.due_at) : null;
-    const isOverdue = Boolean(
-      dueDate
-      && !Number.isNaN(dueDate.getTime())
-      && dueDate.getTime() < Date.now()
-      && !isDoneStatusKey(statusKey)
-    );
-    rowMetaDue.classList.toggle('is-overdue', isOverdue);
+    const dueVisualState = getTaskDueVisualState(task, statusKey);
+    rowMetaDue.classList.toggle('is-overdue', dueVisualState === 'overdue');
+    rowMetaDue.classList.toggle('is-due-today', dueVisualState === 'due-today');
+    rowMetaDue.classList.toggle('is-upcoming', dueVisualState === 'upcoming');
   }
 
   if (rowMetaRepeat) {
@@ -25794,6 +25998,7 @@ function renderTask(task, options = {}) {
   if (isDoneStatusKey(statusKey)) {
     item.classList.add('completed');
   }
+  item.classList.toggle('just-completed', isTaskJustCompleted(task.id));
 
   if (isChecklistIa && taskActions) {
     const iaToggle = document.createElement('button');
@@ -25899,8 +26104,17 @@ function renderTask(task, options = {}) {
     const updated = await updateTaskRecord(task.id, patch);
     if (!updated) return;
     if (!isDone) {
+      markTaskJustCompleted(task.id);
       await maybeCreateRecurringTask(state.tasks[task.id]);
       await maybePromptCompleteParent(task.id);
+    } else {
+      const completionState = getRecentlyCompletedTasksState();
+      delete completionState[task.id];
+      const existingTimer = taskCompletionAnimationTimers.get(task.id);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        taskCompletionAnimationTimers.delete(task.id);
+      }
     }
     render();
   });
@@ -29730,6 +29944,12 @@ adminUsersRefresh?.addEventListener('click', () => {
   void refreshAdminUsers();
 });
 adminUserSelect?.addEventListener('change', () => {
+  if (!confirmAbandonPendingAdminServiceTokenReveal()) {
+    if (adminUserSelect) {
+      adminUserSelect.value = getAdminState().selectedUserId || '';
+    }
+    return;
+  }
   const adminState = getAdminState();
   adminState.selectedUserId = adminUserSelect.value || '';
   syncAdminServiceAccountSelectionForUser();
@@ -29776,6 +29996,12 @@ adminServiceAccountRogerPreset?.addEventListener('click', () => {
   startNewAdminServiceAccountDraft(buildRogerServiceAccountDraft());
 });
 adminServiceAccountSelect?.addEventListener('change', () => {
+  if (!confirmAbandonPendingAdminServiceTokenReveal()) {
+    if (adminServiceAccountSelect) {
+      adminServiceAccountSelect.value = getAdminState().selectedServiceAccountId || '';
+    }
+    return;
+  }
   const adminState = getAdminState();
   const nextId = String(adminServiceAccountSelect.value ?? '').trim();
   adminState.selectedServiceAccountId = nextId;
@@ -29812,6 +30038,7 @@ adminServiceAccountArchived?.addEventListener('change', renderAdminServiceAccoun
 adminServiceAccountAliases?.addEventListener('input', renderAdminServiceAccountSummary);
 adminServiceAccountPermissions?.addEventListener('change', renderAdminServiceAccountSummary);
 adminServiceTokenNew?.addEventListener('click', () => {
+  if (!confirmAbandonPendingAdminServiceTokenReveal()) return;
   const adminState = getAdminState();
   adminState.selectedServiceAccountTokenId = '';
   setAdminServiceTokenReveal('');
@@ -29847,12 +30074,35 @@ adminServiceTokenRevoke?.addEventListener('click', () => {
 adminServiceTokenCopy?.addEventListener('click', () => {
   void copyAdminServiceTokenToClipboard();
 });
+adminServiceTokenAcknowledge?.addEventListener('click', () => {
+  acknowledgeAdminServiceTokenReveal();
+  setAdminServiceTokenStatus('Token reveal dismissed. BrianHub will not show that raw secret again.');
+  renderAdminServiceTokenEditor();
+});
 adminServiceGrantAdd?.addEventListener('click', () => {
   void addAdminServiceWorkspaceGrant();
 });
 adminServiceActivityRefresh?.addEventListener('click', () => {
   void refreshAdminServiceAccountActivity();
 });
+organizationContextReturn?.addEventListener('click', () => {
+  void closeOrganizationSurface();
+});
+organizationContextManage?.addEventListener('click', () => {
+  const activeOrganizationId = getActiveOrganizationId();
+  if (!activeOrganizationId) return;
+  state.ui = state.ui ?? {};
+  state.ui.organizations = state.ui.organizations ?? {};
+  state.ui.organizations.selectedOrgId = activeOrganizationId;
+  openSettings();
+});
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', (event) => {
+    if (!hasPendingAdminServiceTokenReveal()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+}
 taskTypesOpen?.addEventListener('click', openTaskTypesModal);
 taskTypesClose?.addEventListener('click', closeTaskTypesModal);
 taskTypesModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeTaskTypesModal);
