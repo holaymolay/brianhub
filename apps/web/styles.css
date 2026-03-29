@@ -7029,6 +7029,8 @@ body.auth-gated #auth-cancel-invite {
   #tasks-panel .task-title-row,
   #tasks-panel .task-title,
   #tasks-panel .task-meta,
+  #tasks-panel .task-row-meta,
+  #tasks-panel .task-row-meta-item,
   #tasks-panel .task-type-badge,
   #tasks-panel .task-actions,
   #tasks-panel .task-select-toggle,
@@ -7036,7 +7038,7 @@ body.auth-gated #auth-cancel-invite {
   #tasks-panel .task-complete-button,
   #tasks-panel .task-toggle,
   #tasks-panel .task-menu-button {
-    touch-action: pan-y manipulation;
+    touch-action: pan-y;
   }
 
   #tasks-panel .task-row {

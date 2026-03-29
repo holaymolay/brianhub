@@ -158,7 +158,8 @@ test('mobile task rows reflow into a wrapped phone layout', () => {
   assert.match(css, /#tasks-panel \.task-title-row \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;/);
   assert.match(css, /#tasks-panel \.task-title \{[\s\S]*flex: 1 0 100%;[\s\S]*white-space: normal;[\s\S]*-webkit-line-clamp: 3;/);
   assert.match(css, /#tasks-panel \.task-meta \{[\s\S]*display: block !important;[\s\S]*white-space: normal;/);
-  assert.match(css, /#tasks-panel \.task-item,[\s\S]*#tasks-panel \.task-menu-button \{[\s\S]*touch-action: pan-y manipulation;/s);
+  assert.match(css, /#tasks-panel \.task-item,[\s\S]*#tasks-panel \.task-menu-button \{[\s\S]*touch-action: pan-y;/s);
+  assert.match(css, /#tasks-panel \.task-row-meta,[\s\S]*#tasks-panel \.task-row-meta-item,[\s\S]*#tasks-panel \.task-type-badge,[\s\S]*#tasks-panel \.task-actions/s);
 });
 
 test('task reorder supports row drag on desktop and pointer drag on touch devices', () => {
