@@ -16642,14 +16642,8 @@ async function handleSidebarSectionButtonClick(sectionKey) {
   const key = String(sectionKey ?? '').trim();
   if (!key) return;
   const expanded = isSidebarSectionExpanded(key);
-  const focusedSectionKey = getSidebarFocusedSectionKey();
-  if (expanded && focusedSectionKey === key) {
-    setSidebarSectionExpanded(key, false);
-    render();
-    return;
-  }
-  setSidebarSectionExpanded(key, true);
-  openSidebarSection(key);
+  setSidebarSectionExpanded(key, !expanded);
+  render();
 }
 
 function buildOrganizationSurfaceWorkspace(org) {
