@@ -74,6 +74,7 @@ test('admin console exposes service-worker, token, and workspace-grant controls'
   assert.match(html, /id="admin-service-summary-name"/);
   assert.match(html, /id="admin-service-summary-stats"/);
   assert.match(html, /id="admin-service-setup-note"/);
+  assert.match(html, /id="admin-service-setup-checklist"/);
   assert.match(html, /id="admin-service-account-permissions"/);
   assert.match(html, /<h4>Worker identity &amp; baseline access<\/h4>/);
   assert.match(html, /<h4>Tokens<\/h4>/);
@@ -115,6 +116,8 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /function formatApiTokenTone\(status\)/);
   assert.match(appScript, /function getServiceWorkerTokenAccessLabel\(token\)/);
   assert.match(appScript, /function selectAdminServiceToken\(tokenId, \{ requireConfirm = true \} = \{\}\)/);
+  assert.match(appScript, /function focusAdminServiceSetupTarget\(target\)/);
+  assert.match(appScript, /function buildAdminServiceSetupSteps\(/);
   assert.match(appScript, /function presentAdminServiceToken\(rawToken, actionLabel = 'created'\)/);
   assert.match(appScript, /function confirmAbandonPendingAdminServiceTokenReveal\(/);
   assert.match(appScript, /function acknowledgeAdminServiceTokenReveal\(/);
@@ -131,6 +134,9 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /Step 2 of 3: save is complete\. Next, grant the workspace this worker should access\./);
   assert.match(appScript, /Step 3 of 3: workspace access is ready, but this worker is still inert until you generate or regenerate an active token\./);
   assert.match(appScript, /Ready: this worker has workspace access and at least one active token\./);
+  assert.match(appScript, /Save worker identity/);
+  assert.match(appScript, /Grant workspace access/);
+  assert.match(appScript, /Generate an active token/);
 });
 
 test('admin console auto-selects existing service accounts and surfaces summary counts', () => {

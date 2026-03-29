@@ -738,6 +738,7 @@ const adminServiceSummaryDescription = document.getElementById('admin-service-su
 const adminServiceSummaryBadges = document.getElementById('admin-service-summary-badges');
 const adminServiceSummaryStats = document.getElementById('admin-service-summary-stats');
 const adminServiceSetupNote = document.getElementById('admin-service-setup-note');
+const adminServiceSetupChecklist = document.getElementById('admin-service-setup-checklist');
 const adminServiceSummaryAliases = document.getElementById('admin-service-summary-aliases');
 const adminServiceTokenStatus = document.getElementById('admin-service-token-status');
 const adminServiceTokenNew = document.getElementById('admin-service-token-new');
@@ -18075,6 +18076,79 @@ function createAdminServiceChip(text, tone = '') {
   return chip;
 }
 
+function focusAdminServiceSetupTarget(target) {
+  let element = null;
+  switch (String(target ?? '').trim()) {
+    case 'identity':
+      element = adminServiceAccountSelect ?? adminServiceAccountName ?? adminServiceAccountSave;
+      break;
+    case 'workspace':
+      element = adminServiceGrantWorkspace ?? adminServiceGrantAdd;
+      break;
+    case 'token':
+      element = adminServiceTokenNew ?? adminServiceTokenLabel ?? adminServiceTokenCreate;
+      break;
+    default:
+      break;
+  }
+  element?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  element?.focus?.({ preventScroll: true });
+}
+
+function buildAdminServiceSetupSteps({
+  selectedAccount,
+  selectedUser,
+  effectiveWorkspaceCount,
+  activeTokenCount
+}) {
+  const userLabel = selectedUser?.email ?? selectedUser?.display_name ?? 'the selected user';
+  const archived = Boolean(Number(selectedAccount?.archived));
+  const workerSaved = Boolean(selectedAccount?.id);
+  const workspaceReady = workerSaved && effectiveWorkspaceCount > 0;
+  const tokenReady = workerSaved && activeTokenCount > 0;
+  return [
+    {
+      key: 'identity',
+      title: 'Save worker identity',
+      description: workerSaved
+        ? archived
+          ? 'This worker exists but is disabled. Re-enable it before relying on it.'
+          : 'The worker identity, aliases, and baseline permissions are saved.'
+        : `Create the durable worker record for ${userLabel} before grants or tokens.`,
+      actionLabel: workerSaved ? 'Review worker' : 'Save worker',
+      statusLabel: workerSaved ? (archived ? 'Disabled' : 'Saved') : 'Required',
+      tone: workerSaved ? (archived ? 'warning' : 'success') : 'warning',
+      complete: workerSaved && !archived
+    },
+    {
+      key: 'workspace',
+      title: 'Grant workspace access',
+      description: workspaceReady
+        ? `${effectiveWorkspaceCount} workspace${effectiveWorkspaceCount === 1 ? '' : 's'} granted.`
+        : workerSaved
+          ? 'This worker still cannot reach BrianHub data until you grant at least one workspace.'
+          : 'Workspace access comes after the worker is saved.',
+      actionLabel: workspaceReady ? 'Review grants' : 'Grant workspace',
+      statusLabel: workspaceReady ? 'Ready' : workerSaved ? 'Pending' : 'Locked',
+      tone: workspaceReady ? 'success' : workerSaved ? 'warning' : 'muted',
+      complete: workspaceReady
+    },
+    {
+      key: 'token',
+      title: 'Generate an active token',
+      description: tokenReady
+        ? `${activeTokenCount} active token${activeTokenCount === 1 ? '' : 's'} available. Raw secrets are one-time only.`
+        : workspaceReady
+          ? 'The worker is still inert until you generate or regenerate an active token.'
+          : 'Token issuance comes after the worker and workspace access are ready.',
+      actionLabel: tokenReady ? 'Review tokens' : 'Generate token',
+      statusLabel: tokenReady ? 'Ready' : workspaceReady ? 'Pending' : 'Locked',
+      tone: tokenReady ? 'success' : workspaceReady ? 'warning' : 'muted',
+      complete: tokenReady
+    }
+  ];
+}
+
 function buildAdminServiceSummaryStats() {
   const adminState = getAdminState();
   const selectedAccount = getSelectedAdminServiceAccount();
@@ -18218,6 +18292,44 @@ function renderAdminServiceAccountSummary() {
           : 'Step 3 of 3: workspace access is ready, but this worker is still inert until you generate or regenerate an active token.'
         : 'Step 2 of 3: save is complete. Next, grant the workspace this worker should access.'
       : `Step 1 of 3: save the worker${ownerCopy}. Then grant workspace access and generate a token.`;
+  }
+  if (adminServiceSetupChecklist) {
+    adminServiceSetupChecklist.innerHTML = '';
+    buildAdminServiceSetupSteps({
+      selectedAccount,
+      selectedUser,
+      effectiveWorkspaceCount: effectiveWorkspaces.length || selectedSummary.effective_workspace_count,
+      activeTokenCount
+    }).forEach((step, index) => {
+      const row = document.createElement('div');
+      row.className = 'admin-service-setup-step';
+      row.classList.toggle('is-complete', Boolean(step.complete));
+      const marker = document.createElement('div');
+      marker.className = 'admin-service-setup-step-marker';
+      marker.textContent = step.complete ? '✓' : String(index + 1);
+      const content = document.createElement('div');
+      content.className = 'admin-service-setup-step-content';
+      const heading = document.createElement('div');
+      heading.className = 'admin-service-setup-step-heading';
+      const title = document.createElement('div');
+      title.className = 'admin-service-setup-step-title';
+      title.textContent = step.title;
+      const statusChip = createAdminServiceChip(step.statusLabel, step.tone);
+      heading.append(title, statusChip);
+      const description = document.createElement('div');
+      description.className = 'admin-service-setup-step-description';
+      description.textContent = step.description;
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'subtle-button admin-service-setup-step-action';
+      action.textContent = step.actionLabel;
+      action.addEventListener('click', () => {
+        focusAdminServiceSetupTarget(step.key);
+      });
+      content.append(heading, description, action);
+      row.append(marker, content);
+      adminServiceSetupChecklist.appendChild(row);
+    });
   }
 }
 
