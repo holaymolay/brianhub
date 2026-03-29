@@ -535,6 +535,10 @@ const mobileTaskToolsGroup = document.getElementById('mobile-task-tools-group');
 const mobileTaskToolsView = document.getElementById('mobile-task-tools-view');
 const mobileTaskToolsAddSection = document.getElementById('mobile-task-tools-add-section');
 const mobileTaskToolsAddColumn = document.getElementById('mobile-task-tools-add-column');
+const mobileTaskScopeModal = document.getElementById('mobile-task-scope-modal');
+const mobileTaskScopeBackdrop = document.getElementById('mobile-task-scope-backdrop');
+const mobileTaskScopeClose = document.getElementById('mobile-task-scope-close');
+const mobileTaskScopeList = document.getElementById('mobile-task-scope-list');
 const mobileSearchModal = document.getElementById('mobile-search-modal');
 const mobileSearchBackdrop = document.getElementById('mobile-search-backdrop');
 const mobileSearchClose = document.getElementById('mobile-search-close');
@@ -2048,8 +2052,20 @@ mobileTaskToolsClose?.addEventListener('click', () => {
   closeMobileTaskToolsModal();
 });
 
+mobileTaskScopeBackdrop?.addEventListener('click', () => {
+  closeMobileTaskScopeModal();
+});
+
+mobileTaskScopeClose?.addEventListener('click', () => {
+  closeMobileTaskScopeModal();
+});
+
 tasksMobileToolsBtn?.addEventListener('click', () => {
   openMobileTaskToolsModal();
+});
+
+tasksMobileContext?.addEventListener('click', () => {
+  openMobileTaskScopeModal();
 });
 
 mobileTaskToolsSearch?.addEventListener('input', () => {
@@ -4104,6 +4120,7 @@ function openMobileCreateSheet({ mode = 'actions' } = {}) {
   }
   closeMobileTopMenu();
   closeMobileTitleMenu();
+  closeMobileTaskScopeModal();
   closeMobileTaskToolsModal();
   setMobileCreateSheetMode(mode);
   mobileCreateSheet.classList.remove('hidden');
@@ -4153,6 +4170,14 @@ function closeMobileTaskToolsModal() {
   if (!mobileTaskToolsModal) return;
   mobileTaskToolsModal.classList.add('hidden');
   mobileTaskToolsModal.setAttribute('aria-hidden', 'true');
+  syncMobileBottomUiState();
+}
+
+function closeMobileTaskScopeModal() {
+  if (!mobileTaskScopeModal) return;
+  mobileTaskScopeModal.classList.add('hidden');
+  mobileTaskScopeModal.setAttribute('aria-hidden', 'true');
+  tasksMobileContext?.setAttribute('aria-expanded', 'false');
   syncMobileBottomUiState();
 }
 
@@ -4249,6 +4274,7 @@ function openMobileSearchModal() {
   closeMobileTopMenu();
   closeMobileTitleMenu();
   closeMobileCreateSheet();
+  closeMobileTaskScopeModal();
   closeMobileTaskToolsModal();
   closeMobileCalendarsModal();
   mobileSearchModal.classList.remove('hidden');
@@ -4527,11 +4553,80 @@ function syncMobileTaskToolsInputs() {
   }
 }
 
+function getMobileTaskScopeSections() {
+  return [
+    {
+      key: 'views',
+      title: 'Views',
+      options: [
+        { value: 'all', label: 'My tasks' },
+        { value: TASK_FILTER_INBOX, label: 'Inbox' },
+        { value: TASK_FILTER_UNASSIGNED, label: 'Unassigned' }
+      ]
+    },
+    {
+      key: 'lists',
+      title: 'Lists',
+      options: getTaskSidebarLists().map((list) => ({ value: list.id, label: list.name }))
+    },
+    {
+      key: 'projects',
+      title: 'Projects',
+      options: getProjectsForWorkspace()
+        .slice()
+        .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')))
+        .map((project) => ({ value: project.id, label: project.name }))
+    }
+  ].filter((section) => section.options.length > 0);
+}
+
+function renderMobileTaskScopeList() {
+  if (!mobileTaskScopeList) return;
+  mobileTaskScopeList.innerHTML = '';
+  if (!state.workspace) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = 'Select a workspace first.';
+    mobileTaskScopeList.appendChild(note);
+    return;
+  }
+  const sections = getMobileTaskScopeSections();
+  const activeFilter = getActiveTaskFilter() ?? 'all';
+  sections.forEach((section) => {
+    const sectionEl = document.createElement('section');
+    sectionEl.className = 'mobile-task-scope-section';
+    const titleEl = document.createElement('h4');
+    titleEl.className = 'mobile-task-scope-title';
+    titleEl.textContent = section.title;
+    sectionEl.appendChild(titleEl);
+    const listEl = document.createElement('div');
+    listEl.className = 'mobile-task-scope-options';
+    section.options.forEach((option) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `mobile-task-scope-option${option.value === activeFilter ? ' is-active' : ''}`;
+      button.textContent = option.label;
+      button.addEventListener('click', () => {
+        setActiveTaskFilter(option.value);
+        clearActiveWorkflowChecklistInstanceId();
+        setActiveView('tasks');
+        closeMobileTaskScopeModal();
+        scheduleTaskSearchRefresh(true);
+        render();
+      });
+      listEl.appendChild(button);
+    });
+    sectionEl.appendChild(listEl);
+    mobileTaskScopeList.appendChild(sectionEl);
+  });
+}
+
 function openMobileTaskToolsModal() {
   if (!isMobileViewport() || !mobileTaskToolsModal) return;
   closeMobileTopMenu();
   closeMobileTitleMenu();
   closeMobileCreateSheet();
+  closeMobileTaskScopeModal();
   closeMobileSearchModal();
   closeMobileCalendarsModal();
   syncMobileTaskToolsInputs();
@@ -4543,11 +4638,28 @@ function openMobileTaskToolsModal() {
   }, 0);
 }
 
+function openMobileTaskScopeModal() {
+  if (!isMobileViewport() || !mobileTaskScopeModal || !state.workspace) return;
+  if (isWorkflowChecklistViewActive()) return;
+  closeMobileTopMenu();
+  closeMobileTitleMenu();
+  closeMobileCreateSheet();
+  closeMobileTaskToolsModal();
+  closeMobileSearchModal();
+  closeMobileCalendarsModal();
+  renderMobileTaskScopeList();
+  mobileTaskScopeModal.classList.remove('hidden');
+  mobileTaskScopeModal.setAttribute('aria-hidden', 'false');
+  tasksMobileContext?.setAttribute('aria-expanded', 'true');
+  syncMobileBottomUiState();
+}
+
 function openMobileCalendarsModal() {
   if (!mobileCalendarsModal) return;
   closeMobileTopMenu();
   closeMobileTitleMenu();
   closeMobileCreateSheet();
+  closeMobileTaskScopeModal();
   closeMobileTaskToolsModal();
   closeMobileSearchModal();
   syncMobileCalendarsModalInputs();
@@ -13701,6 +13813,7 @@ function render() {
     closeMobileCalendarsModal();
   }
   if (!isMobileViewport() || getActiveView() !== 'tasks') {
+    closeMobileTaskScopeModal();
     closeMobileTaskToolsModal();
   }
   renderView();
@@ -15242,8 +15355,13 @@ function renderTaskFilter() {
   const label = getTaskFilterLabel();
   const checklistViewActive = isWorkflowChecklistViewActive();
   if (tasksMobileContext) {
-    tasksMobileContext.textContent = label;
+    const mobileScopeOpen = !mobileTaskScopeModal?.classList.contains('hidden');
+    tasksMobileContext.textContent = checklistViewActive ? label : `${label} ▾`;
+    tasksMobileContext.disabled = !state.workspace || checklistViewActive;
+    tasksMobileContext.setAttribute('aria-haspopup', checklistViewActive ? 'false' : 'dialog');
+    tasksMobileContext.setAttribute('aria-expanded', checklistViewActive ? 'false' : String(mobileScopeOpen));
   }
+  renderMobileTaskScopeList();
   if (taskFilterSearchInput) {
     taskFilterSearchInput.value = getTaskSearchText();
     taskFilterSearchInput.disabled = checklistViewActive;

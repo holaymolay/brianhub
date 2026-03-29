@@ -12,8 +12,10 @@ test('tasks page exposes a dedicated mobile add button', () => {
 test('tasks page exposes a dedicated mobile tools sheet', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
   assert.match(html, /id="tasks-mobile-tools-btn"/);
-  assert.match(html, /id="tasks-mobile-context"/);
+  assert.match(html, /id="tasks-mobile-context" class="tasks-mobile-context" type="button"/);
   assert.match(html, /id="mobile-task-tools-modal"/);
+  assert.match(html, /id="mobile-task-scope-modal"/);
+  assert.match(html, /id="mobile-task-scope-list"/);
   assert.match(html, /id="mobile-task-tools-filter"/);
   assert.match(html, /id="mobile-task-tools-sort"/);
   assert.match(html, /id="mobile-task-tools-group"/);
@@ -109,6 +111,8 @@ test('mobile navigation exposes organizations as a first-class destination', () 
 
 test('mobile task tools reuse the same task state controls as desktop', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  assert.match(html, /<span>Task scope<\/span>/);
   assert.match(script, /tasksMobileToolsBtn\?\.addEventListener\('click', \(\) => \{\s*openMobileTaskToolsModal\(\);/s);
   assert.match(script, /taskSortSelect\?\.addEventListener\('change', \(\) => \{\s*setTaskSortKey\(taskSortSelect\.value\);/s);
   assert.match(script, /taskGroupSelect\?\.addEventListener\('change', \(\) => \{\s*setTaskGroupMode\(taskGroupSelect\.value\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
@@ -118,6 +122,18 @@ test('mobile task tools reuse the same task state controls as desktop', () => {
   assert.match(script, /mobileTaskToolsGroup\?\.addEventListener\('change', \(\) => \{\s*setTaskGroupMode\(mobileTaskToolsGroup\.value \|\| 'none'\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
   assert.match(script, /mobileTaskToolsView\?\.addEventListener\('change', \(\) => \{\s*setTaskView\(mobileTaskToolsView\.value \|\| 'list'\);\s*queueUserSettingsSave\(\{ immediate: true \}\);/s);
   assert.match(script, /function syncMobileTaskToolsInputs\(\) \{\s*if \(!mobileTaskToolsModal\) return;\s*const checklistViewActive = isWorkflowChecklistViewActive\(\);\s*syncTaskFilterOptionSelect\(mobileTaskToolsFilter, \{ allowFocusPreserve: true \}\);/s);
+});
+
+test('mobile task context opens a direct scope picker for lists and projects', () => {
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(script, /tasksMobileContext\?\.addEventListener\('click', \(\) => \{\s*openMobileTaskScopeModal\(\);/s);
+  assert.match(script, /function getMobileTaskScopeSections\(\) \{\s*return \[\s*\{[\s\S]*title: 'Views'[\s\S]*title: 'Lists'[\s\S]*title: 'Projects'/s);
+  assert.match(script, /function renderMobileTaskScopeList\(\) \{[\s\S]*setActiveTaskFilter\(option\.value\);[\s\S]*closeMobileTaskScopeModal\(\);[\s\S]*scheduleTaskSearchRefresh\(true\);/s);
+  assert.match(script, /function renderTaskFilter\(\) \{[\s\S]*tasksMobileContext\.textContent = checklistViewActive \? label : `\$\{label\} ▾`;/s);
+  assert.match(css, /\.mobile-task-scope-card \{/);
+  assert.match(css, /\.mobile-task-scope-option \{/);
+  assert.match(css, /\.tasks-mobile-context \{[\s\S]*cursor: pointer;/s);
 });
 
 test('task list selection does not override the saved grouping preference', () => {
