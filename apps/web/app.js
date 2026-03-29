@@ -8912,10 +8912,11 @@ async function selectWorkspace(workspace, { preserveView = false } = {}) {
 }
 
 function normalizeWorkspace(workspace) {
+  if (!workspace) return null;
   return {
     ...workspace,
     type: normalizeWorkspaceType(workspace?.type),
-    org_id: workspace.org_id ?? DEFAULT_ORG_ID,
+    org_id: workspace?.org_id ?? DEFAULT_ORG_ID,
     organization_id: workspace.organization_id ?? null,
     archived: Boolean(workspace.archived)
   };
@@ -9447,6 +9448,7 @@ function upsertTask(task) {
 function upsertWorkspace(workspace) {
   state.workspaces = state.workspaces ?? [];
   const normalized = normalizeWorkspace(workspace);
+  if (!normalized?.id) return;
   const index = state.workspaces.findIndex(item => item.id === normalized.id);
   if (index >= 0) {
     state.workspaces[index] = normalized;

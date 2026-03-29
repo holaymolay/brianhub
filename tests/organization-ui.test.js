@@ -60,6 +60,7 @@ test('workspace member flow still supports invites by email and local placeholde
 
 test('organization settings script supports create, membership management, ownership transfer, and opening org surfaces', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  assert.match(script, /function normalizeWorkspace\(workspace\) \{\s*if \(!workspace\) return null;/s);
   assert.match(script, /function getOrganizationSettingsState\(\)/);
   assert.match(script, /function getCurrentWorkspaceAnchorId\(\)/);
   assert.match(script, /function getCurrentWorkspaceAnchor\(\)/);
