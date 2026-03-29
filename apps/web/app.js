@@ -382,6 +382,9 @@ const organizationContextName = document.getElementById('organization-context-na
 const organizationContextMeta = document.getElementById('organization-context-meta');
 const organizationContextManage = document.getElementById('organization-context-manage');
 const organizationContextReturn = document.getElementById('organization-context-return');
+const headerSurfaceIndicator = document.getElementById('header-surface-indicator');
+const headerSurfaceIndicatorName = document.getElementById('header-surface-indicator-name');
+const headerSurfaceIndicatorLeave = document.getElementById('header-surface-indicator-leave');
 const dataTransferPage = document.getElementById('data-transfer-page');
 const auditLogPage = document.getElementById('audit-log-page');
 const automationPage = document.getElementById('automation-page');
@@ -741,6 +744,7 @@ const adminServiceTokenNew = document.getElementById('admin-service-token-new');
 const adminServiceTokenState = document.getElementById('admin-service-token-state');
 const adminServiceTokenEditorTitle = document.getElementById('admin-service-token-editor-title');
 const adminServiceTokenEditorCopy = document.getElementById('admin-service-token-editor-copy');
+const adminServiceTokenEditorMeta = document.getElementById('admin-service-token-editor-meta');
 const adminServiceTokenLabel = document.getElementById('admin-service-token-label');
 const adminServiceTokenExpiresAt = document.getElementById('admin-service-token-expires-at');
 const adminServiceTokenInherit = document.getElementById('admin-service-token-inherit');
@@ -754,6 +758,7 @@ const adminServiceTokenSave = document.getElementById('admin-service-token-save'
 const adminServiceTokenRotate = document.getElementById('admin-service-token-rotate');
 const adminServiceTokenRevoke = document.getElementById('admin-service-token-revoke');
 const adminServiceTokensList = document.getElementById('admin-service-tokens-list');
+const adminServiceTokenListSummary = document.getElementById('admin-service-token-list-summary');
 const adminServiceGrantsStatus = document.getElementById('admin-service-grants-status');
 const adminServiceGrantWorkspace = document.getElementById('admin-service-grant-workspace');
 const adminServiceGrantAdd = document.getElementById('admin-service-grant-add');
@@ -13775,6 +13780,7 @@ function render() {
   renderOrganizationPanel();
   renderOrganizationSidebarList();
   renderOrganizationContextBanner();
+  renderHeaderSurfaceIndicator();
   renderSurfaceContextNotes();
   renderOrganizationsPage();
   renderOrganizationsSettings();
@@ -16837,6 +16843,23 @@ function renderOrganizationContextBanner() {
   }
 }
 
+function renderHeaderSurfaceIndicator() {
+  if (!headerSurfaceIndicator) return;
+  const activeOrganization = getActiveOrganizationRecord();
+  const active = Boolean(activeOrganization?.id);
+  const anchorWorkspace = getCurrentWorkspaceAnchor();
+  headerSurfaceIndicator.classList.toggle('hidden', !active);
+  if (!active) return;
+  if (headerSurfaceIndicatorName) {
+    headerSurfaceIndicatorName.textContent = activeOrganization?.name ?? 'Organization';
+  }
+  if (headerSurfaceIndicatorLeave) {
+    headerSurfaceIndicatorLeave.title = anchorWorkspace?.name
+      ? `Return to ${anchorWorkspace.name}`
+      : 'Leave organization view';
+  }
+}
+
 function renderSurfaceContextNotes() {
   const baseLabel = getCurrentSurfaceContextLabel();
   const contextText = baseLabel ? `Working in ${baseLabel}` : '';
@@ -17893,6 +17916,35 @@ function setAdminServiceTokenState(message, tone = 'info') {
   }
 }
 
+function setAdminServiceTokenListSummary(message = '') {
+  if (!adminServiceTokenListSummary) return;
+  const safeMessage = String(message ?? '').trim();
+  adminServiceTokenListSummary.textContent = safeMessage;
+  adminServiceTokenListSummary.classList.toggle('hidden', !safeMessage);
+}
+
+function setAdminServiceTokenEditorMeta(message = '') {
+  if (!adminServiceTokenEditorMeta) return;
+  const safeMessage = String(message ?? '').trim();
+  adminServiceTokenEditorMeta.textContent = safeMessage;
+  adminServiceTokenEditorMeta.classList.toggle('hidden', !safeMessage);
+}
+
+function selectAdminServiceToken(tokenId, { requireConfirm = true } = {}) {
+  const adminState = getAdminState();
+  const nextId = String(tokenId ?? '').trim();
+  if (nextId === adminState.selectedServiceAccountTokenId) return true;
+  if (requireConfirm && !confirmAbandonPendingAdminServiceTokenReveal()) {
+    return false;
+  }
+  adminState.selectedServiceAccountTokenId = nextId;
+  setAdminServiceTokenReveal('');
+  renderAdminServiceAccountTokensList();
+  renderAdminServiceTokenEditor();
+  renderAdminServiceAccountSummary();
+  return true;
+}
+
 function buildAdminServiceTokenPayload() {
   const label = String(adminServiceTokenLabel?.value ?? '').trim();
   if (!label) {
@@ -17940,6 +17992,31 @@ function formatApiTokenStatus(token) {
     if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) return 'expired';
   }
   return 'active';
+}
+
+function formatApiTokenTone(status) {
+  switch (String(status ?? '').trim()) {
+    case 'active':
+      return 'success';
+    case 'expired':
+      return 'warning';
+    case 'revoked':
+      return 'danger';
+    default:
+      return 'muted';
+  }
+}
+
+function formatApiTokenStatusLabel(token) {
+  const status = formatApiTokenStatus(token);
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function getServiceWorkerTokenAccessLabel(token) {
+  if (!token) return 'Unknown access';
+  if (token.permission_constraints === null) return 'Worker permissions';
+  const count = Array.isArray(token.permission_constraints) ? token.permission_constraints.length : 0;
+  return `${count} scoped permission${count === 1 ? '' : 's'}`;
 }
 
 function formatServiceAccountActivityTitle(event) {
@@ -18639,6 +18716,7 @@ function renderAdminServiceAccountTokensList() {
   const adminState = getAdminState();
   const selectedAccount = getSelectedAdminServiceAccount();
   adminServiceTokensList.innerHTML = '';
+  setAdminServiceTokenListSummary('');
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
@@ -18674,17 +18752,28 @@ function renderAdminServiceAccountTokensList() {
     adminServiceTokensList.appendChild(note);
     return;
   }
+  const tokens = adminState.serviceAccountTokens;
+  const activeCount = tokens.filter((token) => formatApiTokenStatus(token) === 'active').length;
+  const expiredCount = tokens.filter((token) => formatApiTokenStatus(token) === 'expired').length;
+  const revokedCount = tokens.filter((token) => formatApiTokenStatus(token) === 'revoked').length;
+  const latestUse = tokens
+    .map((token) => token?.last_used_at)
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(String(right)) - Date.parse(String(left)))[0] ?? null;
+  const summaryParts = [`${tokens.length} total`, `${activeCount} active`];
+  if (expiredCount) summaryParts.push(`${expiredCount} expired`);
+  if (revokedCount) summaryParts.push(`${revokedCount} revoked`);
+  if (latestUse) summaryParts.push(`last used ${formatNoticeDateTimeDisplay(latestUse)}`);
+  setAdminServiceTokenListSummary(summaryParts.join(' • '));
   adminState.serviceAccountTokens.forEach((token) => {
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'workspace-row notice-row admin-user-row';
+    const row = document.createElement('div');
+    row.className = 'workspace-row notice-row admin-user-row admin-service-token-row';
     row.classList.toggle('active', token.id === adminState.selectedServiceAccountTokenId);
-    row.addEventListener('click', () => {
-      if (!confirmAbandonPendingAdminServiceTokenReveal()) return;
-      adminState.selectedServiceAccountTokenId = token.id;
-      setAdminServiceTokenReveal('');
-      renderAdminServiceAccountTokensList();
-      renderAdminServiceTokenEditor();
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'workspace-select admin-service-token-select';
+    selectBtn.addEventListener('click', () => {
+      selectAdminServiceToken(token.id);
     });
     const info = document.createElement('div');
     info.className = 'notice-row-info';
@@ -18693,9 +18782,7 @@ function renderAdminServiceAccountTokensList() {
     title.textContent = token.label || `Token ${token.token_public_id}`;
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
-    const metaParts = [formatApiTokenStatus(token), token.token_public_id];
-    if (token.permission_constraints === null) metaParts.push('matches worker permissions');
-    else metaParts.push(`${token.permission_constraints.length} token constraint${token.permission_constraints.length === 1 ? '' : 's'}`);
+    const metaParts = [token.token_public_id];
     if (token.created_at) metaParts.push(`created ${formatNoticeDateTimeDisplay(token.created_at)}`);
     if (token.expires_at) metaParts.push(`expires ${formatNoticeDateTimeDisplay(token.expires_at)}`);
     if (token.last_used_at) metaParts.push(`last used ${formatNoticeDateTimeDisplay(token.last_used_at)}`);
@@ -18703,7 +18790,51 @@ function renderAdminServiceAccountTokensList() {
     meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
-    row.appendChild(info);
+    const badges = document.createElement('div');
+    badges.className = 'admin-service-chip-row admin-service-token-badges';
+    badges.appendChild(createAdminServiceChip(formatApiTokenStatusLabel(token), formatApiTokenTone(formatApiTokenStatus(token))));
+    badges.appendChild(createAdminServiceChip(getServiceWorkerTokenAccessLabel(token), token.permission_constraints === null ? 'muted' : 'success'));
+    if (token.expires_at && formatApiTokenStatus(token) === 'active') {
+      badges.appendChild(createAdminServiceChip('Expiring', 'warning'));
+    }
+    selectBtn.appendChild(info);
+    selectBtn.appendChild(badges);
+    row.appendChild(selectBtn);
+    const actions = document.createElement('div');
+    actions.className = 'admin-service-row-actions';
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'subtle-button';
+    editBtn.textContent = token.id === adminState.selectedServiceAccountTokenId ? 'Selected' : 'Edit';
+    editBtn.disabled = token.id === adminState.selectedServiceAccountTokenId;
+    editBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      selectAdminServiceToken(token.id);
+    });
+    actions.appendChild(editBtn);
+    const rotateBtn = document.createElement('button');
+    rotateBtn.type = 'button';
+    rotateBtn.className = 'subtle-button';
+    rotateBtn.textContent = 'Regenerate';
+    rotateBtn.disabled = Boolean(token.revoked_at);
+    rotateBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      if (!selectAdminServiceToken(token.id)) return;
+      await rotateAdminSelectedServiceToken();
+    });
+    actions.appendChild(rotateBtn);
+    const revokeBtn = document.createElement('button');
+    revokeBtn.type = 'button';
+    revokeBtn.className = 'subtle-button';
+    revokeBtn.textContent = 'Revoke';
+    revokeBtn.disabled = Boolean(token.revoked_at);
+    revokeBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      if (!selectAdminServiceToken(token.id)) return;
+      await revokeAdminSelectedServiceToken();
+    });
+    actions.appendChild(revokeBtn);
+    row.appendChild(actions);
     adminServiceTokensList.appendChild(row);
   });
 }
@@ -18715,6 +18846,7 @@ function renderAdminServiceTokenEditor() {
   const adminState = getAdminState();
   const tokens = adminState.serviceAccountTokens ?? [];
   const pendingReveal = hasPendingAdminServiceTokenReveal();
+  setAdminServiceTokenEditorMeta('');
   if (selectedToken) {
     if (adminServiceTokenLabel && document.activeElement !== adminServiceTokenLabel) {
       adminServiceTokenLabel.value = selectedToken.label ?? '';
@@ -18757,6 +18889,16 @@ function renderAdminServiceTokenEditor() {
     adminServiceTokenEditorCopy.textContent = selectedToken
       ? 'You can change the metadata, narrow permissions, regenerate the secret, or revoke the token. BrianHub never stores the raw token in a recoverable form.'
       : 'Name the token, choose expiration and permissions, then copy the raw secret once. Existing tokens only show metadata after issuance.';
+  }
+  if (selectedToken) {
+    const metaParts = [
+      `${formatApiTokenStatusLabel(selectedToken)} • ${selectedToken.token_public_id}`,
+      getServiceWorkerTokenAccessLabel(selectedToken)
+    ];
+    if (selectedToken.last_used_at) metaParts.push(`last used ${formatNoticeDateTimeDisplay(selectedToken.last_used_at)}`);
+    if (selectedToken.expires_at) metaParts.push(`expires ${formatNoticeDateTimeDisplay(selectedToken.expires_at)}`);
+    if (selectedToken.revoked_at) metaParts.push(`revoked ${formatNoticeDateTimeDisplay(selectedToken.revoked_at)}`);
+    setAdminServiceTokenEditorMeta(metaParts.join(' • '));
   }
   if (!selectedAccount) {
     setAdminServiceTokenState('Save the worker first. Tokens are issued under a service worker, not as standalone credentials.', 'muted');
@@ -30170,6 +30312,9 @@ adminServiceActivityRefresh?.addEventListener('click', () => {
   void refreshAdminServiceAccountActivity();
 });
 organizationContextReturn?.addEventListener('click', () => {
+  void closeOrganizationSurface();
+});
+headerSurfaceIndicatorLeave?.addEventListener('click', () => {
   void closeOrganizationSurface();
 });
 organizationContextManage?.addEventListener('click', () => {

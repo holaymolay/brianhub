@@ -34,6 +34,9 @@ test('settings expose workspace collaboration controls and in-settings organizat
   assert.match(html, /id="organization-context-meta"/);
   assert.match(html, /id="organization-context-manage"/);
   assert.match(html, /id="organization-context-return"/);
+  assert.match(html, /id="header-surface-indicator"/);
+  assert.match(html, /id="header-surface-indicator-name"/);
+  assert.match(html, /id="header-surface-indicator-leave"/);
   assert.match(html, /id="projects-surface-context"/);
   assert.match(html, /id="notices-surface-context"/);
   assert.match(html, /id="scheduling-surface-context"/);
@@ -81,6 +84,7 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /async function refreshOrganizations\(\{ preserveSelection = true \} = \{\}\)/);
   assert.match(script, /async function refreshSelectedOrganizationMembers\(orgId = getSelectedSettingsOrganization\(\)\?\.id \?\? ''\)/);
   assert.match(script, /function renderOrganizationContextBanner\(\)/);
+  assert.match(script, /function renderHeaderSurfaceIndicator\(\)/);
   assert.match(script, /function renderSurfaceContextNotes\(\)/);
   assert.match(script, /document\.body\.classList\.toggle\('organization-surface-active', active\);/);
   assert.match(script, /function renderOrganizationsPage\(\)/);
@@ -113,6 +117,7 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /manageBtn\.title = canManage[\s\S]*'Manage organization members, roles, and ownership\.'[\s\S]*'View organization settings and membership\.';/s);
   assert.match(script, /badge\.className = `workspace-badge admin-service-readiness-badge is-\$\{readiness\.tone\}`;/);
   assert.match(script, /organizationContextReturn\?\.addEventListener\('click', \(\) => \{\s*void closeOrganizationSurface\(\);/s);
+  assert.match(script, /headerSurfaceIndicatorLeave\?\.addEventListener\('click', \(\) => \{\s*void closeOrganizationSurface\(\);/s);
   assert.match(script, /organizationContextManage\?\.addEventListener\('click', \(\) => \{\s*const activeOrganizationId = getActiveOrganizationId\(\);[\s\S]*openSettings\(\);/s);
 });
 

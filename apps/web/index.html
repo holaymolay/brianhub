@@ -44,6 +44,11 @@
           />
           <div id="global-search-menu" class="global-search-menu hidden"></div>
         </div>
+        <div id="header-surface-indicator" class="header-surface-indicator hidden" aria-live="polite">
+          <span class="header-surface-indicator-kicker">In</span>
+          <span id="header-surface-indicator-name" class="header-surface-indicator-name">Organization</span>
+          <button id="header-surface-indicator-leave" class="subtle-button" type="button">Leave</button>
+        </div>
       </div>
       <div class="sync-controls">
         <span id="sync-offline-notice" class="hidden" aria-live="polite">OFFLINE</span>
@@ -866,6 +871,7 @@
 	                        <div class="admin-service-list-panel">
 	                          <div class="admin-service-list-heading">Existing tokens</div>
 	                          <div class="sidebar-note">Existing tokens only show metadata. Raw secrets disappear after the one-time issuance step.</div>
+	                          <div id="admin-service-token-list-summary" class="sidebar-note"></div>
 	                          <div id="admin-service-tokens-list" class="workspace-list"></div>
 	                        </div>
 	                        <div class="admin-service-form-stack admin-service-token-editor">
@@ -873,6 +879,7 @@
 	                            <div>
 	                              <h5 id="admin-service-token-editor-title">Generate a token</h5>
 	                              <p id="admin-service-token-editor-copy">Name the token, choose expiration and permissions, then copy the raw secret once.</p>
+	                              <div id="admin-service-token-editor-meta" class="sidebar-note hidden"></div>
 	                            </div>
 	                          </div>
 	                          <label>

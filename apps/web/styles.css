@@ -147,7 +147,9 @@ body.mobile-bottom-ui-hidden {
 .header-search {
   flex: 1;
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 0.9rem;
   min-width: 0;
   padding: 0 1rem;
 }
@@ -175,6 +177,45 @@ body.mobile-bottom-ui-hidden {
 .global-search-input:focus-visible {
   outline: 2px solid rgba(84, 154, 255, 0.72);
   outline-offset: 1px;
+}
+
+.header-surface-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: min(320px, 46%);
+  padding: 0.28rem 0.35rem 0.28rem 0.72rem;
+  border: 1px solid rgba(87, 143, 230, 0.26);
+  border-radius: 999px;
+  background: rgba(17, 31, 52, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(90, 146, 226, 0.08);
+}
+
+.header-surface-indicator-kicker {
+  flex: 0 0 auto;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8aa2c5;
+}
+
+.header-surface-indicator-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e0ebff;
+}
+
+.header-surface-indicator .subtle-button {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.18rem 0.52rem;
+  white-space: nowrap;
 }
 
 .global-search-menu {
@@ -2119,6 +2160,12 @@ body.api-help-body {
   background: rgba(19, 53, 34, 0.52);
 }
 
+.admin-service-chip.is-warning {
+  border-color: rgba(226, 182, 101, 0.32);
+  color: #ffe7b9;
+  background: rgba(79, 52, 11, 0.46);
+}
+
 .admin-service-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2358,12 +2405,47 @@ body.api-help-body {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  flex-wrap: wrap;
   margin-left: auto;
+  justify-content: flex-end;
 }
 
 .admin-service-row-actions .subtle-button {
   font-size: 0.72rem;
   padding: 0.2rem 0.45rem;
+}
+
+.admin-service-token-row {
+  align-items: stretch;
+  gap: 0.6rem;
+}
+
+.admin-service-token-select {
+  display: grid;
+  gap: 0.34rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-service-token-select:focus-visible {
+  outline: 2px solid rgba(84, 154, 255, 0.72);
+  outline-offset: 3px;
+  border-radius: 0.5rem;
+}
+
+.admin-service-token-badges {
+  gap: 0.32rem;
+}
+
+.admin-service-token-badges .admin-service-chip {
+  font-size: 0.67rem;
+  padding: 0.16rem 0.42rem;
 }
 
 #admin-service-token-reveal-wrap {
