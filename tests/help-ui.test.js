@@ -72,6 +72,7 @@ test('admin console exposes service-worker, token, and workspace-grant controls'
   assert.match(html, /id="admin-invites-summary"/);
   assert.match(html, /id="admin-users-search"/);
   assert.match(html, /id="admin-users-summary"/);
+  assert.match(html, /id="admin-user-summary"/);
   assert.match(html, /<h3>Service workers<\/h3>/);
   assert.match(html, /id="admin-service-accounts-search"/);
   assert.match(html, /Search workers by name, alias, or description/);
@@ -130,8 +131,11 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /function setAdminServiceTokenEditorMeta/);
   assert.match(appScript, /function setAdminInvitesSummary\(message = ''\)/);
   assert.match(appScript, /function setAdminUsersSummary\(message = ''\)/);
+  assert.match(appScript, /function setAdminUserSummary\(message = ''\)/);
   assert.match(appScript, /function setAdminServiceAccountsSummary\(message = ''\)/);
   assert.match(appScript, /function setAdminServiceActivitySummary\(message = ''\)/);
+  assert.match(appScript, /function getAdminUserServiceAccounts\(user\)/);
+  assert.match(appScript, /function getAdminUserServiceWorkerSummary\(user\)/);
   assert.match(appScript, /function getAdminUsersSearchQuery\(\)/);
   assert.match(appScript, /function getFilteredAdminUsers\(\)/);
   assert.match(appScript, /function getAdminServiceAccountsSearchQuery\(\)/);
@@ -206,6 +210,7 @@ test('admin console auto-selects existing service accounts and surfaces summary 
   assert.match(appScript, /No users match “\$\{query\}”\./);
   assert.match(appScript, /setAdminInvitesSummary\(summaryParts\.join\(' • '\)\);/);
   assert.match(appScript, /setAdminUsersSummary\(summaryParts\.join\(' • '\)\);/);
+  assert.match(appScript, /setAdminUserSummary\(summaryParts\.join\(' • '\)\);/);
   assert.match(appScript, /setAdminServiceAccountsSummary\(summaryParts\.join\(' • '\)\);/);
   assert.match(appScript, /setAdminServiceGrantsSummary\(summaryParts\.join\(' • '\)\);/);
   assert.match(appScript, /setAdminServiceActivitySummary\(summaryParts\.join\(' • '\)\);/);
@@ -217,6 +222,8 @@ test('admin console auto-selects existing service accounts and surfaces summary 
   assert.match(appScript, /option\.textContent = formatAdminServiceWorkspaceOptionLabel\(workspace\);/);
   assert.match(appScript, /`\$\{workspace\.name \|\| workspace\.id\} · \$\{getAdminServiceWorkspaceScopeLabel\(workspace, \{ short: true \}\)\}`/);
   assert.match(appScript, /badges\.appendChild\(createAdminServiceChip\(effective \? 'Effective now' : 'Inactive', effective \? 'success' : 'warning'\)\);/);
+  assert.match(appScript, /metaParts\.push\(\s*workerSummary\.total/);
+  assert.match(appScript, /renderAdminUsersList\(\);\s*renderAdminUserEditor\(\);\s*renderAdminServiceAccountsList\(\);/);
   assert.match(appScript, /const tokens = \[\.\.\.adminState\.serviceAccountTokens\]\.sort\(compareAdminServiceTokens\);/);
   assert.match(appScript, /badges\.appendChild\(createAdminServiceChip\('Never used', 'muted'\)\);/);
   assert.match(appScript, /badges\.appendChild\(createAdminServiceChip\('Superseded', 'warning'\)\);/);

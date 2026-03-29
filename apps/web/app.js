@@ -714,6 +714,7 @@ const adminUsersSummary = document.getElementById('admin-users-summary');
 const adminUsersList = document.getElementById('admin-users-list');
 const adminUsersRefresh = document.getElementById('admin-users-refresh');
 const adminUserSelect = document.getElementById('admin-user-select');
+const adminUserSummary = document.getElementById('admin-user-summary');
 const adminUserName = document.getElementById('admin-user-name');
 const adminUserEmail = document.getElementById('admin-user-email');
 const adminUserRole = document.getElementById('admin-user-role');
@@ -17681,6 +17682,33 @@ function getSelectedAdminUser() {
   return adminState.users.find((user) => user.id === adminState.selectedUserId) ?? null;
 }
 
+function getAdminUserServiceAccounts(user) {
+  const safeUserId = String(user?.id ?? '').trim();
+  if (!safeUserId) return [];
+  return (getAdminState().serviceAccounts ?? []).filter((account) => String(account?.created_by_user_id ?? '').trim() === safeUserId);
+}
+
+function getAdminUserServiceWorkerSummary(user) {
+  const accounts = getAdminUserServiceAccounts(user);
+  const summary = {
+    total: accounts.length,
+    ready: 0,
+    needsSetup: 0,
+    needsReview: 0,
+    disabled: 0
+  };
+  accounts.forEach((account) => {
+    const readiness = getServiceWorkerReadinessState(account).label;
+    if (readiness === 'Ready') summary.ready += 1;
+    else if (readiness === 'Disabled') summary.disabled += 1;
+    else summary.needsSetup += 1;
+    if (getServiceWorkerAttentionState(account)) {
+      summary.needsReview += 1;
+    }
+  });
+  return summary;
+}
+
 function getAdminUsersSearchQuery() {
   return String(getAdminState().usersSearchQuery ?? '').trim().toLowerCase();
 }
@@ -18764,6 +18792,13 @@ function setAdminUsersSummary(message = '') {
   adminUsersSummary.classList.toggle('hidden', !safeMessage);
 }
 
+function setAdminUserSummary(message = '') {
+  if (!adminUserSummary) return;
+  const safeMessage = String(message ?? '').trim();
+  adminUserSummary.textContent = safeMessage;
+  adminUserSummary.classList.toggle('hidden', !safeMessage);
+}
+
 function setAdminServiceAccountsSummary(message = '') {
   if (!adminServiceAccountsSummary) return;
   const safeMessage = String(message ?? '').trim();
@@ -18938,6 +18973,7 @@ function renderAdminUsersList() {
     return;
   }
   filteredUsers.forEach((user) => {
+    const workerSummary = getAdminUserServiceWorkerSummary(user);
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'workspace-row notice-row admin-user-row';
@@ -18971,10 +19007,40 @@ function renderAdminUsersList() {
     meta.className = 'notice-row-meta';
     const roleLabel = user.is_owner ? 'owner' : (user.org_role ?? 'member');
     const stateLabel = Number(user.archived) ? 'disabled' : 'active';
-    meta.textContent = `${user.email} • ${roleLabel} • ${stateLabel}`;
+    const metaParts = [`${user.email} • ${roleLabel} • ${stateLabel}`];
+    if (adminState.serviceAccountsLoaded) {
+      metaParts.push(
+        workerSummary.total
+          ? `${workerSummary.total} worker${workerSummary.total === 1 ? '' : 's'}`
+          : 'no workers'
+      );
+    }
+    meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
     row.appendChild(info);
+    if (adminState.serviceAccountsLoaded) {
+      const badges = document.createElement('div');
+      badges.className = 'admin-service-chip-row';
+      if (workerSummary.total) {
+        badges.appendChild(createAdminServiceChip(`${workerSummary.total} worker${workerSummary.total === 1 ? '' : 's'}`, workerSummary.ready ? 'success' : 'muted'));
+      }
+      if (workerSummary.ready) {
+        badges.appendChild(createAdminServiceChip(`${workerSummary.ready} ready`, 'success'));
+      }
+      if (workerSummary.needsSetup) {
+        badges.appendChild(createAdminServiceChip(`${workerSummary.needsSetup} setup`, 'warning'));
+      }
+      if (workerSummary.needsReview) {
+        badges.appendChild(createAdminServiceChip(`${workerSummary.needsReview} review`, 'warning'));
+      }
+      if (workerSummary.disabled) {
+        badges.appendChild(createAdminServiceChip(`${workerSummary.disabled} disabled`, 'danger'));
+      }
+      if (badges.children.length) {
+        row.appendChild(badges);
+      }
+    }
     adminUsersList.appendChild(row);
   });
 }
@@ -19002,6 +19068,7 @@ function renderAdminUserEditor() {
   }
 
   const selected = getSelectedAdminUser();
+  const selectedWorkerSummary = getAdminUserServiceWorkerSummary(selected);
   const ownerEmail = normalizeActorEmail(adminState.ownerEmail || getCurrentOwnerEmail());
   const isOwnerActor = isCurrentActorOwnerSuperAdmin();
   const canEditSelected = Boolean(selected);
@@ -19030,6 +19097,25 @@ function renderAdminUserEditor() {
     adminUserSettings.value = selected
       ? JSON.stringify(selected.settings ?? {}, null, 2)
       : '{}';
+  }
+  if (selected) {
+    const summaryParts = [
+      selected.is_owner ? 'Owner account' : `${selected.org_role ?? 'member'} account`,
+      Number(selected.archived) ? 'disabled' : 'active'
+    ];
+    if (adminState.serviceAccountsLoaded) {
+      summaryParts.push(
+        selectedWorkerSummary.total
+          ? `${selectedWorkerSummary.total} worker${selectedWorkerSummary.total === 1 ? '' : 's'}`
+          : 'no workers'
+      );
+      if (selectedWorkerSummary.ready) summaryParts.push(`${selectedWorkerSummary.ready} ready`);
+      if (selectedWorkerSummary.needsSetup) summaryParts.push(`${selectedWorkerSummary.needsSetup} need setup`);
+      if (selectedWorkerSummary.needsReview) summaryParts.push(`${selectedWorkerSummary.needsReview} need review`);
+    }
+    setAdminUserSummary(summaryParts.join(' • '));
+  } else {
+    setAdminUserSummary('');
   }
   if (adminUserPassword) {
     adminUserPassword.disabled = !canEditSelected;
@@ -20000,6 +20086,8 @@ async function refreshAdminServiceAccounts({ preferredServiceAccountId = null } 
   } finally {
     adminState.serviceAccountsLoading = false;
     adminState.serviceAccountsLoaded = true;
+    renderAdminUsersList();
+    renderAdminUserEditor();
     renderAdminServiceAccountsList();
     renderAdminServiceAccountEditor();
   }
