@@ -15791,6 +15791,8 @@ function clearWorkspaceDomainData({
     taskEditorSwapTimer = null;
   }
   taskEditor?.classList.remove('is-open');
+  document.body.classList.remove('task-editor-open');
+  document.body.classList.remove('task-modal-open');
   taskEditorScrollbar?.classList.add('hidden');
   activeTaskId = null;
   const cleared = prepareLocalDataForStorage({
@@ -15821,6 +15823,11 @@ function clearWorkspaceDomainData({
   if (persist) {
     persistLocalData();
   }
+}
+
+function setTaskEditorOpen(open) {
+  taskEditor?.classList.toggle('is-open', open);
+  document.body.classList.toggle('task-editor-open', open);
 }
 
 async function hydrateAuthSession() {
@@ -26673,11 +26680,11 @@ function openTaskEditor(taskId) {
     }
     void performTaskEditorAutosave({ force: true, taskId: activeTaskId });
     if (taskEditorSwapTimer) clearTimeout(taskEditorSwapTimer);
-    taskEditor.classList.remove('is-open');
+    setTaskEditorOpen(false);
     taskEditorSwapTimer = setTimeout(() => {
       activeTaskId = taskId;
       populateTaskEditor(task);
-      taskEditor.classList.add('is-open');
+      setTaskEditorOpen(true);
       taskEditorSwapTimer = null;
     }, 220);
     return;
@@ -26688,7 +26695,7 @@ function openTaskEditor(taskId) {
   }
   activeTaskId = taskId;
   populateTaskEditor(task);
-  taskEditor.classList.add('is-open');
+  setTaskEditorOpen(true);
   updateTaskEditorScrollbar();
 }
 
@@ -26700,7 +26707,7 @@ function closeTaskEditor() {
   if (activeTaskId) {
     void performTaskEditorAutosave({ force: true, taskId: activeTaskId });
   }
-  taskEditor.classList.remove('is-open');
+  setTaskEditorOpen(false);
   taskEditorScrollbar?.classList.add('hidden');
   if (taskEditorSwapTimer) {
     clearTimeout(taskEditorSwapTimer);
@@ -28373,11 +28380,13 @@ function openTaskModal(defaults = {}) {
   const nextUnit = taskModalDefaults.recurrence_unit ?? 'month';
   setRecurrenceState('modal', nextInterval, nextUnit);
   taskModal.classList.remove('hidden');
+  document.body.classList.add('task-modal-open');
   modalTitle.focus();
 }
 
 function closeTaskModal() {
   taskModal.classList.add('hidden');
+  document.body.classList.remove('task-modal-open');
   taskModalDefaults = {};
   setRecurrenceState('modal', null, 'month');
 }

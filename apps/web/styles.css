@@ -5662,6 +5662,8 @@ button:hover { opacity: 0.9; }
 .task-editor-body {
   flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 0 1.5rem 1.5rem;
   padding-right: calc(1.5rem + var(--editor-scrollbar-width));
   scrollbar-width: none;
@@ -6273,6 +6275,19 @@ button:hover { opacity: 0.9; }
   z-index: 220;
 }
 
+body.task-modal-open {
+  overflow: hidden;
+}
+
+body.task-modal-open .mobile-nav,
+body.task-editor-open .mobile-nav {
+  display: none !important;
+}
+
+body.task-editor-open.mobile-tasks-view #task-tree {
+  overflow: hidden;
+}
+
 .hidden {
   display: none;
 }
@@ -6379,9 +6394,19 @@ body.auth-gated #auth-cancel-invite {
 #task-modal .modal-card {
   width: min(720px, 94vw);
   max-height: calc(100dvh - 2rem);
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  overscroll-behavior: contain;
+}
+
+#task-modal {
+  padding:
+    max(0.75rem, env(safe-area-inset-top, 0px))
+    0.65rem
+    max(0.75rem, env(safe-area-inset-bottom, 0px));
+  overflow: auto;
   overscroll-behavior: contain;
 }
 
@@ -6470,6 +6495,7 @@ body.auth-gated #auth-cancel-invite {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding-right: 0.15rem;
 }
 
@@ -6477,6 +6503,7 @@ body.auth-gated #auth-cancel-invite {
   margin-top: 0;
   position: sticky;
   bottom: 0;
+  z-index: 1;
   padding-top: 0.75rem;
   padding-bottom: calc(0.1rem + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(180deg, rgba(19, 24, 33, 0) 0%, var(--panel) 34%);
@@ -7259,6 +7286,25 @@ body.auth-gated #auth-cancel-invite {
     width: 100vw;
     max-width: 100vw;
     --editor-scrollbar-width: 0px;
+  }
+
+  body.task-editor-open .task-editor {
+    height: 100dvh;
+    padding-bottom: max(0.65rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .task-editor-body {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .task-editor-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: 0;
+    padding-top: 0.75rem;
+    padding-bottom: calc(0.15rem + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(180deg, rgba(26, 31, 39, 0) 0%, var(--panel) 34%);
   }
 
   .task-editor-schedule-row {

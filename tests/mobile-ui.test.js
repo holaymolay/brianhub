@@ -65,6 +65,19 @@ test('task modal keeps the action row reachable on mobile', () => {
   assert.match(css, /#task-modal-form \.modal-actions \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
 });
 
+test('mobile task editor owns scroll and hides the footer nav while open', () => {
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(script, /function setTaskEditorOpen\(open\) \{\s*taskEditor\?\.classList\.toggle\('is-open', open\);\s*document\.body\.classList\.toggle\('task-editor-open', open\);\s*\}/s);
+  assert.match(script, /function openTaskEditor\(taskId\) \{[\s\S]*setTaskEditorOpen\(true\);[\s\S]*updateTaskEditorScrollbar\(\);/s);
+  assert.match(script, /function closeTaskEditor\(\) \{[\s\S]*setTaskEditorOpen\(false\);/s);
+  assert.match(css, /body\.task-editor-open \.mobile-nav \{[\s\S]*display: none !important;/s);
+  assert.match(css, /body\.task-editor-open\.mobile-tasks-view #task-tree \{[\s\S]*overflow: hidden;/s);
+  assert.match(css, /\.task-editor-body \{[\s\S]*overflow-y: auto;[\s\S]*overscroll-behavior: contain;[\s\S]*-webkit-overflow-scrolling: touch;/s);
+  assert.match(css, /body\.task-editor-open \.task-editor \{[\s\S]*height: 100dvh;/s);
+  assert.match(css, /\.task-editor-actions \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/s);
+});
+
 test('mobile task tools reuse the same task state controls as desktop', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /tasksMobileToolsBtn\?\.addEventListener\('click', \(\) => \{\s*openMobileTaskToolsModal\(\);/s);
