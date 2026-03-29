@@ -887,8 +887,9 @@
 	                      </div>
 	                      <div id="admin-service-token-reveal-wrap" class="admin-service-token-reveal hidden">
 	                        <div class="admin-service-token-reveal-copy">
+                            <div class="admin-service-token-reveal-kicker">Shown once</div>
 	                          <div class="setting-label">Copy this raw token now</div>
-	                          <div class="sidebar-note">BrianHub will not show this secret again. Copy it before leaving this page, switching workers, or selecting a different token.</div>
+	                          <div class="sidebar-note">BrianHub never stores this secret in recoverable form. Copy it before leaving this page, switching workers, or selecting a different token.</div>
 	                        </div>
 	                        <input id="admin-service-token-reveal" class="setting-input admin-invite-input" type="text" readonly placeholder="New token is shown once here" />
 	                        <div class="admin-service-token-reveal-actions">
@@ -913,6 +914,12 @@
                               </select>
                             </div>
 	                          <div id="admin-service-token-list-summary" class="sidebar-note"></div>
+                            <div id="admin-service-token-table-head" class="admin-service-token-table-head hidden" aria-hidden="true">
+                              <span>Token</span>
+                              <span>Access</span>
+                              <span>Usage</span>
+                              <span>Actions</span>
+                            </div>
 	                          <div id="admin-service-tokens-list" class="workspace-list"></div>
 	                        </div>
 	                        <div class="admin-service-form-stack admin-service-token-editor">
@@ -956,6 +963,20 @@
 	                        </div>
 	                      </div>
 	                    </div>
+	                    <div class="settings-section admin-service-card admin-service-card-span2">
+	                      <div class="admin-service-section-head">
+	                        <div>
+	                          <h4>Activity</h4>
+	                          <p>Lifecycle changes and recent bearer-token requests for the selected worker.</p>
+	                        </div>
+	                        <button id="admin-service-activity-refresh" class="subtle-button" type="button">Refresh</button>
+	                      </div>
+	                      <div id="admin-service-activity-status" class="sidebar-note"></div>
+                        <div id="admin-service-activity-summary" class="sidebar-note admin-console-summary"></div>
+                        <div id="admin-service-activity-filters" class="admin-service-token-mode admin-service-activity-filters" role="group" aria-label="Activity filter"></div>
+                        <div id="admin-service-activity-highlights" class="admin-service-activity-highlights"></div>
+	                      <div id="admin-service-activity-list" class="workspace-list"></div>
+	                    </div>
 	                    <div class="settings-section admin-service-card">
 	                      <div class="admin-service-section-head">
 	                        <div>
@@ -981,23 +1002,15 @@
 	                        </div>
 	                        <div class="admin-service-list-panel">
 	                          <div class="admin-service-list-heading">Granted workspaces</div>
+                            <div id="admin-service-grants-table-head" class="admin-service-grants-table-head hidden" aria-hidden="true">
+                              <span>Workspace</span>
+                              <span>Scope</span>
+                              <span>Status</span>
+                              <span>Actions</span>
+                            </div>
 	                          <div id="admin-service-grants-list" class="workspace-list"></div>
 	                        </div>
 	                      </div>
-	                    </div>
-	                    <div class="settings-section admin-service-card">
-	                      <div class="admin-service-section-head">
-	                        <div>
-	                          <h4>Activity</h4>
-	                          <p>Lifecycle changes and recent bearer-token requests for the selected worker.</p>
-	                        </div>
-	                        <button id="admin-service-activity-refresh" class="subtle-button" type="button">Refresh</button>
-	                      </div>
-	                      <div id="admin-service-activity-status" class="sidebar-note"></div>
-                        <div id="admin-service-activity-summary" class="sidebar-note admin-console-summary"></div>
-                        <div id="admin-service-activity-filters" class="admin-service-token-mode admin-service-activity-filters" role="group" aria-label="Activity filter"></div>
-                        <div id="admin-service-activity-highlights" class="admin-service-activity-highlights"></div>
-	                      <div id="admin-service-activity-list" class="workspace-list"></div>
 	                    </div>
 	                  </div>
 	                </div>

@@ -772,12 +772,14 @@ const adminServiceTokenRevoke = document.getElementById('admin-service-token-rev
 const adminServiceTokenManageActions = document.getElementById('admin-service-token-manage-actions');
 const adminServiceTokenSearch = document.getElementById('admin-service-token-search');
 const adminServiceTokenFilter = document.getElementById('admin-service-token-filter');
+const adminServiceTokenTableHead = document.getElementById('admin-service-token-table-head');
 const adminServiceTokensList = document.getElementById('admin-service-tokens-list');
 const adminServiceTokenListSummary = document.getElementById('admin-service-token-list-summary');
 const adminServiceGrantsStatus = document.getElementById('admin-service-grants-status');
 const adminServiceGrantsSummary = document.getElementById('admin-service-grants-summary');
 const adminServiceGrantWorkspace = document.getElementById('admin-service-grant-workspace');
 const adminServiceGrantAdd = document.getElementById('admin-service-grant-add');
+const adminServiceGrantsTableHead = document.getElementById('admin-service-grants-table-head');
 const adminServiceGrantsList = document.getElementById('admin-service-grants-list');
 const adminServiceEffectiveWorkspaces = document.getElementById('admin-service-effective-workspaces');
 const adminServiceActivityStatus = document.getElementById('admin-service-activity-status');
@@ -18306,6 +18308,26 @@ function getServiceWorkerTokenAccessLabel(token) {
   return `${count} scoped permission${count === 1 ? '' : 's'}`;
 }
 
+function getAdminServiceTokenUsageSummary(token) {
+  if (token?.last_used_at) return `Last used ${formatNoticeDateTimeDisplay(token.last_used_at)}`;
+  if (formatApiTokenStatus(token) === 'active') return 'Never used';
+  return 'No recent use recorded';
+}
+
+function getAdminServiceTokenTimingSummary(token) {
+  const status = formatApiTokenStatus(token);
+  if (status === 'revoked' && token?.revoked_at) {
+    return `Revoked ${formatNoticeDateTimeDisplay(token.revoked_at)}`;
+  }
+  if (status === 'expired' && token?.expires_at) {
+    return `Expired ${formatNoticeDateTimeDisplay(token.expires_at)}`;
+  }
+  if (token?.expires_at) {
+    return `Expires ${formatNoticeDateTimeDisplay(token.expires_at)}`;
+  }
+  return 'No expiry set';
+}
+
 function getAdminServiceTokenSortTimestamp(token) {
   const candidates = [
     token?.last_used_at,
@@ -18597,6 +18619,8 @@ function buildAdminServiceSummaryStats() {
   const adminState = getAdminState();
   const selectedAccount = getSelectedAdminServiceAccount();
   const selectedSummary = getServiceAccountSummary(selectedAccount);
+  const readiness = getServiceWorkerReadinessState(selectedAccount);
+  const attention = getServiceWorkerAttentionState(selectedAccount);
   const selectedToken = getSelectedAdminServiceAccountToken();
   const basePermissions = selectedAccount?.permissions ?? getCheckedPermissionKeys(adminServiceAccountPermissions);
   const detailTokensLoaded = Boolean(selectedAccount) && Boolean(adminState.serviceAccountTokensLoaded);
@@ -18625,6 +18649,27 @@ function buildAdminServiceSummaryStats() {
   const workspaceScopeCounts = detailGrantsLoaded
     ? getAdminServiceWorkspaceScopeCounts(adminState.serviceAccountEffectiveWorkspaces ?? [])
     : null;
+  const operationalLabel = attention?.label ?? readiness.label;
+  let operationalMeta = 'Save the worker first.';
+  if (selectedAccount) {
+    if (readiness.label === 'Disabled') {
+      operationalMeta = 'This worker is disabled until you re-enable it.';
+    } else if (readiness.label === 'Needs workspace') {
+      operationalMeta = 'Grant at least one workspace before treating this worker as live.';
+    } else if (readiness.label === 'Needs token') {
+      operationalMeta = 'Generate or regenerate an active token before expecting API access.';
+    } else if (attention?.label === 'Untested') {
+      operationalMeta = 'Active tokens exist, but no API access has been recorded yet.';
+    } else if (attention?.label === 'Stale') {
+      operationalMeta = latestActivity?.created_at
+        ? `Last recorded activity ${formatNoticeDateTimeDisplay(latestActivity.created_at)}.`
+        : 'Recent API access has gone stale.';
+    } else if (latestTokenUse) {
+      operationalMeta = `Last token use ${formatNoticeDateTimeDisplay(latestTokenUse)}.`;
+    } else {
+      operationalMeta = 'Ready for live API access.';
+    }
+  }
   return [
     {
       label: 'Worker access',
@@ -18655,11 +18700,10 @@ function buildAdminServiceSummaryStats() {
           : 'Generate the first token to activate this worker'
     },
     {
-      label: 'Recent activity',
-      value: latestActivity?.created_at ? formatNoticeDateTimeDisplay(latestActivity.created_at) : 'None yet',
-      meta: latestTokenUse
-        ? `Last token use ${formatNoticeDateTimeDisplay(latestTokenUse)}`
-        : 'Lifecycle and access events appear after deploy'
+      label: 'Operational status',
+      value: operationalLabel,
+      meta: operationalMeta,
+      tone: attention?.tone ?? readiness.tone
     }
   ];
 }
@@ -18694,7 +18738,12 @@ function renderAdminServiceAccountSummary() {
       );
     }
     if (selectedAccount) {
-      adminServiceSummaryBadges.appendChild(createAdminServiceChip(Number(selectedAccount.archived) ? 'Disabled' : 'Active', Number(selectedAccount.archived) ? 'danger' : 'success'));
+      const readiness = getServiceWorkerReadinessState(selectedAccount);
+      const attention = getServiceWorkerAttentionState(selectedAccount);
+      adminServiceSummaryBadges.appendChild(createAdminServiceChip(readiness.label, readiness.tone));
+      if (attention) {
+        adminServiceSummaryBadges.appendChild(createAdminServiceChip(attention.label, attention.tone));
+      }
       adminServiceSummaryBadges.appendChild(createAdminServiceChip(`${selectedAccount.aliases.length} alias${selectedAccount.aliases.length === 1 ? '' : 'es'}`));
       adminServiceSummaryBadges.appendChild(createAdminServiceChip(`${selectedSummary.active_token_count}/${selectedSummary.token_count} active token${selectedSummary.token_count === 1 ? '' : 's'}`));
       adminServiceSummaryBadges.appendChild(createAdminServiceChip(`${selectedSummary.effective_workspace_count} workspace${selectedSummary.effective_workspace_count === 1 ? '' : 's'}`));
@@ -18722,6 +18771,7 @@ function renderAdminServiceAccountSummary() {
     buildAdminServiceSummaryStats().forEach((stat) => {
       const card = document.createElement('div');
       card.className = 'admin-service-stat-card';
+      if (stat.tone) card.classList.add(`is-${stat.tone}`);
       const label = document.createElement('div');
       label.className = 'admin-service-stat-label';
       label.textContent = stat.label;
@@ -19451,6 +19501,8 @@ function renderAdminServiceAccountTokensList() {
   const query = getAdminServiceTokenSearchQuery();
   const statusFilter = getAdminServiceTokenStatusFilter();
   adminServiceTokensList.innerHTML = '';
+  adminServiceTokenTableHead?.classList.add('hidden');
+  adminServiceTokenTableHead?.setAttribute('aria-hidden', 'true');
   setAdminServiceTokenListSummary('');
   if (adminServiceTokenSearch && document.activeElement !== adminServiceTokenSearch) {
     adminServiceTokenSearch.value = adminState.serviceAccountTokenSearchQuery ?? '';
@@ -19520,31 +19572,40 @@ function renderAdminServiceAccountTokensList() {
     adminServiceTokensList.appendChild(note);
     return;
   }
+  adminServiceTokenTableHead?.classList.remove('hidden');
+  adminServiceTokenTableHead?.setAttribute('aria-hidden', 'false');
   filteredTokens.forEach((token) => {
     const row = document.createElement('div');
     row.className = 'workspace-row notice-row admin-user-row admin-service-token-row';
     row.classList.toggle('active', token.id === adminState.selectedServiceAccountTokenId);
-    const selectBtn = document.createElement('button');
-    selectBtn.type = 'button';
-    selectBtn.className = 'workspace-select admin-service-token-select';
-    selectBtn.addEventListener('click', () => {
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-pressed', token.id === adminState.selectedServiceAccountTokenId ? 'true' : 'false');
+    row.addEventListener('click', (event) => {
+      if (event.target instanceof HTMLElement && event.target.closest('button')) return;
+      selectAdminServiceToken(token.id);
+    });
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
       selectAdminServiceToken(token.id);
     });
     const info = document.createElement('div');
-    info.className = 'notice-row-info';
+    info.className = 'admin-service-token-cell admin-service-token-primary-cell';
     const title = document.createElement('div');
-    title.className = 'notice-row-title';
+    title.className = 'notice-row-title admin-service-token-title';
     title.textContent = token.label || `Token ${token.token_public_id}`;
     const meta = document.createElement('div');
-    meta.className = 'notice-row-meta';
+    meta.className = 'notice-row-meta admin-service-token-meta';
     const metaParts = [token.token_public_id];
     if (token.created_at) metaParts.push(`created ${formatNoticeDateTimeDisplay(token.created_at)}`);
-    if (token.expires_at) metaParts.push(`expires ${formatNoticeDateTimeDisplay(token.expires_at)}`);
-    if (token.last_used_at) metaParts.push(`last used ${formatNoticeDateTimeDisplay(token.last_used_at)}`);
-    if (token.replaced_by_token_id) metaParts.push('superseded');
+    if (token.replaced_by_token_id) metaParts.push('superseded by newer token');
     meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
+    row.appendChild(info);
+    const access = document.createElement('div');
+    access.className = 'admin-service-token-cell admin-service-token-access-cell';
     const badges = document.createElement('div');
     badges.className = 'admin-service-chip-row admin-service-token-badges';
     badges.appendChild(createAdminServiceChip(formatApiTokenStatusLabel(token), formatApiTokenTone(formatApiTokenStatus(token))));
@@ -19560,15 +19621,25 @@ function renderAdminServiceAccountTokensList() {
     if (token.replaced_by_token_id) {
       badges.appendChild(createAdminServiceChip('Superseded', 'warning'));
     }
-    selectBtn.appendChild(info);
-    selectBtn.appendChild(badges);
-    row.appendChild(selectBtn);
+    access.appendChild(badges);
+    row.appendChild(access);
+    const usage = document.createElement('div');
+    usage.className = 'admin-service-token-cell admin-service-token-usage-cell';
+    const usagePrimary = document.createElement('div');
+    usagePrimary.className = 'admin-service-token-usage-line';
+    usagePrimary.textContent = getAdminServiceTokenUsageSummary(token);
+    const usageSecondary = document.createElement('div');
+    usageSecondary.className = 'admin-service-token-usage-line is-muted';
+    usageSecondary.textContent = getAdminServiceTokenTimingSummary(token);
+    usage.appendChild(usagePrimary);
+    usage.appendChild(usageSecondary);
+    row.appendChild(usage);
     const actions = document.createElement('div');
     actions.className = 'admin-service-row-actions';
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.className = 'subtle-button';
-    editBtn.textContent = token.id === adminState.selectedServiceAccountTokenId ? 'Selected' : 'Manage';
+    editBtn.textContent = token.id === adminState.selectedServiceAccountTokenId ? 'Selected' : 'Edit';
     editBtn.disabled = token.id === adminState.selectedServiceAccountTokenId;
     editBtn.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -19805,6 +19876,8 @@ function renderAdminServiceWorkspaceGrantsList() {
   const selectedAccount = getSelectedAdminServiceAccount();
   const effectiveWorkspaceIds = new Set((adminState.serviceAccountEffectiveWorkspaces ?? []).map((workspace) => workspace?.id).filter(Boolean));
   adminServiceGrantsList.innerHTML = '';
+  adminServiceGrantsTableHead?.classList.add('hidden');
+  adminServiceGrantsTableHead?.setAttribute('aria-hidden', 'true');
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
@@ -19840,24 +19913,28 @@ function renderAdminServiceWorkspaceGrantsList() {
     adminServiceGrantsList.appendChild(note);
     return;
   }
+  adminServiceGrantsTableHead?.classList.remove('hidden');
+  adminServiceGrantsTableHead?.setAttribute('aria-hidden', 'false');
   adminState.serviceAccountWorkspaceGrants.forEach((grant) => {
     const workspaceRecord = findAdminServiceWorkspaceRecord(grant.workspace_id);
     const effective = effectiveWorkspaceIds.has(grant.workspace_id);
     const row = document.createElement('div');
-    row.className = 'workspace-row notice-row';
+    row.className = 'workspace-row notice-row admin-service-grant-row';
     const info = document.createElement('div');
-    info.className = 'notice-row-info';
+    info.className = 'admin-service-grant-cell admin-service-grant-primary-cell';
     const title = document.createElement('div');
     title.className = 'notice-row-title';
     title.textContent = workspaceRecord?.name || grant.workspace_name || grant.workspace_id;
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
     const metaParts = [grant.workspace_id];
-    if (workspaceRecord) metaParts.push(getAdminServiceWorkspaceScopeLabel(workspaceRecord));
     if (grant.created_at) metaParts.push(`granted ${formatNoticeDateTimeDisplay(grant.created_at)}`);
     meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
+    row.appendChild(info);
+    const scope = document.createElement('div');
+    scope.className = 'admin-service-grant-cell admin-service-grant-scope-cell';
     const badges = document.createElement('div');
     badges.className = 'admin-service-chip-row';
     if (workspaceRecord) {
@@ -19868,9 +19945,20 @@ function renderAdminServiceWorkspaceGrantsList() {
         )
       );
     }
-    badges.appendChild(createAdminServiceChip(effective ? 'Effective now' : 'Inactive', effective ? 'success' : 'warning'));
-    info.appendChild(badges);
-    row.appendChild(info);
+    scope.appendChild(badges);
+    row.appendChild(scope);
+    const status = document.createElement('div');
+    status.className = 'admin-service-grant-cell admin-service-grant-status-cell';
+    const statusPrimary = document.createElement('div');
+    statusPrimary.className = 'admin-service-token-usage-line';
+    statusPrimary.textContent = effective ? 'Effective now' : 'Inactive';
+    const statusSecondary = document.createElement('div');
+    statusSecondary.className = 'admin-service-token-usage-line is-muted';
+    statusSecondary.textContent = effective
+      ? 'This worker can reach this workspace right now.'
+      : 'This grant is recorded, but the workspace is not currently effective.';
+    status.append(statusPrimary, statusSecondary);
+    row.appendChild(status);
     const actions = document.createElement('div');
     actions.className = 'admin-service-row-actions';
     const revokeBtn = document.createElement('button');

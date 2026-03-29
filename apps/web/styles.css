@@ -2223,6 +2223,20 @@ body.api-help-body {
   background: rgba(13, 21, 34, 0.68);
 }
 
+.admin-service-stat-card.is-success {
+  border-color: rgba(96, 198, 122, 0.28);
+  background: linear-gradient(180deg, rgba(16, 36, 25, 0.9), rgba(12, 21, 18, 0.78));
+}
+
+.admin-service-stat-card.is-warning {
+  border-color: rgba(247, 190, 67, 0.28);
+  background: linear-gradient(180deg, rgba(44, 32, 12, 0.9), rgba(28, 22, 10, 0.78));
+}
+
+.admin-service-stat-card.is-muted {
+  border-color: rgba(111, 138, 169, 0.22);
+}
+
 .admin-service-stat-label {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
@@ -2454,6 +2468,14 @@ body.api-help-body {
   gap: 0.2rem;
 }
 
+.admin-service-token-reveal-kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b8f5c4;
+}
+
 .admin-service-token-reveal-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2577,6 +2599,30 @@ body.api-help-body {
   grid-auto-rows: max-content;
 }
 
+.admin-service-token-table-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(180px, 0.95fr) minmax(180px, 0.95fr) auto;
+  gap: 0.6rem;
+  padding: 0 0.25rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.admin-service-grants-table-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(150px, 0.8fr) minmax(190px, 1fr) auto;
+  gap: 0.6rem;
+  padding: 0 0.25rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .admin-permission-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -2641,27 +2687,69 @@ body.api-help-body {
 }
 
 .admin-service-token-row {
-  align-items: stretch;
-  gap: 0.6rem;
-}
-
-.admin-service-token-select {
   display: grid;
-  gap: 0.34rem;
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
+  grid-template-columns: minmax(0, 1.45fr) minmax(180px, 0.95fr) minmax(180px, 0.95fr) auto;
+  align-items: start;
+  gap: 0.6rem;
   cursor: pointer;
 }
 
-.admin-service-token-select:focus-visible {
+.admin-service-token-row[role="button"]:focus-visible {
   outline: 2px solid rgba(84, 154, 255, 0.72);
   outline-offset: 3px;
-  border-radius: 0.5rem;
+}
+
+.admin-service-token-cell {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.admin-service-token-primary-cell {
+  align-content: start;
+}
+
+.admin-service-token-title {
+  margin: 0;
+}
+
+.admin-service-token-meta {
+  margin: 0;
+}
+
+.admin-service-token-access-cell {
+  align-content: center;
+}
+
+.admin-service-token-usage-cell {
+  align-content: center;
+}
+
+.admin-service-token-usage-line {
+  font-size: 0.76rem;
+  color: var(--text);
+}
+
+.admin-service-token-usage-line.is-muted {
+  color: var(--muted);
+}
+
+.admin-service-grant-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(150px, 0.8fr) minmax(190px, 1fr) auto;
+  align-items: start;
+  gap: 0.6rem;
+}
+
+.admin-service-grant-cell {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.admin-service-grant-scope-cell,
+.admin-service-grant-status-cell {
+  align-content: center;
 }
 
 .admin-service-token-badges {
@@ -2762,6 +2850,27 @@ body.api-help-body {
   .admin-service-setup-step-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .admin-service-token-table-head {
+    display: none;
+  }
+
+  .admin-service-grants-table-head {
+    display: none;
+  }
+
+  .admin-service-token-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-service-grant-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-service-row-actions {
+    margin-left: 0;
+    justify-content: flex-start;
   }
 }
 
