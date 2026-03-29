@@ -510,7 +510,7 @@ const mobileNavShopping = document.getElementById('mobile-nav-shopping');
 const mobileNavOrganizations = document.getElementById('mobile-nav-organizations');
 const mobileNavButtons = Array.from(document.querySelectorAll('.mobile-nav-button[data-view]'));
 const sidebarSections = Array.from(document.querySelectorAll('.sidebar-section[data-sidebar-section]'));
-const sidebarSectionToggleButtons = Array.from(document.querySelectorAll('.sidebar-section-toggle[data-sidebar-toggle]'));
+const sidebarSectionButtons = Array.from(document.querySelectorAll('.sidebar-section-button[data-sidebar-toggle]'));
 const mobileNavAdd = document.getElementById('mobile-nav-add');
 const mobileCreateSheet = document.getElementById('mobile-create-sheet');
 const mobileCreateSheetBackdrop = document.getElementById('mobile-create-sheet-backdrop');
@@ -1698,42 +1698,9 @@ newNoticeSidebarBtn?.addEventListener('click', () => {
   setActiveView('tasks');
   openNoticeModal();
 });
-noticesOpenBtn?.addEventListener('click', () => {
-  setActiveView('notices');
-  render();
-});
 noticesAddBtn?.addEventListener('click', () => {
   setActiveView('notices');
   openNoticeModal();
-});
-projectsOpenBtn?.addEventListener('click', () => {
-  setActiveView('projects');
-  render();
-});
-organizationsOpenBtn?.addEventListener('click', () => {
-  openOrganizationsPage();
-});
-shoppingOpenBtn?.addEventListener('click', () => {
-  setShoppingPageMode('list');
-  if (isMobileViewport()) {
-    setMobileShoppingPanelMode('list');
-  }
-  setActiveView('shopping');
-  render();
-});
-workflowsOpenBtn?.addEventListener('click', () => {
-  setWorkflowViewMode('runs');
-  if (isMobileViewport()) {
-    setMobileWorkflowPanelMode('list');
-  }
-  setActiveView('workflows');
-  render();
-});
-tasksOpenBtn?.addEventListener('click', () => {
-  setActiveTaskFilter('all');
-  clearActiveWorkflowChecklistInstanceId();
-  setActiveView('tasks');
-  render();
 });
 moduleNavTodo?.addEventListener('click', () => {
   setActiveTaskFilter('all');
@@ -1883,13 +1850,10 @@ mobileNavButtons.forEach((button) => {
   });
 });
 
-sidebarSectionToggleButtons.forEach((button) => {
+sidebarSectionButtons.forEach((button) => {
   button.addEventListener('click', (event) => {
-    event.stopPropagation();
-    const sectionKey = String(button.dataset.sidebarToggle ?? '').trim();
-    if (!sectionKey) return;
-    setSidebarSectionExpanded(sectionKey, !isSidebarSectionExpanded(sectionKey));
-    render();
+    event.preventDefault();
+    void handleSidebarSectionButtonClick(String(button.dataset.sidebarToggle ?? '').trim());
   });
 });
 
@@ -16378,30 +16342,119 @@ function getSidebarSectionState() {
   return state.ui.sidebarSections;
 }
 
+function getSidebarFocusedSectionKey() {
+  switch (getActiveView()) {
+    case 'projects':
+      return 'projects';
+    case 'organizations':
+      return 'organizations';
+    case 'workflows':
+      return 'workflows';
+    case 'shopping':
+      return 'shopping';
+    case 'notices':
+      return 'notices';
+    case 'tasks':
+      return 'tasks';
+    default:
+      return '';
+  }
+}
+
+function getExpandedSidebarSectionKey() {
+  const sidebarState = getSidebarSectionState();
+  if (sidebarState.expandedKey === null) return '';
+  const explicitKey = String(sidebarState.expandedKey ?? '').trim();
+  if (explicitKey) return explicitKey;
+  return getSidebarFocusedSectionKey() || 'tasks';
+}
+
 function isSidebarSectionExpanded(sectionKey) {
   const key = String(sectionKey ?? '').trim();
-  if (!key) return true;
-  return getSidebarSectionState()[key] !== false;
+  if (!key) return false;
+  return getExpandedSidebarSectionKey() === key;
 }
 
 function setSidebarSectionExpanded(sectionKey, expanded) {
   const key = String(sectionKey ?? '').trim();
   if (!key) return;
-  getSidebarSectionState()[key] = Boolean(expanded);
+  const sidebarState = getSidebarSectionState();
+  if (expanded) {
+    sidebarState.expandedKey = key;
+    return;
+  }
+  if (getExpandedSidebarSectionKey() === key) {
+    sidebarState.expandedKey = null;
+  }
 }
 
 function syncSidebarSectionExpansion() {
+  const focusedSectionKey = getSidebarFocusedSectionKey();
   sidebarSections.forEach((section) => {
     const sectionKey = String(section.dataset.sidebarSection ?? '').trim();
     if (!sectionKey) return;
     const expanded = isSidebarSectionExpanded(sectionKey);
     section.classList.toggle('is-collapsed', !expanded);
-    const toggleButton = section.querySelector('.sidebar-section-toggle');
+    section.classList.toggle('is-active', sectionKey === focusedSectionKey);
+    const toggleButton = section.querySelector('.sidebar-section-button[data-sidebar-toggle]');
     if (toggleButton) {
       toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
       toggleButton.title = expanded ? 'Collapse section' : 'Expand section';
+      if (sectionKey === focusedSectionKey) {
+        toggleButton.setAttribute('aria-current', 'page');
+      } else {
+        toggleButton.removeAttribute('aria-current');
+      }
     }
   });
+}
+
+function openSidebarSection(sectionKey) {
+  switch (sectionKey) {
+    case 'projects':
+      setActiveView('projects');
+      return;
+    case 'organizations':
+      openOrganizationsPage();
+      return;
+    case 'workflows':
+      setWorkflowViewMode('runs');
+      if (isMobileViewport()) {
+        setMobileWorkflowPanelMode('list');
+      }
+      setActiveView('workflows');
+      return;
+    case 'shopping':
+      setShoppingPageMode('list');
+      if (isMobileViewport()) {
+        setMobileShoppingPanelMode('list');
+      }
+      setActiveView('shopping');
+      return;
+    case 'notices':
+      setActiveView('notices');
+      return;
+    case 'tasks':
+    default:
+      setActiveTaskFilter('all');
+      clearActiveWorkflowChecklistInstanceId();
+      setActiveView('tasks');
+      return;
+  }
+}
+
+async function handleSidebarSectionButtonClick(sectionKey) {
+  const key = String(sectionKey ?? '').trim();
+  if (!key) return;
+  const expanded = isSidebarSectionExpanded(key);
+  const focusedSectionKey = getSidebarFocusedSectionKey();
+  if (expanded && focusedSectionKey === key) {
+    setSidebarSectionExpanded(key, false);
+    render();
+    return;
+  }
+  setSidebarSectionExpanded(key, true);
+  openSidebarSection(key);
 }
 
 function buildOrganizationSurfaceWorkspace(org) {

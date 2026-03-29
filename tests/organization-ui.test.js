@@ -84,7 +84,8 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /await api\.deleteOrgMember\(selected\.id, member\.user_id\)/);
   assert.match(script, /async function transferSelectedOrganizationOwnership\(\)/);
   assert.match(script, /await api\.transferOrgOwnership\(selected\.id, \{ target_user_id: targetUserId \}\)/);
-  assert.match(script, /organizationsOpenBtn\?\.addEventListener\('click', \(\) => \{\s*openOrganizationsPage\(\);/s);
+  assert.match(script, /function handleSidebarSectionButtonClick\(sectionKey\)/);
+  assert.match(script, /case 'organizations':\s*openOrganizationsPage\(\);/s);
   assert.match(script, /selectBtn\.addEventListener\('click', \(\) => \{\s*if \(activeOrganizationId === org\.id\) \{\s*void closeOrganizationSurface\(\);[\s\S]*void openOrganizationSurface\(org\);/s);
   assert.match(script, /rememberWorkspaceAnchor\(state\.workspace\);/);
   assert.match(script, /await selectWorkspace\(workspace, \{ preserveView: true \}\);/);

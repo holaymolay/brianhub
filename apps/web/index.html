@@ -125,42 +125,73 @@
           <div id="tasks-sidebar-content" class="sidebar-content">
             <section class="sidebar-section sidebar-section-tasks" data-sidebar-section="tasks">
               <div class="sidebar-header-row">
-                <button id="tasks-open" class="sidebar-section-button" type="button">My Tasks</button>
+                <button
+                  id="tasks-open"
+                  class="sidebar-section-button"
+                  type="button"
+                  data-sidebar-toggle="tasks"
+                  aria-controls="sidebar-section-body-tasks"
+                  aria-expanded="true"
+                >
+                  <span class="sidebar-section-button-label">My Tasks</span>
+                </button>
                 <div class="sidebar-header-actions">
                   <button id="new-task-list-btn" class="icon-button menu-icon" type="button" title="New list">＋</button>
-                  <button class="icon-button menu-icon sidebar-section-toggle" type="button" data-sidebar-toggle="tasks" aria-label="Collapse task section" aria-expanded="true">▾</button>
                 </div>
               </div>
-              <div class="sidebar-section-body">
+              <div id="sidebar-section-body-tasks" class="sidebar-section-body">
                 <div id="task-list-list" class="workspace-list sidebar-section-list"></div>
               </div>
             </section>
             <section class="sidebar-section sidebar-section-projects" data-sidebar-section="projects">
               <div class="sidebar-header-row">
-                <button id="projects-open" class="sidebar-section-button" type="button">Projects</button>
+                <button
+                  id="projects-open"
+                  class="sidebar-section-button"
+                  type="button"
+                  data-sidebar-toggle="projects"
+                  aria-controls="sidebar-section-body-projects"
+                  aria-expanded="true"
+                >
+                  <span class="sidebar-section-button-label">Projects</span>
+                </button>
                 <div class="sidebar-header-actions">
                   <button id="new-project-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
-                  <button class="icon-button menu-icon sidebar-section-toggle" type="button" data-sidebar-toggle="projects" aria-label="Collapse projects section" aria-expanded="true">▾</button>
                 </div>
               </div>
-              <div class="sidebar-section-body">
+              <div id="sidebar-section-body-projects" class="sidebar-section-body">
                 <div id="project-list" class="workspace-list sidebar-section-list"></div>
               </div>
             </section>
             <section class="sidebar-section sidebar-section-organizations" data-sidebar-section="organizations">
               <div class="sidebar-header-row">
-                <button id="organizations-open" class="sidebar-section-button" type="button">Organizations</button>
-                <div class="sidebar-header-actions">
-                  <button class="icon-button menu-icon sidebar-section-toggle" type="button" data-sidebar-toggle="organizations" aria-label="Collapse organizations section" aria-expanded="true">▾</button>
-                </div>
+                <button
+                  id="organizations-open"
+                  class="sidebar-section-button"
+                  type="button"
+                  data-sidebar-toggle="organizations"
+                  aria-controls="sidebar-section-body-organizations"
+                  aria-expanded="true"
+                >
+                  <span class="sidebar-section-button-label">Organizations</span>
+                </button>
               </div>
-              <div class="sidebar-section-body">
+              <div id="sidebar-section-body-organizations" class="sidebar-section-body">
                 <div id="organization-list" class="workspace-list sidebar-section-list"></div>
               </div>
             </section>
             <section class="sidebar-section sidebar-section-workflows" data-sidebar-section="workflows">
               <div class="sidebar-header-row">
-                <button id="workflows-open" class="sidebar-section-button" type="button">Workflows</button>
+                <button
+                  id="workflows-open"
+                  class="sidebar-section-button"
+                  type="button"
+                  data-sidebar-toggle="workflows"
+                  aria-controls="sidebar-section-body-workflows"
+                  aria-expanded="true"
+                >
+                  <span class="sidebar-section-button-label">Workflows</span>
+                </button>
                 <div class="sidebar-header-actions">
                   <div class="workspace-menu-wrapper">
                     <button id="workflow-sidebar-menu-button" class="icon-button menu-icon" type="button" title="Workflow menu">⋯</button>
@@ -168,16 +199,24 @@
                       <button id="workflow-sidebar-manage" class="workspace-menu-item" type="button">Manage Workflows</button>
                     </div>
                   </div>
-                  <button class="icon-button menu-icon sidebar-section-toggle" type="button" data-sidebar-toggle="workflows" aria-label="Collapse workflows section" aria-expanded="true">▾</button>
                 </div>
               </div>
-              <div class="sidebar-section-body">
+              <div id="sidebar-section-body-workflows" class="sidebar-section-body">
                 <div id="workflow-list" class="workspace-list sidebar-section-list"></div>
               </div>
             </section>
             <section class="sidebar-section sidebar-section-shopping" data-sidebar-section="shopping">
               <div class="sidebar-header-row">
-                <button id="shopping-open" class="sidebar-section-button" type="button">Shopping Lists</button>
+                <button
+                  id="shopping-open"
+                  class="sidebar-section-button"
+                  type="button"
+                  data-sidebar-toggle="shopping"
+                  aria-controls="sidebar-section-body-shopping"
+                  aria-expanded="true"
+                >
+                  <span class="sidebar-section-button-label">Shopping Lists</span>
+                </button>
                 <div class="sidebar-header-actions">
                   <button id="new-shopping-list-btn" class="icon-button menu-icon" type="button" title="New shopping list">＋</button>
                   <div class="workspace-menu-wrapper">
@@ -189,10 +228,9 @@
                       </label>
                     </div>
                   </div>
-                  <button class="icon-button menu-icon sidebar-section-toggle" type="button" data-sidebar-toggle="shopping" aria-label="Collapse shopping lists section" aria-expanded="true">▾</button>
                 </div>
               </div>
-              <div class="sidebar-section-body sidebar-section-body-shopping">
+              <div id="sidebar-section-body-shopping" class="sidebar-section-body sidebar-section-body-shopping">
                 <div id="task-shopping-inbox" class="task-shopping-inbox sidebar-shopping-inbox">
                   <div class="task-shopping-inbox-compose">
                     <input
@@ -210,13 +248,21 @@
             </section>
             <section class="sidebar-section sidebar-section-notices" data-sidebar-section="notices">
               <div class="sidebar-header-row">
-                <button id="notices-open" class="sidebar-section-button" type="button">Notices</button>
+                <button
+                  id="notices-open"
+                  class="sidebar-section-button"
+                  type="button"
+                  data-sidebar-toggle="notices"
+                  aria-controls="sidebar-section-body-notices"
+                  aria-expanded="true"
+                >
+                  <span class="sidebar-section-button-label">Notices</span>
+                </button>
                 <div class="sidebar-header-actions">
                   <button id="new-notice-sidebar-btn" class="icon-button menu-icon" type="button" title="New notice">＋</button>
-                  <button class="icon-button menu-icon sidebar-section-toggle" type="button" data-sidebar-toggle="notices" aria-label="Collapse notices section" aria-expanded="true">▾</button>
                 </div>
               </div>
-              <div class="sidebar-section-body">
+              <div id="sidebar-section-body-notices" class="sidebar-section-body">
                 <div id="notice-list" class="workspace-list sidebar-section-list"></div>
               </div>
             </section>
