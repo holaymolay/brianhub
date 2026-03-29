@@ -126,7 +126,9 @@ test('task reorder supports row drag on desktop and pointer drag on touch device
   assert.match(script, /function beginTaskPointerGesture\(event, task, item\)/);
   assert.match(script, /function moveTaskPointerGesture\(event\)/);
   assert.match(script, /async function finishTaskPointerGesture\(event, commit = false\)/);
-  assert.match(script, /item\.draggable = true;/);
+  assert.match(script, /const mobileViewport = isMobileViewport\(\);\s*item\.draggable = !mobileViewport;/s);
+  assert.match(script, /if \(!mobileViewport\) \{\s*item\.addEventListener\('dragstart', \(event\) => beginTaskDrag\(event, task, item\)\);\s*item\.addEventListener\('dragend', endTaskDrag\);\s*\}/s);
+  assert.match(script, /handle\.draggable = !mobileViewport;/);
   assert.match(script, /handle\.addEventListener\('pointerdown', \(event\) => beginTaskPointerGesture\(event, task, item\)\);/);
   assert.match(script, /async function dropTaskIntoContainer\(container\)/);
   assert.match(script, /async function dropTaskOnItem\(item, clientY\)/);

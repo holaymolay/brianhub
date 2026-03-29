@@ -12660,15 +12660,20 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
 }
 
 function attachTaskDragHandlers(item, task) {
-  item.draggable = true;
+  const mobileViewport = isMobileViewport();
+  item.draggable = !mobileViewport;
   item.dataset.taskId = task.id;
-  item.addEventListener('dragstart', (event) => beginTaskDrag(event, task, item));
-  item.addEventListener('dragend', endTaskDrag);
+  if (!mobileViewport) {
+    item.addEventListener('dragstart', (event) => beginTaskDrag(event, task, item));
+    item.addEventListener('dragend', endTaskDrag);
+  }
   const handle = item.querySelector('.task-drag-handle');
   if (handle) {
-    handle.draggable = true;
-    handle.addEventListener('dragstart', (event) => beginTaskDrag(event, task, item));
-    handle.addEventListener('dragend', endTaskDrag);
+    handle.draggable = !mobileViewport;
+    if (!mobileViewport) {
+      handle.addEventListener('dragstart', (event) => beginTaskDrag(event, task, item));
+      handle.addEventListener('dragend', endTaskDrag);
+    }
     handle.addEventListener('pointerdown', (event) => beginTaskPointerGesture(event, task, item));
     handle.addEventListener('pointermove', moveTaskPointerGesture);
     handle.addEventListener('pointerup', (event) => {
