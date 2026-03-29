@@ -67,22 +67,25 @@ test('app wiring opens the in-app help hub and the dedicated API help url', () =
   assert.match(script, /helpApiUrl\.textContent = helpUrl;/);
 });
 
-test('admin console exposes service-account, token, and workspace-grant controls', () => {
+test('admin console exposes service-worker, token, and workspace-grant controls', () => {
   const html = readRepoFile('apps/web/index.html');
-  assert.match(html, /<h3>Service accounts<\/h3>/);
+  assert.match(html, /<h3>Service workers<\/h3>/);
   assert.match(html, /id="admin-service-account-roger-preset"/);
   assert.match(html, /id="admin-service-summary-name"/);
   assert.match(html, /id="admin-service-summary-stats"/);
   assert.match(html, /id="admin-service-setup-note"/);
   assert.match(html, /id="admin-service-account-permissions"/);
-  assert.match(html, /<h4>Token access<\/h4>/);
+  assert.match(html, /<h4>Worker identity &amp; baseline access<\/h4>/);
+  assert.match(html, /<h4>Tokens<\/h4>/);
+  assert.match(html, /id="admin-service-token-state"/);
+  assert.match(html, /id="admin-service-token-editor-title"/);
   assert.match(html, /id="admin-service-token-inherit"/);
   assert.match(html, /id="admin-service-token-reveal"/);
   assert.match(html, /<h4>Workspace access<\/h4>/);
   assert.match(html, /id="admin-service-grant-workspace"/);
   assert.match(html, /id="admin-service-effective-workspaces"/);
   assert.match(html, /id="admin-service-grants-list"/);
-  assert.match(html, /<h4>Access history<\/h4>/);
+  assert.match(html, /<h4>Activity<\/h4>/);
   assert.match(html, /id="admin-service-activity-refresh"/);
   assert.match(html, /id="admin-service-activity-list"/);
 });
@@ -101,6 +104,8 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /async function refreshAdminServiceAccountActivity/);
   assert.match(appScript, /function renderAdminServiceAccountSummary/);
   assert.match(appScript, /function renderAdminServiceActivityList/);
+  assert.match(appScript, /function setAdminServiceTokenState/);
+  assert.match(appScript, /function buildAdminServiceTokenPayload/);
   assert.match(appScript, /function presentAdminServiceToken\(rawToken, actionLabel = 'created'\)/);
   assert.match(appScript, /window\.prompt\(\s*`Copy this \$\{actionLabel\} token now\./);
   assert.match(appScript, /void refreshAdminServiceAccounts\(\);/);
@@ -119,4 +124,5 @@ test('admin console auto-selects existing service accounts and surfaces summary 
   assert.match(appScript, /summary\.effective_workspace_count/);
   assert.match(appScript, /serviceAccounts\.length\)\s*\{\s*adminState\.selectedServiceAccountId = serviceAccounts\[0\]\?\.id \?\? '';/);
   assert.match(appScript, /refreshAdminServiceAccountActivity\(\)/);
+  assert.match(appScript, /This worker has no tokens yet and cannot connect to BrianHub until you generate its first token\./);
 });

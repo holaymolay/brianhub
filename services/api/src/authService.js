@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { createUser, createWorkspaceMembership, updateUser } from './taskService.js';
+import { createUser, createWorkspace, createWorkspaceMembership, updateUser } from './taskService.js';
 
 const scryptAsync = promisify(scrypt);
 const PASSWORD_MIN_LENGTH = 8;
@@ -121,6 +121,31 @@ async function getUserByOrgEmail(db, orgId, email) {
   return db.queryOne(
     'SELECT * FROM users WHERE org_id = ? AND email = ? LIMIT 1',
     [orgId, email]
+  );
+}
+
+async function ensureDefaultPersonalWorkspace(db, user) {
+  if (!user?.id || !user?.org_id) return;
+  const existing = await db.queryOne(
+    `SELECT id
+       FROM workspaces
+      WHERE org_id = ?
+        AND owner_user_id = ?
+        AND archived = 0
+        AND lower(coalesce(type, 'personal')) = 'personal'
+      LIMIT 1`,
+    [user.org_id, user.id]
+  );
+  if (existing?.id) return;
+  await createWorkspace(
+    db,
+    {
+      name: 'Personal',
+      type: 'personal',
+      org_id: user.org_id,
+      creator_user_id: user.id
+    },
+    null
   );
 }
 
@@ -683,6 +708,7 @@ export async function loginWithPassword(db, { email, password, ttlDays = 30, use
   if (!matches) {
     throw new Error('Invalid email or password');
   }
+  await ensureDefaultPersonalWorkspace(db, user);
   const { token, session } = await createSession(db, user.id, { ttlDays, userAgent, ipAddress });
   const workspaces = await listUserWorkspaces(db, user.id);
   return {
@@ -803,6 +829,7 @@ export async function acceptInviteRegistration(
       clientId
     );
     await setUserPasswordCredential(tx, user.id, password);
+    await ensureDefaultPersonalWorkspace(tx, user);
     const timestamp = nowIso();
     await tx.exec(
       'UPDATE user_invites SET status = ?, accepted_at = ?, updated_at = ? WHERE id = ?',

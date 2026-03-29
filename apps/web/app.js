@@ -710,6 +710,9 @@ const adminServiceSetupNote = document.getElementById('admin-service-setup-note'
 const adminServiceSummaryAliases = document.getElementById('admin-service-summary-aliases');
 const adminServiceTokenStatus = document.getElementById('admin-service-token-status');
 const adminServiceTokenNew = document.getElementById('admin-service-token-new');
+const adminServiceTokenState = document.getElementById('admin-service-token-state');
+const adminServiceTokenEditorTitle = document.getElementById('admin-service-token-editor-title');
+const adminServiceTokenEditorCopy = document.getElementById('admin-service-token-editor-copy');
 const adminServiceTokenLabel = document.getElementById('admin-service-token-label');
 const adminServiceTokenExpiresAt = document.getElementById('admin-service-token-expires-at');
 const adminServiceTokenInherit = document.getElementById('admin-service-token-inherit');
@@ -2852,7 +2855,7 @@ function presentAdminServiceToken(rawToken, actionLabel = 'created') {
   }
   if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
     window.prompt(
-      `Copy this ${actionLabel} token now. BrianHub will not show the raw secret again after this step.`,
+      `Copy this ${actionLabel} token now. BrianHub will not show the raw secret again after this success step.`,
       safeToken
     );
   }
@@ -8670,11 +8673,6 @@ async function loadWorkspaces() {
   if (allowRemote) {
     try {
       workspaces = await api.listWorkspaces();
-      if (!workspaces.length) {
-        const created = await api.createWorkspace({ name: 'Personal', type: 'personal' });
-        createdWorkspace = created ? normalizeWorkspace(created) : null;
-        workspaces = created ? [created] : [];
-      }
     } catch (err) {
       if (isWorkspaceDataResetStatus(err?.status)) {
         clearWorkspaceDomainData({ clearPendingChanges: true, resetAdminState: true });
@@ -17051,6 +17049,35 @@ function setAdminServiceTokenReveal(token = '') {
   getAdminState().revealedServiceToken = safeToken;
 }
 
+function setAdminServiceTokenState(message, tone = 'info') {
+  if (!adminServiceTokenState) return;
+  adminServiceTokenState.textContent = String(message ?? '');
+  if (tone) {
+    adminServiceTokenState.dataset.tone = tone;
+  } else {
+    delete adminServiceTokenState.dataset.tone;
+  }
+}
+
+function buildAdminServiceTokenPayload() {
+  const label = String(adminServiceTokenLabel?.value ?? '').trim();
+  if (!label) {
+    return { error: 'Token name is required.' };
+  }
+  const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
+  const permissionConstraints = inheritPermissions ? null : getCheckedPermissionKeys(adminServiceTokenPermissions);
+  if (!inheritPermissions && !permissionConstraints.length) {
+    return { error: 'Choose at least one token permission or match the worker permissions.' };
+  }
+  return {
+    payload: {
+      label,
+      expires_at: fromDatetimeLocal(adminServiceTokenExpiresAt?.value ?? ''),
+      permission_constraints: permissionConstraints
+    }
+  };
+}
+
 function getAdminOrgId() {
   return getAuthState().user?.org_id ?? DEFAULT_ORG_ID;
 }
@@ -17168,9 +17195,9 @@ function buildAdminServiceSummaryStats() {
     : selectedSummary.effective_workspace_count;
   return [
     {
-      label: 'Baseline permissions',
+      label: 'Worker access',
       value: String(basePermissions.length),
-      meta: selectedAccount ? 'Editable live without rotating tokens' : 'Choose only the capabilities Roger needs'
+      meta: selectedAccount ? 'Editable live without rotating existing tokens' : 'Choose only the capabilities this worker needs'
     },
     {
       label: 'Workspace access',
@@ -17184,7 +17211,9 @@ function buildAdminServiceSummaryStats() {
       value: `${activeTokens}/${tokenCount || 0}`,
       meta: selectedToken
         ? `${formatApiTokenStatus(selectedToken)} • ${selectedToken.token_public_id}`
-        : 'Create one primary token for Roger'
+        : tokenCount
+          ? 'Raw token values are never shown again after issuance'
+          : 'Generate the first token to activate this worker'
     },
     {
       label: 'Recent activity',
@@ -17204,12 +17233,12 @@ function renderAdminServiceAccountSummary() {
   const draftName = String(adminServiceAccountName?.value ?? '').trim();
   const draftDescription = String(adminServiceAccountDescription?.value ?? '').trim();
   if (adminServiceSummaryName) {
-    adminServiceSummaryName.textContent = selectedAccount?.display_name || draftName || 'New service account';
+    adminServiceSummaryName.textContent = selectedAccount?.display_name || draftName || 'New service worker';
   }
   if (adminServiceSummaryDescription) {
     adminServiceSummaryDescription.textContent = selectedAccount?.description
       || draftDescription
-      || 'Create a durable service-account identity, then issue scoped tokens for Roger or another operator flow.';
+      || 'Create a durable service worker, then issue scoped tokens for Roger or another operator flow.';
   }
   if (adminServiceSummaryBadges) {
     adminServiceSummaryBadges.innerHTML = '';
@@ -17220,7 +17249,7 @@ function renderAdminServiceAccountSummary() {
       adminServiceSummaryBadges.appendChild(createAdminServiceChip(`${selectedSummary.effective_workspace_count} workspace${selectedSummary.effective_workspace_count === 1 ? '' : 's'}`));
     } else {
       adminServiceSummaryBadges.appendChild(createAdminServiceChip('Draft', 'muted'));
-      adminServiceSummaryBadges.appendChild(createAdminServiceChip('Save before granting workspaces', 'muted'));
+      adminServiceSummaryBadges.appendChild(createAdminServiceChip('Save before granting workspaces or tokens', 'muted'));
     }
   }
   if (adminServiceSummaryAliases) {
@@ -17258,9 +17287,11 @@ function renderAdminServiceAccountSummary() {
   if (adminServiceSetupNote) {
     adminServiceSetupNote.textContent = selectedAccount
       ? effectiveWorkspaces.length
-        ? 'This account is live. Grant changes and token edits apply immediately to existing Roger credentials.'
-        : 'Save is complete. Next step: grant the workspace Roger should access, then mint one primary token.'
-      : 'Draft mode: save the account first, then grant workspace access and create a token.';
+        ? selectedSummary.active_token_count
+          ? 'This worker is live. Workspace and permission changes apply immediately to its active tokens.'
+          : 'Workspace access is ready, but this worker is still inert until you generate its first token.'
+        : 'Save is complete. Next step: grant the workspace this worker should access, then generate a token.'
+      : 'Draft mode: save the worker first, then grant workspace access and generate a token.';
   }
 }
 
@@ -17584,14 +17615,14 @@ function renderAdminServiceAccountsList() {
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Owner access required to manage service accounts.';
+    note.textContent = 'Owner access required to manage service workers.';
     adminServiceAccountsList.appendChild(note);
     return;
   }
   if (adminState.serviceAccountsLoading) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Loading service accounts...';
+    note.textContent = 'Loading service workers...';
     adminServiceAccountsList.appendChild(note);
     return;
   }
@@ -17605,7 +17636,7 @@ function renderAdminServiceAccountsList() {
   if (!adminState.serviceAccounts.length) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'No service accounts yet.';
+    note.textContent = 'No service workers yet.';
     adminServiceAccountsList.appendChild(note);
     return;
   }
@@ -17635,7 +17666,7 @@ function renderAdminServiceAccountsList() {
     info.className = 'notice-row-info';
     const title = document.createElement('div');
     title.className = 'notice-row-title';
-    title.textContent = account.display_name || 'Untitled service account';
+    title.textContent = account.display_name || 'Untitled service worker';
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
     const aliasLabel = account.aliases[0] ? formatServiceAccountAliasDisplay(account.aliases[0]) : 'No aliases';
@@ -17667,7 +17698,7 @@ function renderAdminServiceAccountEditor() {
       adminServiceAccountSelect.innerHTML = '';
       const placeholder = document.createElement('option');
       placeholder.value = '';
-      placeholder.textContent = 'New service account';
+      placeholder.textContent = 'New service worker';
       adminServiceAccountSelect.appendChild(placeholder);
       accounts.forEach((account) => {
         const option = document.createElement('option');
@@ -17718,8 +17749,8 @@ function renderAdminServiceAccountEditor() {
   if (!adminServiceAccountsStatus?.dataset.tone) {
     setAdminServiceAccountsStatus(
       isOwnerActor
-        ? 'Choose a service account on the left, then manage its permissions, workspace access, and tokens from the workspace on the right.'
-        : 'Owner access required to manage service accounts.'
+        ? 'Choose a service worker on the left, then manage its identity, workspace access, and token lifecycle here.'
+        : 'Owner access required to manage service workers.'
     );
   }
   renderAdminServiceAccountSummary();
@@ -17733,14 +17764,14 @@ function renderAdminServiceAccountTokensList() {
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Owner access required to manage service-account tokens.';
+    note.textContent = 'Owner access required to manage service-worker tokens.';
     adminServiceTokensList.appendChild(note);
     return;
   }
   if (!selectedAccount) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Save or select a service account first.';
+    note.textContent = 'Save or select a service worker first.';
     adminServiceTokensList.appendChild(note);
     return;
   }
@@ -17761,7 +17792,7 @@ function renderAdminServiceAccountTokensList() {
   if (!adminState.serviceAccountTokens.length) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'No tokens created yet.';
+    note.textContent = 'No tokens created yet. This worker cannot connect until you generate one.';
     adminServiceTokensList.appendChild(note);
     return;
   }
@@ -17784,7 +17815,7 @@ function renderAdminServiceAccountTokensList() {
     const meta = document.createElement('div');
     meta.className = 'notice-row-meta';
     const metaParts = [formatApiTokenStatus(token), token.token_public_id];
-    if (token.permission_constraints === null) metaParts.push('inherits account permissions');
+    if (token.permission_constraints === null) metaParts.push('matches worker permissions');
     else metaParts.push(`${token.permission_constraints.length} token constraint${token.permission_constraints.length === 1 ? '' : 's'}`);
     if (token.created_at) metaParts.push(`created ${formatNoticeDateTimeDisplay(token.created_at)}`);
     if (token.expires_at) metaParts.push(`expires ${formatNoticeDateTimeDisplay(token.expires_at)}`);
@@ -17802,6 +17833,7 @@ function renderAdminServiceTokenEditor() {
   const isOwnerActor = isCurrentActorOwnerSuperAdmin();
   const selectedAccount = getSelectedAdminServiceAccount();
   const selectedToken = getSelectedAdminServiceAccountToken();
+  const tokens = getAdminState().serviceAccountTokens ?? [];
   if (selectedToken) {
     if (adminServiceTokenLabel && document.activeElement !== adminServiceTokenLabel) {
       adminServiceTokenLabel.value = selectedToken.label ?? '';
@@ -17831,13 +17863,41 @@ function renderAdminServiceTokenEditor() {
   if (adminServiceTokenRotate) adminServiceTokenRotate.disabled = !isOwnerActor || !selectedToken || Boolean(selectedToken?.revoked_at);
   if (adminServiceTokenRevoke) adminServiceTokenRevoke.disabled = !isOwnerActor || !selectedToken || Boolean(selectedToken?.revoked_at);
   if (adminServiceTokenCopy) adminServiceTokenCopy.disabled = !getAdminState().revealedServiceToken;
+  if (adminServiceTokenNew) adminServiceTokenNew.textContent = 'Generate new token';
+  if (adminServiceTokenCreate) adminServiceTokenCreate.textContent = 'Generate token';
+  if (adminServiceTokenSave) adminServiceTokenSave.textContent = 'Update token';
+  if (adminServiceTokenRotate) adminServiceTokenRotate.textContent = 'Regenerate token';
+  if (adminServiceTokenRevoke) adminServiceTokenRevoke.textContent = 'Revoke token';
+  if (adminServiceTokenEditorTitle) {
+    adminServiceTokenEditorTitle.textContent = selectedToken ? 'Edit token' : 'Generate a token';
+  }
+  if (adminServiceTokenEditorCopy) {
+    adminServiceTokenEditorCopy.textContent = selectedToken
+      ? 'You can change the metadata, narrow permissions, regenerate the secret, or revoke the token. BrianHub never stores the raw token in a recoverable form.'
+      : 'Name the token, choose expiration and permissions, then copy the raw secret once. Existing tokens only show metadata after issuance.';
+  }
+  if (!selectedAccount) {
+    setAdminServiceTokenState('Save the worker first. Tokens are issued under a service worker, not as standalone credentials.', 'muted');
+  } else if (!tokens.length) {
+    setAdminServiceTokenState('This worker has no tokens yet and cannot connect to BrianHub until you generate its first token.', 'warning');
+  } else if (selectedToken) {
+    const tokenStatus = formatApiTokenStatus(selectedToken);
+    const tokenLabel = selectedToken.label || selectedToken.token_public_id;
+    const tokenAccess = selectedToken.permission_constraints === null
+      ? 'matches the worker permissions'
+      : `is narrowed to ${selectedToken.permission_constraints.length} permission${selectedToken.permission_constraints.length === 1 ? '' : 's'}`;
+    const tone = tokenStatus === 'active' ? 'info' : (tokenStatus === 'revoked' ? 'danger' : 'warning');
+    setAdminServiceTokenState(`${tokenLabel} is ${tokenStatus} and ${tokenAccess}. The raw token value is gone by design; regenerate it to mint a fresh secret.`, tone);
+  } else {
+    setAdminServiceTokenState('Select an existing token to review it, or generate a new one. Raw token values never reappear after the one-time issuance step.', 'info');
+  }
   if (!adminServiceTokenStatus?.dataset.tone) {
     setAdminServiceTokenStatus(
       selectedAccount
         ? selectedToken
-          ? 'Edit this token, rotate it, or revoke it. Rotation immediately invalidates the old secret.'
-          : 'Create one primary bearer token for Roger. Leave inheritance on unless you need to narrow this token.'
-        : 'Save or select a service account first to manage tokens.'
+          ? 'Update this token, regenerate it, or revoke it. Regeneration immediately invalidates the old secret.'
+          : 'Generate the first bearer token for this worker. Leave matching on unless you need a narrower token.'
+        : 'Save or select a service worker first to manage tokens.'
     );
   }
   renderAdminServiceAccountSummary();
@@ -17856,7 +17916,7 @@ function renderAdminServiceWorkspaceGrantEditor() {
       adminServiceGrantWorkspace.innerHTML = '';
       const placeholder = document.createElement('option');
       placeholder.value = '';
-      placeholder.textContent = selectedAccount ? 'Select workspace' : 'Select service account first';
+      placeholder.textContent = selectedAccount ? 'Select workspace' : 'Select service worker first';
       adminServiceGrantWorkspace.appendChild(placeholder);
       workspaces.forEach((workspace) => {
         const option = document.createElement('option');
@@ -17873,7 +17933,7 @@ function renderAdminServiceWorkspaceGrantEditor() {
   if (adminServiceEffectiveWorkspaces) {
     adminServiceEffectiveWorkspaces.innerHTML = '';
     if (!selectedAccount) {
-      adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip('Select an account first', 'muted'));
+      adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip('Select a worker first', 'muted'));
     } else if (!effectiveWorkspaces.length) {
       adminServiceEffectiveWorkspaces.appendChild(createAdminServiceChip('No workspace access yet', 'muted'));
     } else {
@@ -17889,9 +17949,9 @@ function renderAdminServiceWorkspaceGrantEditor() {
     setAdminServiceGrantsStatus(
       selectedAccount
         ? effectiveCount
-          ? `This account can currently see ${effectiveCount} workspace${effectiveCount === 1 ? '' : 's'}. Add only the workspaces Roger should operate in.`
-          : 'No workspace access yet. Roger will not see any BrianHub data until you add at least one grant.'
-        : 'Save or select a service account first to manage workspace grants.'
+          ? `This worker can currently see ${effectiveCount} workspace${effectiveCount === 1 ? '' : 's'}. Add only the workspaces it should operate in.`
+          : 'No workspace access yet. This worker will not see any BrianHub data until you add at least one grant.'
+        : 'Save or select a service worker first to manage workspace grants.'
     );
   }
   renderAdminServiceAccountSummary();
@@ -17912,7 +17972,7 @@ function renderAdminServiceWorkspaceGrantsList() {
   if (!selectedAccount) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Save or select a service account first.';
+    note.textContent = 'Save or select a service worker first.';
     adminServiceGrantsList.appendChild(note);
     return;
   }
@@ -17978,14 +18038,14 @@ function renderAdminServiceActivityList() {
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Owner access required to review service-account activity.';
+    note.textContent = 'Owner access required to review service-worker activity.';
     adminServiceActivityList.appendChild(note);
     return;
   }
   if (!selectedAccount) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'Save or select a service account first.';
+    note.textContent = 'Save or select a service worker first.';
     adminServiceActivityList.appendChild(note);
     return;
   }
@@ -18065,8 +18125,8 @@ function renderAdminPage() {
   if (!adminServiceActivityStatus?.dataset.tone) {
     setAdminServiceActivityStatus(
       getSelectedAdminServiceAccount()
-        ? 'Recent service-account access and lifecycle events appear here.'
-        : 'Select a service account first to review access history.'
+        ? 'Recent service-worker access and lifecycle events appear here.'
+        : 'Select a service worker first to review activity.'
     );
   }
 
@@ -18135,12 +18195,12 @@ async function refreshAdminServiceAccounts({ preferredServiceAccountId = null } 
     }
     setAdminServiceAccountsStatus(
       serviceAccounts.length
-        ? `Loaded ${serviceAccounts.length} service account${serviceAccounts.length === 1 ? '' : 's'}.`
-        : 'No service accounts yet.'
+        ? `Loaded ${serviceAccounts.length} service worker${serviceAccounts.length === 1 ? '' : 's'}.`
+        : 'No service workers yet.'
     );
   } catch (err) {
     adminState.serviceAccounts = [];
-    adminState.serviceAccountsError = err?.message ?? 'Unable to load service accounts.';
+    adminState.serviceAccountsError = err?.message ?? 'Unable to load service workers.';
   } finally {
     adminState.serviceAccountsLoading = false;
     adminState.serviceAccountsLoaded = true;
@@ -18210,11 +18270,11 @@ async function refreshAdminServiceAccountTokens({ preferredTokenId = null } = {}
     setAdminServiceTokenStatus(
       tokens.length
         ? `Loaded ${tokens.length} token${tokens.length === 1 ? '' : 's'} for ${selectedAccount.display_name}.`
-        : `No tokens yet for ${selectedAccount.display_name}.`
+        : `No tokens yet for ${selectedAccount.display_name}. This worker is still inactive.`
     );
   } catch (err) {
     adminState.serviceAccountTokens = [];
-    adminState.serviceAccountTokensError = err?.message ?? 'Unable to load service-account tokens.';
+    adminState.serviceAccountTokensError = err?.message ?? 'Unable to load service-worker tokens.';
   } finally {
     adminState.serviceAccountTokensLoading = false;
     adminState.serviceAccountTokensLoaded = true;
@@ -18300,7 +18360,7 @@ async function refreshAdminServiceAccountActivity() {
     );
   } catch (err) {
     adminState.serviceAccountActivity = [];
-    adminState.serviceAccountActivityError = err?.message ?? 'Unable to load service-account activity.';
+    adminState.serviceAccountActivityError = err?.message ?? 'Unable to load service-worker activity.';
   } finally {
     adminState.serviceAccountActivityLoading = false;
     adminState.serviceAccountActivityLoaded = true;
@@ -18325,7 +18385,7 @@ function startNewAdminServiceAccountDraft(draft = null) {
 
 async function submitAdminServiceAccountSave() {
   if (!isCurrentActorOwnerSuperAdmin()) {
-    setAdminServiceAccountsStatus('Owner access required to manage service accounts.', 'error');
+    setAdminServiceAccountsStatus('Owner access required to manage service workers.', 'error');
     return;
   }
   const selected = getSelectedAdminServiceAccount();
@@ -18363,7 +18423,7 @@ async function submitAdminServiceAccountSave() {
     const accountId = String(saved?.id ?? '').trim();
     await refreshAdminServiceAccounts({ preferredServiceAccountId: accountId });
     await refreshAdminServiceAccountActivity();
-    setAdminServiceAccountsStatus(selected ? 'Service account updated.' : 'Service account created.');
+    setAdminServiceAccountsStatus(selected ? 'Service worker updated.' : 'Service worker created.');
     showToast({
       type: 'success',
       message: selected
@@ -18371,7 +18431,7 @@ async function submitAdminServiceAccountSave() {
         : `Created ${saved?.display_name || displayName}.`
     });
   } catch (err) {
-    const message = err?.message ?? 'Unable to save service account.';
+    const message = err?.message ?? 'Unable to save service worker.';
     setAdminServiceAccountsStatus(message, 'error');
     showToast({ type: 'error', message });
   } finally {
@@ -18386,15 +18446,15 @@ async function createAdminServiceToken() {
   }
   const selectedAccount = getSelectedAdminServiceAccount();
   if (!selectedAccount) {
-    setAdminServiceTokenStatus('Select a service account first.', 'error');
+    setAdminServiceTokenStatus('Select a service worker first.', 'error');
     return;
   }
-  const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
-  const payload = {
-    label: String(adminServiceTokenLabel?.value ?? '').trim() || null,
-    expires_at: fromDatetimeLocal(adminServiceTokenExpiresAt?.value ?? ''),
-    permission_constraints: inheritPermissions ? null : getCheckedPermissionKeys(adminServiceTokenPermissions)
-  };
+  const { payload, error } = buildAdminServiceTokenPayload();
+  if (error || !payload) {
+    setAdminServiceTokenStatus(error ?? 'Unable to build token payload.', 'error');
+    adminServiceTokenLabel?.focus();
+    return;
+  }
   adminServiceTokenCreate?.setAttribute('disabled', 'true');
   try {
     const response = await api.createAdminServiceAccountToken(selectedAccount.id, payload);
@@ -18402,7 +18462,7 @@ async function createAdminServiceToken() {
     presentAdminServiceToken(response?.token?.token ?? '', 'new');
     await refreshAdminServiceAccountTokens({ preferredTokenId: created?.id ?? '' });
     await refreshAdminServiceAccountActivity();
-    setAdminServiceTokenStatus('Token created. Copy it now because the raw secret will not be shown again.');
+    setAdminServiceTokenStatus('Token generated. Copy it now because the raw secret will not be shown again.');
     showToast({ type: 'success', message: `Created token for ${selectedAccount.display_name}.` });
   } catch (err) {
     const message = err?.message ?? 'Unable to create token.';
@@ -18423,12 +18483,12 @@ async function updateAdminSelectedServiceToken() {
     setAdminServiceTokenStatus('Select a token first.', 'error');
     return;
   }
-  const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
-  const payload = {
-    label: String(adminServiceTokenLabel?.value ?? '').trim() || null,
-    expires_at: fromDatetimeLocal(adminServiceTokenExpiresAt?.value ?? ''),
-    permission_constraints: inheritPermissions ? null : getCheckedPermissionKeys(adminServiceTokenPermissions)
-  };
+  const { payload, error } = buildAdminServiceTokenPayload();
+  if (error || !payload) {
+    setAdminServiceTokenStatus(error ?? 'Unable to build token payload.', 'error');
+    adminServiceTokenLabel?.focus();
+    return;
+  }
   adminServiceTokenSave?.setAttribute('disabled', 'true');
   try {
     const response = await api.updateAdminServiceAccountToken(selectedToken.id, payload);
@@ -18456,23 +18516,23 @@ async function rotateAdminSelectedServiceToken() {
     setAdminServiceTokenStatus('Select a token first.', 'error');
     return;
   }
-  const confirmed = confirm(`Rotate token "${selectedToken.label || selectedToken.token_public_id}"? The old secret will stop working immediately.`);
+  const confirmed = confirm(`Regenerate token "${selectedToken.label || selectedToken.token_public_id}"? The old secret will stop working immediately.`);
   if (!confirmed) return;
-  const inheritPermissions = Boolean(adminServiceTokenInherit?.checked);
-  const payload = {
-    label: String(adminServiceTokenLabel?.value ?? '').trim() || null,
-    expires_at: fromDatetimeLocal(adminServiceTokenExpiresAt?.value ?? ''),
-    permission_constraints: inheritPermissions ? null : getCheckedPermissionKeys(adminServiceTokenPermissions)
-  };
+  const { payload, error } = buildAdminServiceTokenPayload();
+  if (error || !payload) {
+    setAdminServiceTokenStatus(error ?? 'Unable to build token payload.', 'error');
+    adminServiceTokenLabel?.focus();
+    return;
+  }
   adminServiceTokenRotate?.setAttribute('disabled', 'true');
   try {
     const response = await api.rotateAdminServiceAccountToken(selectedToken.id, payload);
     const rotated = normalizeServiceAccountTokenRecord(response?.token);
-    presentAdminServiceToken(response?.token?.token ?? '', 'rotated');
+    presentAdminServiceToken(response?.token?.token ?? '', 'regenerated');
     await refreshAdminServiceAccountTokens({ preferredTokenId: rotated?.id ?? '' });
     await refreshAdminServiceAccountActivity();
-    setAdminServiceTokenStatus('Token rotated. Copy the new raw secret now.');
-    showToast({ type: 'success', message: `Rotated ${selectedToken.label || selectedToken.token_public_id}.` });
+    setAdminServiceTokenStatus('Token regenerated. Copy the new raw secret now.');
+    showToast({ type: 'success', message: `Regenerated ${selectedToken.label || selectedToken.token_public_id}.` });
   } catch (err) {
     const message = err?.message ?? 'Unable to rotate token.';
     setAdminServiceTokenStatus(message, 'error');
@@ -18534,7 +18594,7 @@ async function addAdminServiceWorkspaceGrant() {
   }
   const selectedAccount = getSelectedAdminServiceAccount();
   if (!selectedAccount) {
-    setAdminServiceGrantsStatus('Select a service account first.', 'error');
+    setAdminServiceGrantsStatus('Select a service worker first.', 'error');
     return;
   }
   const workspaceId = String(adminServiceGrantWorkspace?.value ?? '').trim();
@@ -29023,11 +29083,11 @@ adminServiceAccountsRefresh?.addEventListener('click', () => {
   void refreshAdminServiceAccounts();
 });
 adminServiceAccountNew?.addEventListener('click', () => {
-  setAdminServiceAccountsStatus('Creating a new service account.');
+  setAdminServiceAccountsStatus('Creating a new service worker.');
   startNewAdminServiceAccountDraft();
 });
 adminServiceAccountRogerPreset?.addEventListener('click', () => {
-  setAdminServiceAccountsStatus('Loaded the Roger preset. Save to create the service account.');
+  setAdminServiceAccountsStatus('Loaded the Roger preset. Save to create the service worker.');
   startNewAdminServiceAccountDraft(buildRogerServiceAccountDraft());
 });
 adminServiceAccountSelect?.addEventListener('change', () => {
