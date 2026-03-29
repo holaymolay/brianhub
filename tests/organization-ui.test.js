@@ -115,7 +115,9 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /const canManage = orgRole === 'owner' \|\| orgRole === 'admin';/);
   assert.match(script, /manageBtn\.textContent = canManage \? 'Manage' : 'Settings';/);
   assert.match(script, /manageBtn\.title = canManage[\s\S]*'Manage organization members, roles, and ownership\.'[\s\S]*'View organization settings and membership\.';/s);
-  assert.match(script, /badge\.className = `workspace-badge admin-service-readiness-badge is-\$\{readiness\.tone\}`;/);
+  assert.match(script, /const readinessBadge = document\.createElement\('span'\);/);
+  assert.match(script, /readinessBadge\.className = `workspace-badge admin-service-readiness-badge is-\$\{readiness\.tone\}`;/);
+  assert.match(script, /badges\.appendChild\(readinessBadge\);/);
   assert.match(script, /organizationContextReturn\?\.addEventListener\('click', \(\) => \{\s*void closeOrganizationSurface\(\);/s);
   assert.match(script, /headerSurfaceIndicatorLeave\?\.addEventListener\('click', \(\) => \{\s*void closeOrganizationSurface\(\);/s);
   assert.match(script, /organizationContextManage\?\.addEventListener\('click', \(\) => \{\s*const activeOrganizationId = getActiveOrganizationId\(\);[\s\S]*openSettings\(\);/s);

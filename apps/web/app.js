@@ -778,6 +778,8 @@ const adminServiceGrantsList = document.getElementById('admin-service-grants-lis
 const adminServiceEffectiveWorkspaces = document.getElementById('admin-service-effective-workspaces');
 const adminServiceActivityStatus = document.getElementById('admin-service-activity-status');
 const adminServiceActivitySummary = document.getElementById('admin-service-activity-summary');
+const adminServiceActivityFilters = document.getElementById('admin-service-activity-filters');
+const adminServiceActivityHighlights = document.getElementById('admin-service-activity-highlights');
 const adminServiceActivityRefresh = document.getElementById('admin-service-activity-refresh');
 const adminServiceActivityList = document.getElementById('admin-service-activity-list');
 const profilePageBack = document.getElementById('profile-page-back');
@@ -16912,6 +16914,21 @@ function getServiceWorkerReadinessState(account) {
   return { label: 'Ready', tone: 'success' };
 }
 
+function getServiceWorkerAttentionState(account) {
+  if (!account || Number(account.archived)) return null;
+  const readiness = getServiceWorkerReadinessState(account);
+  if (readiness.label !== 'Ready') return null;
+  const summary = getServiceAccountSummary(account);
+  if (!summary.last_token_used_at) {
+    return { label: 'Untested', tone: 'warning' };
+  }
+  const latestActivityAt = Date.parse(String(summary.last_activity_at ?? summary.last_token_used_at ?? ''));
+  if (Number.isFinite(latestActivityAt) && Date.now() - latestActivityAt > 14 * 24 * 60 * 60 * 1000) {
+    return { label: 'Stale', tone: 'warning' };
+  }
+  return null;
+}
+
 function renderOrganizationsSettings() {
   const orgState = getOrganizationSettingsState();
   const authenticated = isAuthenticatedActor();
@@ -17638,6 +17655,7 @@ function getAdminState() {
   if (typeof adminState.selectedServiceAccountId !== 'string') adminState.selectedServiceAccountId = '';
   if (typeof adminState.selectedServiceAccountTokenId !== 'string') adminState.selectedServiceAccountTokenId = '';
   if (typeof adminState.serviceAccountTokenEditorMode !== 'string') adminState.serviceAccountTokenEditorMode = 'issue';
+  if (typeof adminState.serviceAccountActivityFilter !== 'string') adminState.serviceAccountActivityFilter = 'all';
   if (typeof adminState.revealedServiceToken !== 'string') adminState.revealedServiceToken = '';
   if (typeof adminState.revealedServiceTokenPendingConfirmation !== 'boolean') adminState.revealedServiceTokenPendingConfirmation = false;
   if (typeof adminState.revealedServiceTokenCopied !== 'boolean') adminState.revealedServiceTokenCopied = false;
@@ -17687,7 +17705,7 @@ function getAdminServiceAccountsSearchQuery() {
 
 function getAdminServiceAccountsReadinessFilter() {
   const value = String(getAdminState().serviceAccountsReadinessFilter ?? 'all').trim();
-  return ['all', 'ready', 'needs-workspace', 'needs-token', 'disabled'].includes(value)
+  return ['all', 'ready', 'attention', 'needs-workspace', 'needs-token', 'disabled'].includes(value)
     ? value
     : 'all';
 }
@@ -17817,11 +17835,15 @@ function getFilteredAdminServiceAccounts() {
   return accounts.filter((account) => {
     const readiness = getServiceWorkerReadinessState(account);
     if (readinessFilter !== 'all') {
+      if (readinessFilter === 'attention') {
+        if (!getServiceWorkerAttentionState(account)) return false;
+      } else {
       const readinessKey = String(readiness.label ?? '')
         .trim()
         .toLowerCase()
         .replace(/\s+/g, '-');
-      if (readinessKey !== readinessFilter) return false;
+        if (readinessKey !== readinessFilter) return false;
+      }
     }
     if (!searchQuery) return true;
     const haystack = [
@@ -17935,6 +17957,7 @@ function resetAdminServiceAccountDetailState() {
   adminState.serviceAccountActivityLoading = false;
   adminState.serviceAccountActivityLoaded = false;
   adminState.serviceAccountActivityRequestedAt = 0;
+  adminState.serviceAccountActivityFilter = 'all';
   setAdminServiceTokenReveal('');
 }
 
@@ -18116,11 +18139,97 @@ function formatApiTokenStatusLabel(token) {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function isAdminServiceTokenExpiringSoon(token, thresholdDays = 7) {
+  if (!token || formatApiTokenStatus(token) !== 'active' || !token.expires_at) return false;
+  const expiresAt = Date.parse(String(token.expires_at));
+  if (!Number.isFinite(expiresAt)) return false;
+  const thresholdMs = Number(thresholdDays) * 24 * 60 * 60 * 1000;
+  return expiresAt - Date.now() <= thresholdMs;
+}
+
 function getServiceWorkerTokenAccessLabel(token) {
   if (!token) return 'Unknown access';
   if (token.permission_constraints === null) return 'Worker permissions';
   const count = Array.isArray(token.permission_constraints) ? token.permission_constraints.length : 0;
   return `${count} scoped permission${count === 1 ? '' : 's'}`;
+}
+
+function getAdminServiceTokenSortTimestamp(token) {
+  const candidates = [
+    token?.last_used_at,
+    token?.revoked_at,
+    token?.expires_at,
+    token?.created_at
+  ];
+  for (const candidate of candidates) {
+    const parsed = Date.parse(String(candidate ?? ''));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function compareAdminServiceTokens(left, right) {
+  const statusRank = (token) => {
+    switch (formatApiTokenStatus(token)) {
+      case 'active':
+        return 0;
+      case 'expired':
+        return 1;
+      case 'revoked':
+        return 2;
+      default:
+        return 3;
+    }
+  };
+  const rankDelta = statusRank(left) - statusRank(right);
+  if (rankDelta !== 0) return rankDelta;
+  return getAdminServiceTokenSortTimestamp(right) - getAdminServiceTokenSortTimestamp(left);
+}
+
+function normalizeAdminServiceActivityFilter(filter) {
+  switch (String(filter ?? '').trim()) {
+    case 'access':
+    case 'lifecycle':
+    case 'grants':
+      return String(filter).trim();
+    default:
+      return 'all';
+  }
+}
+
+function getAdminServiceActivityFilter() {
+  return normalizeAdminServiceActivityFilter(getAdminState().serviceAccountActivityFilter);
+}
+
+function setAdminServiceActivityFilter(filter) {
+  getAdminState().serviceAccountActivityFilter = normalizeAdminServiceActivityFilter(filter);
+}
+
+function getServiceAccountActivityCategory(event) {
+  const eventType = String(event?.event_type ?? '').trim();
+  if (eventType === 'token.accessed') return 'access';
+  if (eventType.startsWith('workspace_grant.')) return 'grants';
+  return 'lifecycle';
+}
+
+function buildAdminServiceActivityFilterOptions(events = []) {
+  const activityEvents = Array.isArray(events) ? events : [];
+  const countByKey = {
+    all: activityEvents.length,
+    access: 0,
+    lifecycle: 0,
+    grants: 0
+  };
+  activityEvents.forEach((event) => {
+    const category = getServiceAccountActivityCategory(event);
+    if (category in countByKey) countByKey[category] += 1;
+  });
+  return [
+    { key: 'all', label: 'All', count: countByKey.all },
+    { key: 'access', label: 'Access', count: countByKey.access },
+    { key: 'lifecycle', label: 'Lifecycle', count: countByKey.lifecycle },
+    { key: 'grants', label: 'Grants', count: countByKey.grants }
+  ];
 }
 
 function formatServiceAccountActivityTitle(event) {
@@ -18152,6 +18261,86 @@ function formatServiceAccountActivityMeta(event) {
   const actorLabel = event?.actor_display_name || event?.actor_email || '';
   if (actorLabel) parts.push(`by ${actorLabel}`);
   return parts.join(' • ');
+}
+
+function buildAdminServiceActivityHighlights(events = []) {
+  const activityEvents = Array.isArray(events) ? events : [];
+  const latestAccess = activityEvents.find((event) => String(event?.event_type ?? '').trim() === 'token.accessed') ?? null;
+  const latestLifecycle = activityEvents.find((event) => String(event?.event_type ?? '').trim() !== 'token.accessed') ?? null;
+  const latestWorkspaceChange = activityEvents.find((event) => String(event?.event_type ?? '').trim().startsWith('workspace_grant.')) ?? null;
+  const accessCount = activityEvents.filter((event) => String(event?.event_type ?? '').trim() === 'token.accessed').length;
+  return [
+    {
+      label: 'Last API access',
+      value: latestAccess?.created_at ? formatNoticeDateTimeDisplay(latestAccess.created_at) : 'No API calls yet',
+      meta: latestAccess
+        ? `${String(latestAccess.request_method ?? '').trim().toUpperCase()} ${String(latestAccess.request_path ?? '').trim()}`.trim()
+        : 'A token access event will appear after the worker makes a request.',
+      tone: latestAccess ? 'success' : 'muted'
+    },
+    {
+      label: 'Recent lifecycle',
+      value: latestLifecycle?.created_at ? formatNoticeDateTimeDisplay(latestLifecycle.created_at) : 'No lifecycle changes',
+      meta: latestLifecycle
+        ? formatServiceAccountActivityTitle(latestLifecycle)
+        : 'Create, rotate, revoke, and grant events will appear here.',
+      tone: latestLifecycle ? 'info' : 'muted'
+    },
+    {
+      label: 'Workspace changes',
+      value: latestWorkspaceChange?.created_at ? formatNoticeDateTimeDisplay(latestWorkspaceChange.created_at) : 'No grant changes',
+      meta: latestWorkspaceChange
+        ? formatServiceAccountActivityTitle(latestWorkspaceChange)
+        : 'Grant or remove a workspace to record the change here.',
+      tone: latestWorkspaceChange ? 'warning' : 'muted'
+    },
+    {
+      label: 'Access volume',
+      value: `${accessCount}`,
+      meta: accessCount === 1 ? '1 recent token access event' : `${accessCount} recent token access events`,
+      tone: accessCount ? 'success' : 'muted'
+    }
+  ];
+}
+
+function buildAdminServiceActivityOperationalStatus(selectedAccount, events = []) {
+  const selectedSummary = getServiceAccountSummary(selectedAccount);
+  const adminState = getAdminState();
+  const activeTokenCount = adminState.serviceAccountTokensLoaded
+    ? (adminState.serviceAccountTokens ?? []).filter((token) => formatApiTokenStatus(token) === 'active').length
+    : selectedSummary.active_token_count;
+  const latestAccess = (Array.isArray(events) ? events : [])
+    .find((event) => getServiceAccountActivityCategory(event) === 'access') ?? null;
+  const latestAccessAt = Date.parse(String(latestAccess?.created_at ?? ''));
+  if (!activeTokenCount) {
+    return {
+      tone: 'warning',
+      message: 'No active token. This worker cannot make API calls until you issue or regenerate one.'
+    };
+  }
+  if (Number.isFinite(latestAccessAt)) {
+    const ageMs = Date.now() - latestAccessAt;
+    if (ageMs <= 24 * 60 * 60 * 1000) {
+      return {
+        tone: 'success',
+        message: `Recent API access seen ${formatNoticeDateTimeDisplay(latestAccess.created_at)}. This worker looks active.`
+      };
+    }
+    if (ageMs <= 7 * 24 * 60 * 60 * 1000) {
+      return {
+        tone: 'info',
+        message: `Last API access was ${formatNoticeDateTimeDisplay(latestAccess.created_at)}. This worker has connected recently.`
+      };
+    }
+    return {
+      tone: 'warning',
+      message: `Last API access was ${formatNoticeDateTimeDisplay(latestAccess.created_at)}. Verify that this worker is still online and using a current token.`
+    };
+  }
+  return {
+    tone: 'warning',
+    message: 'Active tokens exist, but no API access has been recorded yet. Verify that the worker has connected at least once.'
+  };
 }
 
 function formatServiceAccountAliasDisplay(alias) {
@@ -18867,12 +19056,14 @@ function renderAdminServiceAccountsList() {
       const label = getServiceWorkerReadinessState(account).label;
       return label === 'Needs workspace' || label === 'Needs token';
     }).length;
+    const attentionCount = visibleAccounts.filter((account) => Boolean(getServiceWorkerAttentionState(account))).length;
     const disabledCount = visibleAccounts.filter((account) => getServiceWorkerReadinessState(account).label === 'Disabled').length;
     const summaryParts = [`${filteredAccounts.length} shown`, `${visibleAccounts.length} total`, `${readyCount} ready`];
     if (warningCount) summaryParts.push(`${warningCount} need setup`);
+    if (attentionCount) summaryParts.push(`${attentionCount} need review`);
     if (disabledCount) summaryParts.push(`${disabledCount} disabled`);
     if (readinessFilter !== 'all') {
-      const filterLabel = readinessFilter.replace(/-/g, ' ');
+      const filterLabel = readinessFilter === 'attention' ? 'needs attention' : readinessFilter.replace(/-/g, ' ');
       summaryParts.push(`filter: ${filterLabel}`);
     }
     if (searchQuery) summaryParts.push(`search: “${searchQuery}”`);
@@ -18897,6 +19088,7 @@ function renderAdminServiceAccountsList() {
   filteredAccounts.forEach((account) => {
     const summary = getServiceAccountSummary(account);
     const readiness = getServiceWorkerReadinessState(account);
+    const attention = getServiceWorkerAttentionState(account);
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'workspace-row notice-row admin-user-row';
@@ -18936,14 +19128,25 @@ function renderAdminServiceAccountsList() {
     if (summary.last_activity_at) {
       metaParts.push(`active ${formatNoticeDateTimeDisplay(summary.last_activity_at)}`);
     }
+    if (attention?.label === 'Untested') {
+      metaParts.push('no API access recorded yet');
+    } else if (attention?.label === 'Stale') {
+      metaParts.push('activity looks stale');
+    }
     meta.textContent = metaParts.join(' • ');
     info.appendChild(title);
     info.appendChild(meta);
     row.appendChild(info);
-    const badge = document.createElement('span');
-    badge.className = `workspace-badge admin-service-readiness-badge is-${readiness.tone}`;
-    badge.textContent = readiness.label;
-    row.appendChild(badge);
+    const badges = document.createElement('div');
+    badges.className = 'admin-service-chip-row';
+    const readinessBadge = document.createElement('span');
+    readinessBadge.className = `workspace-badge admin-service-readiness-badge is-${readiness.tone}`;
+    readinessBadge.textContent = readiness.label;
+    badges.appendChild(readinessBadge);
+    if (attention) {
+      badges.appendChild(createAdminServiceChip(attention.label, attention.tone));
+    }
+    row.appendChild(badges);
     adminServiceAccountsList.appendChild(row);
   });
 }
@@ -19062,10 +19265,12 @@ function renderAdminServiceAccountTokensList() {
     adminServiceTokensList.appendChild(note);
     return;
   }
-  const tokens = adminState.serviceAccountTokens;
+  const tokens = [...adminState.serviceAccountTokens].sort(compareAdminServiceTokens);
   const activeCount = tokens.filter((token) => formatApiTokenStatus(token) === 'active').length;
   const expiredCount = tokens.filter((token) => formatApiTokenStatus(token) === 'expired').length;
   const revokedCount = tokens.filter((token) => formatApiTokenStatus(token) === 'revoked').length;
+  const neverUsedCount = tokens.filter((token) => formatApiTokenStatus(token) === 'active' && !token.last_used_at).length;
+  const expiringSoonCount = tokens.filter((token) => isAdminServiceTokenExpiringSoon(token)).length;
   const latestUse = tokens
     .map((token) => token?.last_used_at)
     .filter(Boolean)
@@ -19073,9 +19278,11 @@ function renderAdminServiceAccountTokensList() {
   const summaryParts = [`${tokens.length} total`, `${activeCount} active`];
   if (expiredCount) summaryParts.push(`${expiredCount} expired`);
   if (revokedCount) summaryParts.push(`${revokedCount} revoked`);
+  if (neverUsedCount) summaryParts.push(`${neverUsedCount} never used`);
+  if (expiringSoonCount) summaryParts.push(`${expiringSoonCount} expiring soon`);
   if (latestUse) summaryParts.push(`last used ${formatNoticeDateTimeDisplay(latestUse)}`);
   setAdminServiceTokenListSummary(summaryParts.join(' • '));
-  adminState.serviceAccountTokens.forEach((token) => {
+  tokens.forEach((token) => {
     const row = document.createElement('div');
     row.className = 'workspace-row notice-row admin-user-row admin-service-token-row';
     row.classList.toggle('active', token.id === adminState.selectedServiceAccountTokenId);
@@ -19104,8 +19311,16 @@ function renderAdminServiceAccountTokensList() {
     badges.className = 'admin-service-chip-row admin-service-token-badges';
     badges.appendChild(createAdminServiceChip(formatApiTokenStatusLabel(token), formatApiTokenTone(formatApiTokenStatus(token))));
     badges.appendChild(createAdminServiceChip(getServiceWorkerTokenAccessLabel(token), token.permission_constraints === null ? 'muted' : 'success'));
-    if (token.expires_at && formatApiTokenStatus(token) === 'active') {
-      badges.appendChild(createAdminServiceChip('Expiring', 'warning'));
+    if (isAdminServiceTokenExpiringSoon(token)) {
+      badges.appendChild(createAdminServiceChip('Expiring soon', 'warning'));
+    } else if (token.expires_at && formatApiTokenStatus(token) === 'active') {
+      badges.appendChild(createAdminServiceChip('Scheduled expiry', 'muted'));
+    }
+    if (formatApiTokenStatus(token) === 'active' && !token.last_used_at) {
+      badges.appendChild(createAdminServiceChip('Never used', 'muted'));
+    }
+    if (token.replaced_by_token_id) {
+      badges.appendChild(createAdminServiceChip('Superseded', 'warning'));
     }
     selectBtn.appendChild(info);
     selectBtn.appendChild(badges);
@@ -19408,7 +19623,14 @@ function renderAdminServiceActivityList() {
   const selectedAccount = getSelectedAdminServiceAccount();
   adminServiceActivityList.innerHTML = '';
   setAdminServiceActivitySummary('');
+  if (adminServiceActivityFilters) {
+    adminServiceActivityFilters.innerHTML = '';
+  }
+  if (adminServiceActivityHighlights) {
+    adminServiceActivityHighlights.innerHTML = '';
+  }
   if (!isCurrentActorOwnerSuperAdmin()) {
+    setAdminServiceActivityStatus('Owner access required to review service-worker activity.', 'error');
     const note = document.createElement('div');
     note.className = 'sidebar-note';
     note.textContent = 'Owner access required to review service-worker activity.';
@@ -19416,6 +19638,7 @@ function renderAdminServiceActivityList() {
     return;
   }
   if (!selectedAccount) {
+    setAdminServiceActivityStatus('Select a service worker first to review activity.', 'info');
     const note = document.createElement('div');
     note.className = 'sidebar-note';
     note.textContent = 'Save or select a service worker first.';
@@ -19423,6 +19646,7 @@ function renderAdminServiceActivityList() {
     return;
   }
   if (adminState.serviceAccountActivityLoading) {
+    setAdminServiceActivityStatus('Loading access history...', 'info');
     const note = document.createElement('div');
     note.className = 'sidebar-note';
     note.textContent = 'Loading access history...';
@@ -19430,6 +19654,7 @@ function renderAdminServiceActivityList() {
     return;
   }
   if (adminState.serviceAccountActivityError) {
+    setAdminServiceActivityStatus(adminState.serviceAccountActivityError, 'error');
     const note = document.createElement('div');
     note.className = 'sidebar-note';
     note.textContent = adminState.serviceAccountActivityError;
@@ -19437,6 +19662,8 @@ function renderAdminServiceActivityList() {
     return;
   }
   if (!adminState.serviceAccountActivity.length) {
+    const emptyStatus = buildAdminServiceActivityOperationalStatus(selectedAccount, []);
+    setAdminServiceActivityStatus(emptyStatus.message, emptyStatus.tone);
     const note = document.createElement('div');
     note.className = 'sidebar-note';
     note.textContent = 'No activity yet. History appears after token creation, grant changes, or live API use.';
@@ -19444,6 +19671,7 @@ function renderAdminServiceActivityList() {
     return;
   }
   const activityEvents = adminState.serviceAccountActivity;
+  const activityFilter = getAdminServiceActivityFilter();
   const latestActivityAt = activityEvents
     .map((event) => event?.created_at)
     .filter(Boolean)
@@ -19452,8 +19680,63 @@ function renderAdminServiceActivityList() {
   const summaryParts = [`${activityEvents.length} recent event${activityEvents.length === 1 ? '' : 's'}`];
   if (accessEventCount) summaryParts.push(`${accessEventCount} token access${accessEventCount === 1 ? '' : 'es'}`);
   if (latestActivityAt) summaryParts.push(`last seen ${formatNoticeDateTimeDisplay(latestActivityAt)}`);
+  if (activityFilter !== 'all') summaryParts.push(`viewing ${activityFilter}`);
   setAdminServiceActivitySummary(summaryParts.join(' • '));
-  activityEvents.forEach((event) => {
+  const activityStatus = buildAdminServiceActivityOperationalStatus(selectedAccount, activityEvents);
+  setAdminServiceActivityStatus(activityStatus.message, activityStatus.tone);
+  if (adminServiceActivityFilters) {
+    buildAdminServiceActivityFilterOptions(activityEvents).forEach((option) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'admin-service-token-mode-button';
+      const active = option.key === activityFilter;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      button.textContent = `${option.label} · ${option.count}`;
+      button.addEventListener('click', () => {
+        if (getAdminServiceActivityFilter() === option.key) return;
+        setAdminServiceActivityFilter(option.key);
+        renderAdminServiceActivityList();
+      });
+      adminServiceActivityFilters.appendChild(button);
+    });
+  }
+  if (adminServiceActivityHighlights) {
+    buildAdminServiceActivityHighlights(activityEvents).forEach((highlight) => {
+      const card = document.createElement('div');
+      card.className = 'admin-service-activity-highlight';
+      if (highlight.tone) card.classList.add(`is-${highlight.tone}`);
+      const label = document.createElement('div');
+      label.className = 'admin-service-activity-highlight-label';
+      label.textContent = highlight.label;
+      const value = document.createElement('div');
+      value.className = 'admin-service-activity-highlight-value';
+      value.textContent = highlight.value;
+      const meta = document.createElement('div');
+      meta.className = 'admin-service-activity-highlight-meta';
+      meta.textContent = highlight.meta;
+      card.append(label, value, meta);
+      adminServiceActivityHighlights.appendChild(card);
+    });
+  }
+  const filteredEvents = activityFilter === 'all'
+    ? activityEvents
+    : activityEvents.filter((event) => getServiceAccountActivityCategory(event) === activityFilter);
+  if (!filteredEvents.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    if (activityFilter === 'access') {
+      note.textContent = 'No token access events yet. API requests will appear here after the worker calls BrianHub.';
+    } else if (activityFilter === 'grants') {
+      note.textContent = 'No workspace grant changes yet. Grant or remove a workspace to record one here.';
+    } else {
+      note.textContent = 'No lifecycle events yet. Create, rotate, or revoke a token to record one here.';
+    }
+    adminServiceActivityList.appendChild(note);
+    renderAdminServiceAccountSummary();
+    return;
+  }
+  filteredEvents.forEach((event) => {
     const row = document.createElement('div');
     row.className = 'workspace-row notice-row';
     const info = document.createElement('div');

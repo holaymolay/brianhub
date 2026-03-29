@@ -74,7 +74,9 @@ test('admin console exposes service-worker, token, and workspace-grant controls'
   assert.match(html, /id="admin-users-summary"/);
   assert.match(html, /<h3>Service workers<\/h3>/);
   assert.match(html, /id="admin-service-accounts-search"/);
+  assert.match(html, /Search workers by name, alias, or description/);
   assert.match(html, /id="admin-service-accounts-filter"/);
+  assert.match(html, /<option value="attention">Needs attention<\/option>/);
   assert.match(html, /id="admin-service-accounts-summary"/);
   assert.match(html, /id="admin-service-account-roger-preset"/);
   assert.match(html, /id="admin-service-summary-name"/);
@@ -102,6 +104,8 @@ test('admin console exposes service-worker, token, and workspace-grant controls'
   assert.match(html, /<h4>Activity<\/h4>/);
   assert.match(html, /id="admin-service-activity-refresh"/);
   assert.match(html, /id="admin-service-activity-summary"/);
+  assert.match(html, /id="admin-service-activity-filters"/);
+  assert.match(html, /id="admin-service-activity-highlights"/);
   assert.match(html, /id="admin-service-activity-list"/);
 });
 
@@ -132,6 +136,14 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /function getAdminServiceAccountsSearchQuery\(\)/);
   assert.match(appScript, /function getAdminServiceAccountsReadinessFilter\(\)/);
   assert.match(appScript, /function getFilteredAdminServiceAccounts\(\)/);
+  assert.match(appScript, /function getServiceWorkerAttentionState\(account\)/);
+  assert.match(appScript, /function isAdminServiceTokenExpiringSoon\(token, thresholdDays = 7\)/);
+  assert.match(appScript, /function compareAdminServiceTokens\(left, right\)/);
+  assert.match(appScript, /function normalizeAdminServiceActivityFilter\(filter\)/);
+  assert.match(appScript, /function getServiceAccountActivityCategory\(event\)/);
+  assert.match(appScript, /function buildAdminServiceActivityFilterOptions\(events = \[\]\)/);
+  assert.match(appScript, /function buildAdminServiceActivityHighlights\(events = \[\]\)/);
+  assert.match(appScript, /function buildAdminServiceActivityOperationalStatus\(selectedAccount, events = \[\]\)/);
   assert.match(appScript, /function normalizeAdminServiceTokenEditorMode\(mode\)/);
   assert.match(appScript, /function getAdminServiceTokenEditorMode\(\)/);
   assert.match(appScript, /function setAdminServiceTokenEditorMode\(mode\)/);
@@ -189,4 +201,15 @@ test('admin console auto-selects existing service accounts and surfaces summary 
   assert.match(appScript, /setAdminServiceAccountsSummary\(summaryParts\.join\(' • '\)\);/);
   assert.match(appScript, /setAdminServiceActivitySummary\(summaryParts\.join\(' • '\)\);/);
   assert.match(appScript, /No service workers match the current search\/filter\./);
+  assert.match(appScript, /if \(readinessFilter === 'attention'\) \{/);
+  assert.match(appScript, /summaryParts\.push\(`\$\{attentionCount\} need review`\);/);
+  assert.match(appScript, /badges\.appendChild\(createAdminServiceChip\(attention\.label, attention\.tone\)\);/);
+  assert.match(appScript, /const tokens = \[\.\.\.adminState\.serviceAccountTokens\]\.sort\(compareAdminServiceTokens\);/);
+  assert.match(appScript, /badges\.appendChild\(createAdminServiceChip\('Never used', 'muted'\)\);/);
+  assert.match(appScript, /badges\.appendChild\(createAdminServiceChip\('Superseded', 'warning'\)\);/);
+  assert.match(appScript, /buildAdminServiceActivityFilterOptions\(activityEvents\)\.forEach\(\(option\) => \{/);
+  assert.match(appScript, /button\.textContent = `\$\{option\.label\} · \$\{option\.count\}`;/);
+  assert.match(appScript, /setAdminServiceActivityFilter\(option\.key\);/);
+  assert.match(appScript, /buildAdminServiceActivityHighlights\(activityEvents\)\.forEach\(\(highlight\) => \{/);
+  assert.match(appScript, /setAdminServiceActivityStatus\(activityStatus\.message, activityStatus\.tone\);/);
 });

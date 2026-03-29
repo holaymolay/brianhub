@@ -2381,6 +2381,58 @@ body.api-help-body {
   background: rgba(13, 21, 34, 0.5);
 }
 
+.admin-service-activity-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.55rem;
+}
+
+.admin-service-activity-filters {
+  width: 100%;
+}
+
+.admin-service-activity-highlight {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(154, 166, 186, 0.18);
+  background: rgba(12, 19, 31, 0.62);
+}
+
+.admin-service-activity-highlight.is-success {
+  border-color: rgba(99, 193, 141, 0.22);
+  background: rgba(12, 34, 24, 0.55);
+}
+
+.admin-service-activity-highlight.is-warning {
+  border-color: rgba(226, 182, 101, 0.24);
+  background: rgba(54, 37, 10, 0.44);
+}
+
+.admin-service-activity-highlight.is-muted {
+  color: #9fb4cf;
+}
+
+.admin-service-activity-highlight-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #88a1bf;
+}
+
+.admin-service-activity-highlight-value {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.admin-service-activity-highlight-meta {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
 .admin-service-token-reveal {
   display: grid;
   gap: 0.6rem;
