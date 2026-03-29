@@ -706,8 +706,11 @@ const adminInviteTokenWrap = document.getElementById('admin-invite-token-wrap');
 const adminInviteToken = document.getElementById('admin-invite-token');
 const adminInviteTokenCopy = document.getElementById('admin-invite-token-copy');
 const adminInviteStatus = document.getElementById('admin-invite-status');
+const adminInvitesSummary = document.getElementById('admin-invites-summary');
 const adminInvitesList = document.getElementById('admin-invites-list');
 const adminUsersStatus = document.getElementById('admin-users-status');
+const adminUsersSearch = document.getElementById('admin-users-search');
+const adminUsersSummary = document.getElementById('admin-users-summary');
 const adminUsersList = document.getElementById('admin-users-list');
 const adminUsersRefresh = document.getElementById('admin-users-refresh');
 const adminUserSelect = document.getElementById('admin-user-select');
@@ -771,6 +774,7 @@ const adminServiceGrantAdd = document.getElementById('admin-service-grant-add');
 const adminServiceGrantsList = document.getElementById('admin-service-grants-list');
 const adminServiceEffectiveWorkspaces = document.getElementById('admin-service-effective-workspaces');
 const adminServiceActivityStatus = document.getElementById('admin-service-activity-status');
+const adminServiceActivitySummary = document.getElementById('admin-service-activity-summary');
 const adminServiceActivityRefresh = document.getElementById('admin-service-activity-refresh');
 const adminServiceActivityList = document.getElementById('admin-service-activity-list');
 const profilePageBack = document.getElementById('profile-page-back');
@@ -17625,6 +17629,7 @@ function getAdminState() {
   if (typeof adminState.statusMessage !== 'string') adminState.statusMessage = '';
   if (typeof adminState.statusTone !== 'string') adminState.statusTone = 'info';
   if (typeof adminState.selectedUserId !== 'string') adminState.selectedUserId = '';
+  if (typeof adminState.usersSearchQuery !== 'string') adminState.usersSearchQuery = '';
   if (typeof adminState.selectedServiceAccountId !== 'string') adminState.selectedServiceAccountId = '';
   if (typeof adminState.selectedServiceAccountTokenId !== 'string') adminState.selectedServiceAccountTokenId = '';
   if (typeof adminState.serviceAccountTokenEditorMode !== 'string') adminState.serviceAccountTokenEditorMode = 'issue';
@@ -17650,6 +17655,25 @@ function getSelectedAdminUser() {
   const adminState = getAdminState();
   if (!adminState.selectedUserId) return null;
   return adminState.users.find((user) => user.id === adminState.selectedUserId) ?? null;
+}
+
+function getAdminUsersSearchQuery() {
+  return String(getAdminState().usersSearchQuery ?? '').trim().toLowerCase();
+}
+
+function getFilteredAdminUsers() {
+  const adminState = getAdminState();
+  const query = getAdminUsersSearchQuery();
+  if (!query) return adminState.users;
+  return adminState.users.filter((user) => {
+    const haystack = [
+      user.display_name ?? '',
+      user.email ?? '',
+      user.org_role ?? '',
+      user.is_owner ? 'owner' : ''
+    ].join(' ').toLowerCase();
+    return haystack.includes(query);
+  });
 }
 
 function syncAdminServiceAccountSelectionForUser() {
@@ -18396,6 +18420,27 @@ function setAdminUsersStatus(message, tone = 'info') {
   }
 }
 
+function setAdminInvitesSummary(message = '') {
+  if (!adminInvitesSummary) return;
+  const safeMessage = String(message ?? '').trim();
+  adminInvitesSummary.textContent = safeMessage;
+  adminInvitesSummary.classList.toggle('hidden', !safeMessage);
+}
+
+function setAdminUsersSummary(message = '') {
+  if (!adminUsersSummary) return;
+  const safeMessage = String(message ?? '').trim();
+  adminUsersSummary.textContent = safeMessage;
+  adminUsersSummary.classList.toggle('hidden', !safeMessage);
+}
+
+function setAdminServiceActivitySummary(message = '') {
+  if (!adminServiceActivitySummary) return;
+  const safeMessage = String(message ?? '').trim();
+  adminServiceActivitySummary.textContent = safeMessage;
+  adminServiceActivitySummary.classList.toggle('hidden', !safeMessage);
+}
+
 function buildInviteLinkFromToken(token) {
   const safeToken = String(token ?? '').trim();
   if (!safeToken || typeof window === 'undefined') return '';
@@ -18426,6 +18471,7 @@ function renderAdminInvitesList() {
   if (!adminInvitesList) return;
   const adminState = getAdminState();
   adminInvitesList.innerHTML = '';
+  setAdminInvitesSummary('');
   if (adminState.invitesLoading) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
@@ -18441,10 +18487,23 @@ function renderAdminInvitesList() {
     return;
   }
   const invites = Array.isArray(adminState.invites) ? adminState.invites : [];
+  if (invites.length) {
+    const adminCount = invites.filter((invite) => normalizeOrgRole(invite?.role) === 'admin').length;
+    const memberCount = invites.filter((invite) => normalizeOrgRole(invite?.role) !== 'admin').length;
+    const latestExpiry = invites
+      .map((invite) => invite?.expires_at)
+      .filter(Boolean)
+      .sort((left, right) => Date.parse(String(left)) - Date.parse(String(right)))[0] ?? null;
+    const summaryParts = [`${invites.length} pending`];
+    if (adminCount) summaryParts.push(`${adminCount} admin`);
+    if (memberCount) summaryParts.push(`${memberCount} member`);
+    if (latestExpiry) summaryParts.push(`next expires ${formatNoticeDateTimeDisplay(latestExpiry)}`);
+    setAdminInvitesSummary(summaryParts.join(' • '));
+  }
   if (!invites.length) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
-    note.textContent = 'No pending invites.';
+    note.textContent = 'No pending invites. Fresh invite links will appear here until they are accepted or deleted.';
     adminInvitesList.appendChild(note);
     return;
   }
@@ -18500,7 +18559,13 @@ function renderAdminInvitesList() {
 function renderAdminUsersList() {
   if (!adminUsersList) return;
   const adminState = getAdminState();
+  const query = getAdminUsersSearchQuery();
+  const filteredUsers = getFilteredAdminUsers();
+  if (adminUsersSearch && document.activeElement !== adminUsersSearch) {
+    adminUsersSearch.value = adminState.usersSearchQuery ?? '';
+  }
   adminUsersList.innerHTML = '';
+  setAdminUsersSummary('');
   if (adminState.usersLoading) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
@@ -18522,7 +18587,20 @@ function renderAdminUsersList() {
     adminUsersList.appendChild(note);
     return;
   }
-  adminState.users.forEach((user) => {
+  const activeCount = adminState.users.filter((user) => !Number(user.archived)).length;
+  const disabledCount = adminState.users.filter((user) => Number(user.archived)).length;
+  const summaryParts = [`${filteredUsers.length} shown`, `${adminState.users.length} total`, `${activeCount} active`];
+  if (disabledCount) summaryParts.push(`${disabledCount} disabled`);
+  if (query) summaryParts.push(`filter: “${query}”`);
+  setAdminUsersSummary(summaryParts.join(' • '));
+  if (!filteredUsers.length) {
+    const note = document.createElement('div');
+    note.className = 'sidebar-note';
+    note.textContent = `No users match “${query}”.`;
+    adminUsersList.appendChild(note);
+    return;
+  }
+  filteredUsers.forEach((user) => {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'workspace-row notice-row admin-user-row';
@@ -19241,6 +19319,7 @@ function renderAdminServiceActivityList() {
   const adminState = getAdminState();
   const selectedAccount = getSelectedAdminServiceAccount();
   adminServiceActivityList.innerHTML = '';
+  setAdminServiceActivitySummary('');
   if (!isCurrentActorOwnerSuperAdmin()) {
     const note = document.createElement('div');
     note.className = 'sidebar-note';
@@ -19276,7 +19355,17 @@ function renderAdminServiceActivityList() {
     adminServiceActivityList.appendChild(note);
     return;
   }
-  adminState.serviceAccountActivity.forEach((event) => {
+  const activityEvents = adminState.serviceAccountActivity;
+  const latestActivityAt = activityEvents
+    .map((event) => event?.created_at)
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(String(right)) - Date.parse(String(left)))[0] ?? null;
+  const accessEventCount = activityEvents.filter((event) => String(event?.event_type ?? '').trim() === 'token.accessed').length;
+  const summaryParts = [`${activityEvents.length} recent event${activityEvents.length === 1 ? '' : 's'}`];
+  if (accessEventCount) summaryParts.push(`${accessEventCount} token access${accessEventCount === 1 ? '' : 'es'}`);
+  if (latestActivityAt) summaryParts.push(`last seen ${formatNoticeDateTimeDisplay(latestActivityAt)}`);
+  setAdminServiceActivitySummary(summaryParts.join(' • '));
+  activityEvents.forEach((event) => {
     const row = document.createElement('div');
     row.className = 'workspace-row notice-row';
     const info = document.createElement('div');
@@ -30346,6 +30435,10 @@ adminInviteTokenCopy?.addEventListener('click', async () => {
 });
 adminUsersRefresh?.addEventListener('click', () => {
   void refreshAdminUsers();
+});
+adminUsersSearch?.addEventListener('input', () => {
+  getAdminState().usersSearchQuery = String(adminUsersSearch.value ?? '');
+  renderAdminUsersList();
 });
 adminUserSelect?.addEventListener('change', () => {
   if (!confirmAbandonPendingAdminServiceTokenReveal()) {

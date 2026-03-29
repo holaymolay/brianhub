@@ -69,6 +69,9 @@ test('app wiring opens the in-app help hub and the dedicated API help url', () =
 
 test('admin console exposes service-worker, token, and workspace-grant controls', () => {
   const html = readRepoFile('apps/web/index.html');
+  assert.match(html, /id="admin-invites-summary"/);
+  assert.match(html, /id="admin-users-search"/);
+  assert.match(html, /id="admin-users-summary"/);
   assert.match(html, /<h3>Service workers<\/h3>/);
   assert.match(html, /id="admin-service-account-roger-preset"/);
   assert.match(html, /id="admin-service-summary-name"/);
@@ -95,6 +98,7 @@ test('admin console exposes service-worker, token, and workspace-grant controls'
   assert.match(html, /id="admin-service-grants-list"/);
   assert.match(html, /<h4>Activity<\/h4>/);
   assert.match(html, /id="admin-service-activity-refresh"/);
+  assert.match(html, /id="admin-service-activity-summary"/);
   assert.match(html, /id="admin-service-activity-list"/);
 });
 
@@ -116,6 +120,11 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /function setAdminServiceTokenState/);
   assert.match(appScript, /function setAdminServiceTokenListSummary/);
   assert.match(appScript, /function setAdminServiceTokenEditorMeta/);
+  assert.match(appScript, /function setAdminInvitesSummary\(message = ''\)/);
+  assert.match(appScript, /function setAdminUsersSummary\(message = ''\)/);
+  assert.match(appScript, /function setAdminServiceActivitySummary\(message = ''\)/);
+  assert.match(appScript, /function getAdminUsersSearchQuery\(\)/);
+  assert.match(appScript, /function getFilteredAdminUsers\(\)/);
   assert.match(appScript, /function normalizeAdminServiceTokenEditorMode\(mode\)/);
   assert.match(appScript, /function getAdminServiceTokenEditorMode\(\)/);
   assert.match(appScript, /function setAdminServiceTokenEditorMode\(mode\)/);
@@ -139,6 +148,7 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /adminServiceTokenRotate\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceGrantAdd\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceActivityRefresh\?\.addEventListener\('click'/);
+  assert.match(appScript, /adminUsersSearch\?\.addEventListener\('input'/);
   assert.match(appScript, /Step 1 of 3: save the worker/);
   assert.match(appScript, /Step 2 of 3: save is complete\. Next, grant the workspace this worker should access\./);
   assert.match(appScript, /Step 3 of 3: workspace access is ready, but this worker is still inert until you generate or regenerate an active token\./);
@@ -163,4 +173,9 @@ test('admin console auto-selects existing service accounts and surfaces summary 
   assert.match(appScript, /No service workers for \$\{selectedUser\.email \?\? selectedUser\.display_name \?\? 'this user'\} yet\./);
   assert.match(appScript, /refreshAdminServiceAccountActivity\(\)/);
   assert.match(appScript, /This worker has no tokens yet and cannot connect to BrianHub until you generate its first token\./);
+  assert.match(appScript, /No pending invites\. Fresh invite links will appear here until they are accepted or deleted\./);
+  assert.match(appScript, /No users match “\$\{query\}”\./);
+  assert.match(appScript, /setAdminInvitesSummary\(summaryParts\.join\(' • '\)\);/);
+  assert.match(appScript, /setAdminUsersSummary\(summaryParts\.join\(' • '\)\);/);
+  assert.match(appScript, /setAdminServiceActivitySummary\(summaryParts\.join\(' • '\)\);/);
 });
