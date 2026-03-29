@@ -102,7 +102,8 @@ test('mobile navigation exposes organizations as a first-class destination', () 
   assert.match(html, /id="mobile-menu-workflows"/);
   assert.match(script, /const mobileNavOrganizations = document\.getElementById\('mobile-nav-organizations'\);/);
   assert.match(script, /setMobileNavButtonConfig\(mobileNavOrganizations, \{\s*view: 'organizations'/s);
-  assert.match(script, /mobileMenuOrganizations\?\.addEventListener\('click', \(\) => \{\s*closeMobileTopMenu\(\);\s*openOrganizationsPage\(\);/s);
+  assert.match(script, /if \(view === 'organizations'\) \{\s*void openOrganizationsEntry\(\{ autoOpenSingle: true \}\);\s*return;\s*\}/s);
+  assert.match(script, /mobileMenuOrganizations\?\.addEventListener\('click', \(\) => \{\s*closeMobileTopMenu\(\);\s*void openOrganizationsEntry\(\{ autoOpenSingle: true \}\);/s);
 });
 
 test('mobile task tools reuse the same task state controls as desktop', () => {

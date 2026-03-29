@@ -70,6 +70,7 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /async function openOrganizationSurface\(orgInput\)/);
   assert.match(script, /async function closeOrganizationSurface\(\)/);
   assert.match(script, /function openOrganizationsPage\(\)/);
+  assert.match(script, /async function openOrganizationsEntry\(\{ autoOpenSingle = false \} = \{\}\)/);
   assert.match(script, /function closeOrganizationsPage\(\)/);
   assert.match(script, /function renderOrganizationSidebarList\(\)/);
   assert.match(script, /async function createOrganizationFromSettings\(\)/);
@@ -86,6 +87,7 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /selectBtn\.addEventListener\('click', \(\) => \{\s*if \(activeOrganizationId === org\.id\) \{\s*void closeOrganizationSurface\(\);[\s\S]*void openOrganizationSurface\(org\);/s);
   assert.match(script, /rememberWorkspaceAnchor\(state\.workspace\);/);
   assert.match(script, /await selectWorkspace\(workspace, \{ preserveView: true \}\);/);
+  assert.match(script, /if \(visibleOrganizations\.length === 1\) \{\s*const \[singleOrganization\] = visibleOrganizations;[\s\S]*await openOrganizationSurface\(singleOrganization\);/s);
   assert.match(script, /organizationsPageManage\?\.addEventListener\('click', \(\) => \{\s*openSettings\(\);/s);
   assert.match(script, /settingsOpenOrganizations\?\.addEventListener\('click', \(\) => \{\s*openOrganizationsPage\(\);/s);
 });

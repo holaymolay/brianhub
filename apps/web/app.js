@@ -1857,6 +1857,10 @@ mobileNavButtons.forEach((button) => {
     }
     const view = button.dataset.view;
     if (!view) return;
+    if (view === 'organizations') {
+      void openOrganizationsEntry({ autoOpenSingle: true });
+      return;
+    }
     if (view === 'workflows') {
       setWorkflowViewMode('runs');
       setMobileWorkflowPanelMode('list');
@@ -1962,7 +1966,7 @@ mobileMenuNotices?.addEventListener('click', () => {
 
 mobileMenuOrganizations?.addEventListener('click', () => {
   closeMobileTopMenu();
-  openOrganizationsPage();
+  void openOrganizationsEntry({ autoOpenSingle: true });
 });
 
 mobileMenuWorkflows?.addEventListener('click', () => {
@@ -26204,6 +26208,27 @@ function openOrganizationsPage() {
   setActiveView('organizations');
   render();
   void refreshOrganizations();
+}
+
+async function openOrganizationsEntry({ autoOpenSingle = false } = {}) {
+  if (autoOpenSingle && isAuthenticatedActor()) {
+    const orgState = getOrganizationSettingsState();
+    if (!orgState.loaded && !orgState.loading) {
+      await refreshOrganizations({ preserveSelection: true });
+    }
+    const visibleOrganizations = getVisibleOrganizations();
+    if (visibleOrganizations.length === 1) {
+      const [singleOrganization] = visibleOrganizations;
+      if (getActiveOrganizationId() === singleOrganization.id) {
+        setActiveView(getCurrentWorkspaceScopedView());
+        render();
+        return;
+      }
+      await openOrganizationSurface(singleOrganization);
+      return;
+    }
+  }
+  openOrganizationsPage();
 }
 
 function closeOrganizationsPage() {
