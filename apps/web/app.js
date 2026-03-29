@@ -160,6 +160,7 @@ const ROGER_V1_DEFAULT_SERVICE_ACCOUNT_PERMISSIONS = Object.freeze([
   'tasks.update',
   'projects.read'
 ]);
+const SIDEBAR_NO_EXPANDED_KEY = '__none__';
 const TASK_FILTER_UNASSIGNED = 'unassigned';
 const TASK_FILTER_INBOX = '__inbox__';
 const PROJECT_KIND_PROJECT = 'project';
@@ -16494,10 +16495,10 @@ function getSidebarFocusedSectionKey() {
 
 function getExpandedSidebarSectionKey() {
   const sidebarState = getSidebarSectionState();
-  if (sidebarState.expandedKey === null) return '';
   const explicitKey = String(sidebarState.expandedKey ?? '').trim();
+  if (explicitKey === SIDEBAR_NO_EXPANDED_KEY) return '';
   if (explicitKey) return explicitKey;
-  return getSidebarFocusedSectionKey() || 'tasks';
+  return getSidebarFocusedSectionKey() || '';
 }
 
 function getSidebarSectionCount(sectionKey) {
@@ -16555,8 +16556,9 @@ function setSidebarSectionExpanded(sectionKey, expanded) {
     sidebarState.expandedKey = key;
     return;
   }
-  if (getExpandedSidebarSectionKey() === key) {
-    sidebarState.expandedKey = null;
+  const focusedSectionKey = getSidebarFocusedSectionKey();
+  if (getExpandedSidebarSectionKey() === key || focusedSectionKey === key) {
+    sidebarState.expandedKey = SIDEBAR_NO_EXPANDED_KEY;
   }
 }
 
@@ -16566,12 +16568,12 @@ function syncSidebarSectionExpansion() {
     const sectionKey = String(section.dataset.sidebarSection ?? '').trim();
     if (!sectionKey) return;
     const expanded = isSidebarSectionExpanded(sectionKey);
-    section.classList.toggle('is-collapsed', !expanded);
+    section.classList.toggle('is-expanded', expanded);
     section.classList.toggle('is-active', sectionKey === focusedSectionKey);
     const toggleButton = section.querySelector('.sidebar-section-button[data-sidebar-toggle]');
     if (toggleButton) {
       toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-      toggleButton.title = expanded ? 'Collapse section' : 'Expand section';
+      toggleButton.title = expanded ? 'Contract section' : 'Expand section';
       if (sectionKey === focusedSectionKey) {
         toggleButton.setAttribute('aria-current', 'page');
       } else {

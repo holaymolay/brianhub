@@ -986,15 +986,16 @@ body.mobile-create-open {
   display: flex;
   flex-direction: column;
   gap: 0.42rem;
+  flex: 0.95 1 0;
   min-height: 0;
   min-width: 0;
   padding-top: 0.72rem;
   border-top: 1px solid var(--border);
-  transition: flex-basis 180ms ease, flex-grow 180ms ease;
+  transition: flex-basis 180ms ease, flex-grow 180ms ease, border-color 140ms ease;
 }
 
-.sidebar-section.is-collapsed {
-  flex: 0 0 auto;
+.sidebar-section.is-expanded {
+  flex: 1.85 1 0;
 }
 
 .sidebar-section:first-child {
@@ -1008,24 +1009,18 @@ body.mobile-create-open {
 .sidebar-section-workflows,
 .sidebar-section-shopping,
 .sidebar-section-notices {
-  flex: 1 1 0;
+  flex-basis: 0;
 }
 
 .sidebar-section-body {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  max-height: 100vh;
   opacity: 1;
-  transition: max-height 180ms ease, opacity 140ms ease;
-}
-
-.sidebar-section.is-collapsed .sidebar-section-body {
-  max-height: 0;
-  opacity: 0;
-  pointer-events: none;
+  transition: opacity 140ms ease;
 }
 
 .sidebar-section-body-shopping {
@@ -1126,19 +1121,24 @@ body.mobile-create-open {
   transition: transform 140ms ease, color 140ms ease;
 }
 
-.sidebar-section.is-collapsed .sidebar-section-button {
+.sidebar-section:not(.is-expanded) .sidebar-section-button {
   background: rgba(12, 18, 28, 0.88);
   border-style: dashed;
   color: var(--text);
 }
 
-.sidebar-section.is-collapsed .sidebar-section-button::after {
+.sidebar-section:not(.is-expanded) .sidebar-section-button::after {
   transform: rotate(-90deg);
 }
 
 .sidebar-section.is-active .sidebar-section-button {
   border-color: rgba(63, 166, 255, 0.5);
   box-shadow: inset 0 0 0 1px rgba(63, 166, 255, 0.12);
+}
+
+.sidebar-section.is-expanded .sidebar-section-button {
+  border-color: rgba(63, 166, 255, 0.38);
+  background: linear-gradient(180deg, rgba(29, 42, 66, 0.98), rgba(18, 28, 44, 0.98));
 }
 
 .sidebar-section.is-active .sidebar-section-button::after {
