@@ -104,6 +104,7 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /async function addAdminServiceWorkspaceGrant/);
   assert.match(appScript, /async function refreshAdminServiceAccountActivity/);
   assert.match(appScript, /function renderAdminServiceAccountSummary/);
+  assert.match(appScript, /function getServiceWorkerReadinessState\(account\)/);
   assert.match(appScript, /function renderAdminServiceActivityList/);
   assert.match(appScript, /function setAdminServiceTokenState/);
   assert.match(appScript, /function buildAdminServiceTokenPayload/);
@@ -117,6 +118,10 @@ test('admin console wiring includes service-account API helpers and event handle
   assert.match(appScript, /adminServiceTokenRotate\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceGrantAdd\?\.addEventListener\('click'/);
   assert.match(appScript, /adminServiceActivityRefresh\?\.addEventListener\('click'/);
+  assert.match(appScript, /Step 1 of 3: save the worker/);
+  assert.match(appScript, /Step 2 of 3: save is complete\. Next, grant the workspace this worker should access\./);
+  assert.match(appScript, /Step 3 of 3: workspace access is ready, but this worker is still inert until you generate or regenerate an active token\./);
+  assert.match(appScript, /Ready: this worker has workspace access and at least one active token\./);
 });
 
 test('admin console auto-selects existing service accounts and surfaces summary counts', () => {

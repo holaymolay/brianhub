@@ -268,6 +268,7 @@ const taskCreatePrimary = document.getElementById('task-create-primary');
 const taskCreateMenuButton = document.getElementById('task-create-menu-button');
 const taskCreateMenu = document.getElementById('task-create-menu');
 const tasksMobileContext = document.getElementById('tasks-mobile-context');
+const tasksSurfaceContext = document.getElementById('tasks-surface-context');
 const tasksMobileToolsBtn = document.getElementById('tasks-mobile-tools-btn');
 const tasksMobileAddBtn = document.getElementById('tasks-mobile-add-btn');
 const taskAiButton = document.getElementById('task-ai-button');
@@ -368,6 +369,8 @@ const noticeListEl = document.getElementById('notice-list');
 const newNoticeSidebarBtn = document.getElementById('new-notice-sidebar-btn');
 const noticesOpenBtn = document.getElementById('notices-open');
 const noticesPage = document.getElementById('notices-page');
+const noticesSurfaceContext = document.getElementById('notices-surface-context');
+const schedulingSurfaceContext = document.getElementById('scheduling-surface-context');
 const workflowsPage = document.getElementById('workflows-page');
 const organizationsPage = document.getElementById('organizations-page');
 const organizationsPageList = document.getElementById('organizations-page-list');
@@ -422,6 +425,7 @@ const schedulingMiniMonthNext = document.getElementById('scheduling-mini-month-n
 const schedulingMiniMonthTitle = document.getElementById('scheduling-mini-month-title');
 const schedulingMiniMonthGrid = document.getElementById('scheduling-mini-month-grid');
 const projectsPage = document.getElementById('projects-page');
+const projectsSurfaceContext = document.getElementById('projects-surface-context');
 const projectsAddBtn = document.getElementById('projects-add-btn');
 const projectsMobileList = document.getElementById('projects-mobile-list');
 const projectFilterButton = document.getElementById('project-filter-button');
@@ -521,6 +525,7 @@ const mobileNavAddLabel = document.querySelector('#mobile-nav-add .mobile-nav-ad
 const mobileCreateSheet = document.getElementById('mobile-create-sheet');
 const mobileCreateSheetBackdrop = document.getElementById('mobile-create-sheet-backdrop');
 const mobileCreateSheetTitle = document.getElementById('mobile-create-sheet-title');
+const mobileCreateSheetContext = document.getElementById('mobile-create-sheet-context');
 const mobileCreateSheetClose = document.getElementById('mobile-create-sheet-close');
 const mobileCreateSheetActions = document.getElementById('mobile-create-sheet-actions');
 const mobileCreateTask = document.getElementById('mobile-create-task');
@@ -4076,6 +4081,10 @@ function setMobileCreateSheetMode(mode = 'actions') {
   if (mobileCreateSheetTitle) {
     mobileCreateSheetTitle.textContent = taskMode ? 'Quick task' : 'Create';
   }
+  setSurfaceContextNodeText(
+    mobileCreateSheetContext,
+    getCurrentSurfaceContextLabel() ? `Creating in ${getCurrentSurfaceContextLabel()}` : ''
+  );
   mobileCreateSheetActions?.classList.toggle('hidden', taskMode);
   mobileTaskQuickAddForm?.classList.toggle('hidden', !taskMode);
   if (!taskMode && mobileTaskQuickAddInput) {
@@ -13766,6 +13775,7 @@ function render() {
   renderOrganizationPanel();
   renderOrganizationSidebarList();
   renderOrganizationContextBanner();
+  renderSurfaceContextNotes();
   renderOrganizationsPage();
   renderOrganizationsSettings();
   renderAdminPage();
@@ -16416,6 +16426,31 @@ function getActiveOrganizationRecord() {
   });
 }
 
+function getCurrentSurfaceContextLabel() {
+  const activeOrganization = getActiveOrganizationRecord();
+  if (activeOrganization?.name) {
+    return `${activeOrganization.name} organization`;
+  }
+  const anchorWorkspace = getCurrentWorkspaceAnchor() ?? normalizeWorkspace(state.workspace);
+  const workspaceName = String(anchorWorkspace?.name ?? '').trim();
+  if (!workspaceName) return '';
+  return `${workspaceName} workspace`;
+}
+
+function prefixSurfaceContextText(baseText = '') {
+  const safeBaseText = String(baseText ?? '').trim();
+  const contextLabel = getCurrentSurfaceContextLabel();
+  if (!contextLabel) return safeBaseText;
+  return safeBaseText ? `${contextLabel} • ${safeBaseText}` : contextLabel;
+}
+
+function setSurfaceContextNodeText(node, text = '') {
+  if (!node) return;
+  const safeText = String(text ?? '').trim();
+  node.textContent = safeText;
+  node.classList.toggle('hidden', !safeText);
+}
+
 function getCurrentWorkspaceScopedView() {
   const activeView = getActiveView();
   return ['tasks', 'projects', 'shopping', 'notices', 'workflows', 'scheduling'].includes(activeView)
@@ -16800,6 +16835,33 @@ function renderOrganizationContextBanner() {
       ? `Back to ${anchorWorkspace.name}`
       : 'Back to workspace';
   }
+}
+
+function renderSurfaceContextNotes() {
+  const baseLabel = getCurrentSurfaceContextLabel();
+  const contextText = baseLabel ? `Working in ${baseLabel}` : '';
+  setSurfaceContextNodeText(tasksSurfaceContext, contextText);
+  setSurfaceContextNodeText(projectsSurfaceContext, contextText);
+  setSurfaceContextNodeText(noticesSurfaceContext, contextText);
+  setSurfaceContextNodeText(schedulingSurfaceContext, contextText);
+  setSurfaceContextNodeText(mobileCreateSheetContext, contextText);
+}
+
+function getServiceWorkerReadinessState(account) {
+  if (!account) {
+    return { label: 'Draft', tone: 'muted' };
+  }
+  if (Number(account.archived)) {
+    return { label: 'Disabled', tone: 'muted' };
+  }
+  const summary = getServiceAccountSummary(account);
+  if (!summary.effective_workspace_count) {
+    return { label: 'Needs workspace', tone: 'warning' };
+  }
+  if (!summary.active_token_count) {
+    return { label: 'Needs token', tone: 'warning' };
+  }
+  return { label: 'Ready', tone: 'success' };
 }
 
 function renderOrganizationsSettings() {
@@ -17999,9 +18061,16 @@ function buildAdminServiceSummaryStats() {
 
 function renderAdminServiceAccountSummary() {
   const adminState = getAdminState();
+  const selectedUser = getSelectedAdminUser();
   const selectedAccount = getSelectedAdminServiceAccount();
   const selectedSummary = getServiceAccountSummary(selectedAccount);
   const effectiveWorkspaces = adminState.serviceAccountEffectiveWorkspaces ?? [];
+  const tokens = adminState.serviceAccountTokens ?? [];
+  const activeTokenCount = selectedAccount
+    ? (adminState.serviceAccountTokensLoaded
+      ? tokens.filter((token) => formatApiTokenStatus(token) === 'active').length
+      : selectedSummary.active_token_count)
+    : 0;
   const draftName = String(adminServiceAccountName?.value ?? '').trim();
   const draftDescription = String(adminServiceAccountDescription?.value ?? '').trim();
   if (adminServiceSummaryName) {
@@ -18014,6 +18083,11 @@ function renderAdminServiceAccountSummary() {
   }
   if (adminServiceSummaryBadges) {
     adminServiceSummaryBadges.innerHTML = '';
+    if (selectedUser) {
+      adminServiceSummaryBadges.appendChild(
+        createAdminServiceChip(`For ${selectedUser.email ?? selectedUser.display_name ?? selectedUser.id}`, 'muted')
+      );
+    }
     if (selectedAccount) {
       adminServiceSummaryBadges.appendChild(createAdminServiceChip(Number(selectedAccount.archived) ? 'Disabled' : 'Active', Number(selectedAccount.archived) ? 'danger' : 'success'));
       adminServiceSummaryBadges.appendChild(createAdminServiceChip(`${selectedAccount.aliases.length} alias${selectedAccount.aliases.length === 1 ? '' : 'es'}`));
@@ -18057,13 +18131,16 @@ function renderAdminServiceAccountSummary() {
     });
   }
   if (adminServiceSetupNote) {
+    const ownerCopy = selectedUser
+      ? ` for ${selectedUser.email ?? selectedUser.display_name ?? 'the selected user'}`
+      : '';
     adminServiceSetupNote.textContent = selectedAccount
       ? effectiveWorkspaces.length
-        ? selectedSummary.active_token_count
-          ? 'This worker is live. Workspace and permission changes apply immediately to its active tokens.'
-          : 'Workspace access is ready, but this worker is still inert until you generate its first token.'
-        : 'Save is complete. Next step: grant the workspace this worker should access, then generate a token.'
-      : 'Draft mode: save the worker first, then grant workspace access and generate a token.';
+        ? activeTokenCount
+          ? 'Ready: this worker has workspace access and at least one active token. Permission and workspace changes apply immediately.'
+          : 'Step 3 of 3: workspace access is ready, but this worker is still inert until you generate or regenerate an active token.'
+        : 'Step 2 of 3: save is complete. Next, grant the workspace this worker should access.'
+      : `Step 1 of 3: save the worker${ownerCopy}. Then grant workspace access and generate a token.`;
   }
 }
 
@@ -18432,6 +18509,7 @@ function renderAdminServiceAccountsList() {
   }
   visibleAccounts.forEach((account) => {
     const summary = getServiceAccountSummary(account);
+    const readiness = getServiceWorkerReadinessState(account);
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'workspace-row notice-row admin-user-row';
@@ -18475,6 +18553,10 @@ function renderAdminServiceAccountsList() {
     info.appendChild(title);
     info.appendChild(meta);
     row.appendChild(info);
+    const badge = document.createElement('span');
+    badge.className = `workspace-badge admin-service-readiness-badge is-${readiness.tone}`;
+    badge.textContent = readiness.label;
+    row.appendChild(badge);
     adminServiceAccountsList.appendChild(row);
   });
 }
@@ -20908,13 +20990,15 @@ function renderWorkflowsPage() {
   }
   if (workflowPageSubtitle) {
     if (isManageView) {
-      workflowPageSubtitle.textContent = 'Blueprints and builder.';
+      workflowPageSubtitle.textContent = prefixSurfaceContextText('Blueprints and builder.');
     } else if (isMobileWorkflows && mobilePanelMode === 'list') {
-      workflowPageSubtitle.textContent = 'Choose a workflow to view open and completed instances.';
+      workflowPageSubtitle.textContent = prefixSurfaceContextText('Choose a workflow to view open and completed instances.');
     } else {
-      workflowPageSubtitle.textContent = workflow
-        ? `Open and completed ${workflow.name.toLowerCase()}.`
-        : 'Select a workflow to view runs.';
+      workflowPageSubtitle.textContent = prefixSurfaceContextText(
+        workflow
+          ? `Open and completed ${workflow.name.toLowerCase()}.`
+          : 'Select a workflow to view runs.'
+      );
     }
   }
 
@@ -22473,7 +22557,7 @@ function renderShoppingPanel() {
   if (showListMode) {
     shoppingPage.classList.remove('is-empty');
     shoppingListTitle.textContent = 'Shopping Lists';
-    shoppingListSubtitle.textContent = 'Select a list to view its checklist.';
+    shoppingListSubtitle.textContent = prefixSurfaceContextText('Select a list to view its checklist.');
     shoppingListMenuButton?.classList.add('hidden');
     shoppingListMenu?.classList.add('hidden');
     shoppingCompleteBtn?.classList.add('hidden');
@@ -22550,7 +22634,7 @@ function renderShoppingPanel() {
   if (!activeList) {
     shoppingPage.classList.add('is-empty');
     shoppingListTitle.textContent = 'Shopping Lists';
-    shoppingListSubtitle.textContent = 'Select a shopping list to view items.';
+    shoppingListSubtitle.textContent = prefixSurfaceContextText('Select a shopping list to view items.');
     shoppingListItemsEl.innerHTML = '';
     shoppingListMenuButton?.classList.add('hidden');
     shoppingListMenu?.classList.add('hidden');
@@ -22569,8 +22653,8 @@ function renderShoppingPanel() {
   const items = getSortedShoppingItemsForList(activeList.id);
   const complete = isShoppingListComplete(activeList.id);
   shoppingListSubtitle.textContent = activeIsInbox
-    ? `${items.length} item${items.length === 1 ? '' : 's'} waiting assignment`
-    : `${items.length} items${scheduledLabel ? ` · ${scheduledLabel}` : ''}${complete ? ' · complete' : ''}${activeList.archived ? ' · completed' : ''}`;
+    ? prefixSurfaceContextText(`${items.length} item${items.length === 1 ? '' : 's'} waiting assignment`)
+    : prefixSurfaceContextText(`${items.length} items${scheduledLabel ? ` · ${scheduledLabel}` : ''}${complete ? ' · complete' : ''}${activeList.archived ? ' · completed' : ''}`);
   shoppingListMenuButton?.classList.remove('hidden');
   shoppingCompleteBtn?.classList.toggle('hidden', activeIsInbox);
   shoppingAddBtn?.classList.toggle('hidden', activeIsInbox);

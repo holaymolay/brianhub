@@ -503,6 +503,10 @@ body.mobile-create-open {
   color: var(--muted);
 }
 
+.mobile-create-sheet-header .surface-context-note {
+  margin-top: 0.3rem;
+}
+
 .mobile-create-sheet-close {
   width: 2rem;
   height: 2rem;
@@ -4525,6 +4529,13 @@ body.api-help-body {
   align-items: center;
 }
 
+.surface-context-note {
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #9fb5cd;
+}
+
 .tasks-mobile-header {
   display: none;
 }
@@ -4725,6 +4736,29 @@ button:hover { opacity: 0.9; }
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0.1rem 0.5rem;
+}
+
+.workspace-badge.is-success {
+  color: #c7f8d1;
+  border-color: rgba(81, 207, 102, 0.38);
+  background: rgba(81, 207, 102, 0.12);
+}
+
+.workspace-badge.is-warning {
+  color: #ffe6a8;
+  border-color: rgba(255, 184, 77, 0.34);
+  background: rgba(255, 184, 77, 0.12);
+}
+
+.workspace-badge.is-muted {
+  color: #a8b4c4;
+  border-color: rgba(154, 166, 186, 0.24);
+  background: rgba(154, 166, 186, 0.08);
+}
+
+.admin-service-readiness-badge {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .workspace-manage-actions {

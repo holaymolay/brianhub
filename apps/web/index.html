@@ -371,6 +371,7 @@
               <div class="tasks-mobile-heading">
                 <h2>Tasks</h2>
                 <button id="tasks-mobile-context" class="tasks-mobile-context" type="button" aria-haspopup="dialog" aria-expanded="false">My tasks ▾</button>
+                <div id="tasks-surface-context" class="surface-context-note hidden"></div>
               </div>
               <div class="tasks-mobile-actions">
                 <button id="tasks-mobile-tools-btn" class="icon-button menu-icon" type="button" title="Task tools" aria-label="Task tools">⋯</button>
@@ -444,14 +445,20 @@
           </section>
           <section id="scheduling-page" class="panel hidden">
             <div class="panel-header">
-              <h2>Scheduling</h2>
+              <div>
+                <h2>Scheduling</h2>
+                <div id="scheduling-surface-context" class="surface-context-note hidden"></div>
+              </div>
               <button id="scheduling-add-btn" class="icon-button menu-icon" type="button" title="New event">＋</button>
             </div>
             <div id="scheduling-calendar"></div>
           </section>
           <section id="projects-page" class="panel hidden">
             <div class="panel-header">
-              <h2>Projects</h2>
+              <div>
+                <h2>Projects</h2>
+                <div id="projects-surface-context" class="surface-context-note hidden"></div>
+              </div>
               <button id="projects-add-btn" class="icon-button menu-icon" type="button" title="New project">＋</button>
             </div>
             <div class="tasks-toolbar">
@@ -502,7 +509,10 @@
           <section id="notices-page" class="panel hidden">
             <div class="panel-header">
               <div class="notice-header-left">
-                <h2>Notices</h2>
+                <div>
+                  <h2>Notices</h2>
+                  <div id="notices-surface-context" class="surface-context-note hidden"></div>
+                </div>
               </div>
               <button id="notices-add-btn" class="icon-button" type="button" title="New notice">＋</button>
             </div>
@@ -1063,7 +1073,10 @@
       <div id="mobile-create-sheet-backdrop" class="mobile-create-sheet-backdrop"></div>
       <div class="mobile-create-sheet-card">
         <div class="mobile-create-sheet-header">
-          <h3 id="mobile-create-sheet-title">Create</h3>
+          <div>
+            <h3 id="mobile-create-sheet-title">Create</h3>
+            <div id="mobile-create-sheet-context" class="surface-context-note hidden"></div>
+          </div>
           <button id="mobile-create-sheet-close" class="mobile-create-sheet-close" type="button" aria-label="Close create options">✕</button>
         </div>
         <div id="mobile-create-sheet-actions" class="mobile-create-sheet-actions">

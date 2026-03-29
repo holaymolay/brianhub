@@ -7,6 +7,7 @@ test('tasks page exposes a dedicated mobile add button', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
   assert.match(html, /id="tasks-mobile-add-btn"/);
   assert.match(html, /class="panel-header tasks-mobile-header"/);
+  assert.match(html, /id="tasks-surface-context"/);
   assert.match(html, /id="mobile-nav-add"[\s\S]*<span class="mobile-nav-add-label" aria-hidden="true"><\/span>/);
 });
 
@@ -47,6 +48,7 @@ test('desktop task toolbar uses the same select controls for sort, group by, and
 
 test('mobile create sheet exposes a task quick-add form', () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  assert.match(html, /id="mobile-create-sheet-context"/);
   assert.match(html, /id="mobile-task-quick-add-form"/);
   assert.match(html, /id="mobile-task-quick-add-input"/);
 });
@@ -123,6 +125,22 @@ test('mobile navigation exposes organizations as a first-class destination', () 
   assert.match(script, /if \(getActiveOrganizationId\(\) === singleOrganization\.id\) \{\s*await closeOrganizationSurface\(\);\s*return;\s*\}/s);
   assert.match(css, /\.organization-context-banner \{/);
   assert.match(css, /@media \(max-width: 980px\) \{[\s\S]*\.organization-context-banner \{[\s\S]*flex-direction: column;/s);
+});
+
+test('surface context is visible in mobile headers and create flows', () => {
+  const html = readFileSync(resolve(process.cwd(), 'apps/web/index.html'), 'utf8');
+  const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(html, /id="scheduling-surface-context"/);
+  assert.match(script, /function getCurrentSurfaceContextLabel\(\)/);
+  assert.match(script, /function renderSurfaceContextNotes\(\)/);
+  assert.match(script, /setSurfaceContextNodeText\(schedulingSurfaceContext, contextText\);/);
+  assert.match(script, /setSurfaceContextNodeText\(\s*mobileCreateSheetContext,/s);
+  assert.match(script, /Creating in \$\{getCurrentSurfaceContextLabel\(\)\}/);
+  assert.match(script, /shoppingListSubtitle\.textContent = prefixSurfaceContextText\(/);
+  assert.match(script, /workflowPageSubtitle\.textContent = prefixSurfaceContextText\(/);
+  assert.match(css, /\.surface-context-note \{/);
+  assert.match(css, /\.mobile-create-sheet-header \.surface-context-note \{/);
 });
 
 test('mobile task tools reuse the same task state controls as desktop', () => {

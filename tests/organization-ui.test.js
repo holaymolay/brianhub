@@ -34,6 +34,9 @@ test('settings expose workspace collaboration controls and in-settings organizat
   assert.match(html, /id="organization-context-meta"/);
   assert.match(html, /id="organization-context-manage"/);
   assert.match(html, /id="organization-context-return"/);
+  assert.match(html, /id="projects-surface-context"/);
+  assert.match(html, /id="notices-surface-context"/);
+  assert.match(html, /id="scheduling-surface-context"/);
 });
 
 test('workspace creation uses a dedicated modal with personal and shared types', () => {
@@ -71,9 +74,14 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /function getCurrentWorkspaceAnchor\(\)/);
   assert.match(script, /function rememberWorkspaceAnchor\(workspace\)/);
   assert.match(script, /function getActiveOrganizationRecord\(\)/);
+  assert.match(script, /function getCurrentSurfaceContextLabel\(\)/);
+  assert.match(script, /function prefixSurfaceContextText\(baseText = ''\)/);
+  assert.match(script, /function setSurfaceContextNodeText\(node, text = ''\)/);
+  assert.match(script, /function getServiceWorkerReadinessState\(account\)/);
   assert.match(script, /async function refreshOrganizations\(\{ preserveSelection = true \} = \{\}\)/);
   assert.match(script, /async function refreshSelectedOrganizationMembers\(orgId = getSelectedSettingsOrganization\(\)\?\.id \?\? ''\)/);
   assert.match(script, /function renderOrganizationContextBanner\(\)/);
+  assert.match(script, /function renderSurfaceContextNotes\(\)/);
   assert.match(script, /document\.body\.classList\.toggle\('organization-surface-active', active\);/);
   assert.match(script, /function renderOrganizationsPage\(\)/);
   assert.match(script, /async function openOrganizationSurface\(orgInput\)/);
@@ -103,6 +111,7 @@ test('organization settings script supports create, membership management, owner
   assert.match(script, /const canManage = orgRole === 'owner' \|\| orgRole === 'admin';/);
   assert.match(script, /manageBtn\.textContent = canManage \? 'Manage' : 'Settings';/);
   assert.match(script, /manageBtn\.title = canManage[\s\S]*'Manage organization members, roles, and ownership\.'[\s\S]*'View organization settings and membership\.';/s);
+  assert.match(script, /badge\.className = `workspace-badge admin-service-readiness-badge is-\$\{readiness\.tone\}`;/);
   assert.match(script, /organizationContextReturn\?\.addEventListener\('click', \(\) => \{\s*void closeOrganizationSurface\(\);/s);
   assert.match(script, /organizationContextManage\?\.addEventListener\('click', \(\) => \{\s*const activeOrganizationId = getActiveOrganizationId\(\);[\s\S]*openSettings\(\);/s);
 });
