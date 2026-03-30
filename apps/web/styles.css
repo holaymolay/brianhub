@@ -7748,6 +7748,7 @@ body.auth-gated #auth-cancel-invite {
 
   body.mobile-tasks-view #task-tree {
     overflow: auto;
+    touch-action: pan-y;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     scroll-padding-bottom: calc(var(--mobile-sheet-bottom-offset) + 0.35rem);
@@ -7761,6 +7762,11 @@ body.auth-gated #auth-cancel-invite {
     min-width: 0;
     max-width: 100%;
     overflow-x: hidden;
+  }
+
+  #tasks-panel .task-list,
+  #tasks-panel .task-group-list {
+    touch-action: pan-y;
   }
 
   #tasks-panel .task-item,

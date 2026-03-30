@@ -203,7 +203,7 @@ test('mobile tasks view keeps the task panel as the scroll owner', () => {
   assert.match(css, /body\.mobile-tasks-view \.app-layout \{[\s\S]*height: 100%;[\s\S]*min-height: 0;/);
   assert.match(css, /body\.mobile-tasks-view \.content-panel \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
   assert.match(css, /body\.mobile-tasks-view #tasks-panel \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
-  assert.match(css, /body\.mobile-tasks-view #task-tree \{[\s\S]*overflow: auto;[\s\S]*scroll-padding-bottom: calc\(var\(--mobile-sheet-bottom-offset\) \+ 0\.35rem\);/);
+  assert.match(css, /body\.mobile-tasks-view #task-tree \{[\s\S]*overflow: auto;[\s\S]*touch-action: pan-y;[\s\S]*scroll-padding-bottom: calc\(var\(--mobile-sheet-bottom-offset\) \+ 0\.35rem\);/);
 });
 
 test('mobile task rows reflow into a wrapped phone layout', () => {
@@ -266,10 +266,17 @@ test('mobile workspace management is a simple workspace switcher', () => {
   assert.match(css, /\.workspace-switch-button \{/);
 });
 
-test('mobile task title taps open the task editor instead of inline rename', () => {
+test('mobile task rows use a dedicated tap gesture so swipes can scroll', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
   assert.match(script, /titleEl\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) return;[\s\S]*beginInlineTaskEdit\(task, item, titleEl\);/s);
-  assert.match(script, /item\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) \{[\s\S]*openTaskEditor\(task\.id\);[\s\S]*return;\s*\}[\s\S]*const selected = getSelectedTaskIds\(\);/s);
+  assert.match(script, /let taskRowPointerGestureState = null;/);
+  assert.match(script, /function beginTaskRowPointerGesture\(event, task\)/);
+  assert.match(script, /function moveTaskRowPointerGesture\(event\)/);
+  assert.match(script, /function finishTaskRowPointerGesture\(event\)/);
+  assert.match(script, /item\.addEventListener\('pointerdown', \(event\) => beginTaskRowPointerGesture\(event, task\)\);/);
+  assert.match(script, /item\.addEventListener\('pointermove', moveTaskRowPointerGesture\);/);
+  assert.match(script, /item\.addEventListener\('pointerup', finishTaskRowPointerGesture\);/);
+  assert.match(script, /item\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) return;[\s\S]*const selected = getSelectedTaskIds\(\);/s);
   assert.match(css, /#tasks-panel \.task-title,[\s\S]*#tasks-panel \.task-row-meta-item \{\s*pointer-events: none;/s);
 });

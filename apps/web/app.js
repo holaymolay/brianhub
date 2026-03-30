@@ -995,6 +995,7 @@ let draggingTaskId = null;
 let draggingTaskEl = null;
 let draggingTaskOrigin = null;
 let taskPointerDragState = null;
+let taskRowPointerGestureState = null;
 let draggingColumnKey = null;
 let draggingColumnEl = null;
 let draggingSectionId = null;
@@ -12949,6 +12950,56 @@ function getTaskPointerReferenceClientY(clientY, gestureState = taskPointerDragS
     ? gestureState.dragBlockHeight
     : 0;
   return clientY - blockOffset + (blockHeight / 2);
+}
+
+function beginTaskRowPointerGesture(event, task) {
+  if (event.button !== 0) return;
+  if (event.pointerType === 'mouse') return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('button')) return;
+  if (target?.closest('.task-drag-handle')) return;
+  taskRowPointerGestureState = {
+    pointerId: event.pointerId,
+    taskId: task.id,
+    startX: event.clientX,
+    startY: event.clientY,
+    moved: false
+  };
+}
+
+function moveTaskRowPointerGesture(event) {
+  if (!taskRowPointerGestureState) return;
+  if (taskRowPointerGestureState.pointerId !== event.pointerId) return;
+  const deltaX = Math.abs(event.clientX - taskRowPointerGestureState.startX);
+  const deltaY = Math.abs(event.clientY - taskRowPointerGestureState.startY);
+  if (deltaX >= 8 || deltaY >= 8) {
+    taskRowPointerGestureState.moved = true;
+  }
+}
+
+function cancelTaskRowPointerGesture(event) {
+  if (!taskRowPointerGestureState) return;
+  if (event && taskRowPointerGestureState.pointerId !== event.pointerId) return;
+  taskRowPointerGestureState = null;
+}
+
+function finishTaskRowPointerGesture(event) {
+  if (!taskRowPointerGestureState) return;
+  if (taskRowPointerGestureState.pointerId !== event.pointerId) return;
+  const gesture = taskRowPointerGestureState;
+  taskRowPointerGestureState = null;
+  if (gesture.moved) return;
+  const selected = getSelectedTaskIds();
+  if (selected.length) {
+    if (!selected.includes(gesture.taskId)) {
+      setSelectedTaskIds([...selected, gesture.taskId]);
+    } else {
+      setSelectedTaskIds(selected.filter((id) => id !== gesture.taskId));
+    }
+    render();
+    return;
+  }
+  openTaskEditor(gesture.taskId);
 }
 
 function moveTaskPointerGesture(event) {
@@ -27337,26 +27388,20 @@ function renderTask(task, options = {}) {
   completeButton.disabled = isChecklistRowDisabled;
   menuButton.disabled = isChecklistRowDisabled;
 
+  if (isMobileViewport()) {
+    item.addEventListener('pointerdown', (event) => beginTaskRowPointerGesture(event, task));
+    item.addEventListener('pointermove', moveTaskRowPointerGesture);
+    item.addEventListener('pointerup', finishTaskRowPointerGesture);
+    item.addEventListener('pointercancel', cancelTaskRowPointerGesture);
+  }
+
   item.addEventListener('click', (event) => {
     if (suppressTaskClick) return;
     if (event.button !== 0) return;
     if (isChecklistRowDisabled) return;
     if (event.target.closest('button')) return;
     if (event.target.closest('.task-drag-handle')) return;
-    if (isMobileViewport()) {
-      if (getSelectedTaskIds().length) {
-        event.preventDefault();
-        const selected = getSelectedTaskIds();
-        if (!selected.includes(task.id)) {
-          setSelectedTaskIds([...selected, task.id]);
-        } else {
-          setSelectedTaskIds(selected.filter(id => id !== task.id));
-        }
-        return;
-      }
-      openTaskEditor(task.id);
-      return;
-    }
+    if (isMobileViewport()) return;
     const selected = getSelectedTaskIds();
     if (!selected.length) return;
     event.preventDefault();
