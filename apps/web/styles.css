@@ -4891,9 +4891,14 @@ body.api-help-body {
 
 .task-item.dragging,
 .kanban-card.dragging {
-  opacity: 0.82;
-  transform: scale(0.985);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.24);
+  opacity: 1;
+  border-color: rgba(115, 158, 255, 0.78);
+  background: #182235;
+  transform: scale(1.01);
+  box-shadow:
+    0 0 0 1px rgba(115, 158, 255, 0.28),
+    0 14px 28px rgba(0, 0, 0, 0.24),
+    0 0 24px rgba(79, 174, 255, 0.14);
 }
 
 .drag-over {
@@ -5033,10 +5038,12 @@ button:hover { opacity: 0.9; }
   border: 1px solid var(--border);
   background: #121723;
   position: relative;
+  cursor: default;
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
 .task-item:hover {
@@ -5075,22 +5082,6 @@ button:hover { opacity: 0.9; }
 .task-item.is-subtask .task-row-meta-item {
   border-color: rgba(95, 112, 138, 0.44);
   background: rgba(15, 21, 32, 0.94);
-}
-
-.task-item.drop-subtask {
-  border-color: rgba(79, 174, 255, 0.6);
-  background: rgba(79, 174, 255, 0.12);
-  box-shadow: 0 0 0 2px rgba(79, 174, 255, 0.15);
-  transform: translateX(8px) scale(1.01);
-}
-
-.task-item.drop-reorder {
-  border-color: rgba(79, 174, 255, 0.74);
-  background: rgba(79, 174, 255, 0.1);
-  box-shadow:
-    0 0 0 1px rgba(79, 174, 255, 0.22),
-    0 8px 18px rgba(4, 10, 20, 0.16);
-  transform: scale(1.01);
 }
 
 #projects-page {
@@ -6115,10 +6106,6 @@ button:hover { opacity: 0.9; }
 .task-item[data-status="done"] { border-left: 3px solid #51cf66; }
 .task-item[data-status="canceled"] { border-left: 3px solid #868e96; }
 
-.task-item {
-  cursor: grab;
-}
-
 @keyframes task-item-complete-flash {
   0% {
     transform: translateY(0) scale(1);
@@ -7135,6 +7122,10 @@ body.mobile-bottom-ui-hidden .mobile-nav {
   display: none !important;
 }
 
+body.task-editor-open .mobile-nav {
+  display: none !important;
+}
+
 body.task-editor-open.mobile-tasks-view #task-tree {
   overflow: hidden;
 }
@@ -7776,12 +7767,15 @@ body.auth-gated #auth-cancel-invite {
   #tasks-panel .task-row,
   #tasks-panel .task-main,
   #tasks-panel .task-title-row,
+  #tasks-panel .task-title-row > *:not(.task-drag-handle),
   #tasks-panel .task-title,
   #tasks-panel .task-meta,
   #tasks-panel .task-row-meta,
+  #tasks-panel .task-row-meta *,
   #tasks-panel .task-row-meta-item,
   #tasks-panel .task-type-badge,
   #tasks-panel .task-actions,
+  #tasks-panel .task-actions *,
   #tasks-panel .task-select-toggle,
   #tasks-panel .task-star-button,
   #tasks-panel .task-complete-button,
@@ -7819,6 +7813,15 @@ body.auth-gated #auth-cancel-invite {
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 0.35rem;
+  }
+
+  #tasks-panel .task-title,
+  #tasks-panel .task-meta,
+  #tasks-panel .task-status-tag,
+  #tasks-panel .task-type-badge,
+  #tasks-panel .task-row-meta,
+  #tasks-panel .task-row-meta-item {
+    pointer-events: none;
   }
 
   #tasks-panel .task-title {

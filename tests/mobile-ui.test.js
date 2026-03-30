@@ -85,10 +85,12 @@ test('mobile task editor owns scroll and hides the footer nav while open', () =>
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
   assert.match(script, /function syncMobileBottomUiState\(\) \{\s*if \(typeof document === 'undefined'\) return;\s*const blockingSurfaceOpen = Boolean\([\s\S]*#task-editor\.is-open[\s\S]*\);\s*document\.body\.classList\.toggle\('mobile-bottom-ui-hidden', blockingSurfaceOpen\);\s*\}/s);
+  assert.match(script, /function hideMobileOverlay\(modal, \{ focusTarget = null, expandedTarget = null \} = \{\}\) \{[\s\S]*modal\.contains\(activeElement\)[\s\S]*activeElement\.blur\(\)[\s\S]*modal\.setAttribute\('aria-hidden', 'true'\);[\s\S]*modal\.inert = true;/s);
   assert.match(script, /function setTaskEditorOpen\(open\) \{\s*taskEditor\?\.classList\.toggle\('is-open', open\);\s*document\.body\.classList\.toggle\('task-editor-open', open\);\s*syncMobileBottomUiState\(\);\s*\}/s);
   assert.match(script, /function openTaskEditor\(taskId\) \{[\s\S]*setTaskEditorOpen\(true\);[\s\S]*updateTaskEditorScrollbar\(\);/s);
   assert.match(script, /function closeTaskEditor\(\) \{[\s\S]*setTaskEditorOpen\(false\);/s);
   assert.match(css, /body\.mobile-bottom-ui-hidden \.mobile-nav \{[\s\S]*display: none !important;/s);
+  assert.match(css, /body\.task-editor-open \.mobile-nav \{[\s\S]*display: none !important;/s);
   assert.match(css, /body\.task-editor-open\.mobile-tasks-view #task-tree \{[\s\S]*overflow: hidden;/s);
   assert.match(css, /\.task-editor-body \{[\s\S]*overflow-y: auto;[\s\S]*overscroll-behavior: contain;[\s\S]*-webkit-overflow-scrolling: touch;/s);
   assert.match(css, /body\.task-editor-open \.task-editor \{[\s\S]*height: 100dvh;/s);
@@ -210,7 +212,7 @@ test('mobile task rows reflow into a wrapped phone layout', () => {
   assert.match(css, /#tasks-panel \.task-title-row \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;/);
   assert.match(css, /#tasks-panel \.task-title \{[\s\S]*flex: 1 0 100%;[\s\S]*white-space: normal;[\s\S]*-webkit-line-clamp: 3;/);
   assert.match(css, /#tasks-panel \.task-meta \{[\s\S]*display: block !important;[\s\S]*white-space: normal;/);
-  assert.match(css, /#tasks-panel \.task-item,[\s\S]*#tasks-panel \.task-menu-button \{[\s\S]*touch-action: pan-y;/s);
+  assert.match(css, /#tasks-panel \.task-item,[\s\S]*#tasks-panel \.task-title-row > \*:not\(\.task-drag-handle\),[\s\S]*#tasks-panel \.task-row-meta \*,[\s\S]*#tasks-panel \.task-actions \*,[\s\S]*#tasks-panel \.task-menu-button \{[\s\S]*touch-action: pan-y;/s);
   assert.match(css, /#tasks-panel \.task-row-meta,[\s\S]*#tasks-panel \.task-row-meta-item,[\s\S]*#tasks-panel \.task-type-badge,[\s\S]*#tasks-panel \.task-actions/s);
 });
 
@@ -218,14 +220,20 @@ test('task reorder supports row drag on desktop and pointer drag on touch device
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /let taskPointerDragState = null;/);
   assert.match(script, /function beginTaskPointerGesture\(event, task, item\)/);
+  assert.match(script, /dragBlockOffsetY: event\.clientY - gestureTop,/);
+  assert.match(script, /dragBlockHeight: Math\.max\(gestureBottom - gestureTop, itemRect\?\.height \?\? 0\),/);
+  assert.match(script, /function getTaskPointerReferenceClientY\(clientY, gestureState = taskPointerDragState\)/);
   assert.match(script, /function moveTaskPointerGesture\(event\)/);
   assert.match(script, /async function finishTaskPointerGesture\(event, commit = false\)/);
   assert.match(script, /const mobileViewport = isMobileViewport\(\);\s*item\.draggable = !mobileViewport;/s);
   assert.match(script, /if \(!mobileViewport\) \{\s*item\.addEventListener\('dragstart', \(event\) => beginTaskDrag\(event, task, item\)\);\s*item\.addEventListener\('dragend', endTaskDrag\);\s*\}/s);
   assert.match(script, /handle\.draggable = !mobileViewport;/);
   assert.match(script, /handle\.addEventListener\('pointerdown', \(event\) => beginTaskPointerGesture\(event, task, item\)\);/);
-  assert.match(script, /if \(deltaY > deltaX \+ 2\) \{\s*taskPointerDragState = null;\s*return;\s*\}/s);
-  assert.match(script, /async function dropTaskIntoContainer\(container\)/);
+  assert.doesNotMatch(script, /if \(deltaY > deltaX \+ 2\) \{\s*taskPointerDragState = null;\s*return;\s*\}/s);
+  assert.match(script, /getTaskElementsByIds\(getSelectedDragTaskIds\(draggingTaskOrigin\?\.parentId \?\? null\)\)\s*\.forEach\(\(element\) => \{\s*element\.style\.pointerEvents = 'none';/s);
+  assert.match(script, /updateTaskPointerDragTarget\(event\.clientX, getTaskPointerReferenceClientY\(event\.clientY\)\);/);
+  assert.match(script, /await commitTaskPointerDrop\(event\.clientX, getTaskPointerReferenceClientY\(event\.clientY, activeGesture\)\);/);
+  assert.match(script, /async function dropTaskIntoContainer\(container, clientY = null\)/);
   assert.match(script, /async function dropTaskOnItem\(item, clientY\)/);
 });
 
@@ -260,5 +268,8 @@ test('mobile workspace management is a simple workspace switcher', () => {
 
 test('mobile task title taps open the task editor instead of inline rename', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
-  assert.match(script, /titleEl\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) \{\s*openTaskEditor\(task\.id\);\s*return;\s*\}[\s\S]*beginInlineTaskEdit\(task, item, titleEl\);/s);
+  const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
+  assert.match(script, /titleEl\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) return;[\s\S]*beginInlineTaskEdit\(task, item, titleEl\);/s);
+  assert.match(script, /item\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) \{[\s\S]*openTaskEditor\(task\.id\);[\s\S]*return;\s*\}[\s\S]*const selected = getSelectedTaskIds\(\);/s);
+  assert.match(css, /#tasks-panel \.task-title,[\s\S]*#tasks-panel \.task-row-meta-item \{\s*pointer-events: none;/s);
 });

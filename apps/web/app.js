@@ -4102,6 +4102,43 @@ function syncMobileBottomUiState() {
   document.body.classList.toggle('mobile-bottom-ui-hidden', blockingSurfaceOpen);
 }
 
+function hideMobileOverlay(modal, { focusTarget = null, expandedTarget = null } = {}) {
+  if (!modal) return;
+  const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+  if (activeElement instanceof HTMLElement && modal.contains(activeElement)) {
+    if (focusTarget instanceof HTMLElement) {
+      focusTarget.focus({ preventScroll: true });
+    } else {
+      activeElement.blur();
+    }
+  }
+  if (expandedTarget instanceof HTMLElement) {
+    expandedTarget.setAttribute('aria-expanded', 'false');
+  }
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  if ('inert' in modal) {
+    modal.inert = true;
+  }
+}
+
+function showMobileOverlay(modal, { focusTarget = null, expandedTarget = null } = {}) {
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+  if ('inert' in modal) {
+    modal.inert = false;
+  }
+  if (expandedTarget instanceof HTMLElement) {
+    expandedTarget.setAttribute('aria-expanded', 'true');
+  }
+  if (focusTarget instanceof HTMLElement) {
+    setTimeout(() => {
+      focusTarget.focus();
+    }, 0);
+  }
+}
+
 function setMobileCreateSheetMode(mode = 'actions') {
   const taskMode = mode === 'task';
   if (mobileCreateSheetTitle) {
@@ -4173,23 +4210,24 @@ function closeMobileTitleMenu() {
 
 function closeMobileTaskToolsModal() {
   if (!mobileTaskToolsModal) return;
-  mobileTaskToolsModal.classList.add('hidden');
-  mobileTaskToolsModal.setAttribute('aria-hidden', 'true');
+  hideMobileOverlay(mobileTaskToolsModal, {
+    focusTarget: tasksMobileToolsBtn
+  });
   syncMobileBottomUiState();
 }
 
 function closeMobileTaskScopeModal() {
   if (!mobileTaskScopeModal) return;
-  mobileTaskScopeModal.classList.add('hidden');
-  mobileTaskScopeModal.setAttribute('aria-hidden', 'true');
-  tasksMobileContext?.setAttribute('aria-expanded', 'false');
+  hideMobileOverlay(mobileTaskScopeModal, {
+    focusTarget: tasksMobileContext,
+    expandedTarget: tasksMobileContext
+  });
   syncMobileBottomUiState();
 }
 
 function closeMobileSearchModal() {
   if (!mobileSearchModal) return;
-  mobileSearchModal.classList.add('hidden');
-  mobileSearchModal.setAttribute('aria-hidden', 'true');
+  hideMobileOverlay(mobileSearchModal);
   syncMobileBottomUiState();
 }
 
@@ -4282,8 +4320,7 @@ function openMobileSearchModal() {
   closeMobileTaskScopeModal();
   closeMobileTaskToolsModal();
   closeMobileCalendarsModal();
-  mobileSearchModal.classList.remove('hidden');
-  mobileSearchModal.setAttribute('aria-hidden', 'false');
+  showMobileOverlay(mobileSearchModal);
   syncMobileBottomUiState();
   if (mobileSearchInput) {
     mobileSearchInput.value = getGlobalSearchQuery();
@@ -4521,8 +4558,7 @@ function syncMobileCalendarsModalInputs() {
 
 function closeMobileCalendarsModal() {
   if (!mobileCalendarsModal) return;
-  mobileCalendarsModal.classList.add('hidden');
-  mobileCalendarsModal.setAttribute('aria-hidden', 'true');
+  hideMobileOverlay(mobileCalendarsModal);
   syncMobileBottomUiState();
 }
 
@@ -4635,8 +4671,7 @@ function openMobileTaskToolsModal() {
   closeMobileSearchModal();
   closeMobileCalendarsModal();
   syncMobileTaskToolsInputs();
-  mobileTaskToolsModal.classList.remove('hidden');
-  mobileTaskToolsModal.setAttribute('aria-hidden', 'false');
+  showMobileOverlay(mobileTaskToolsModal);
   syncMobileBottomUiState();
   setTimeout(() => {
     mobileTaskToolsSearch?.focus();
@@ -4653,9 +4688,9 @@ function openMobileTaskScopeModal() {
   closeMobileSearchModal();
   closeMobileCalendarsModal();
   renderMobileTaskScopeList();
-  mobileTaskScopeModal.classList.remove('hidden');
-  mobileTaskScopeModal.setAttribute('aria-hidden', 'false');
-  tasksMobileContext?.setAttribute('aria-expanded', 'true');
+  showMobileOverlay(mobileTaskScopeModal, {
+    expandedTarget: tasksMobileContext
+  });
   syncMobileBottomUiState();
 }
 
@@ -4668,8 +4703,7 @@ function openMobileCalendarsModal() {
   closeMobileTaskToolsModal();
   closeMobileSearchModal();
   syncMobileCalendarsModalInputs();
-  mobileCalendarsModal.classList.remove('hidden');
-  mobileCalendarsModal.setAttribute('aria-hidden', 'false');
+  showMobileOverlay(mobileCalendarsModal);
   syncMobileBottomUiState();
 }
 
@@ -12246,8 +12280,6 @@ function endTaskDrag(event) {
 }
 
 function clearTaskDragIndicators() {
-  document.querySelectorAll('.task-item.drop-subtask').forEach(item => item.classList.remove('drop-subtask'));
-  document.querySelectorAll('.task-item.drop-reorder').forEach(item => item.classList.remove('drop-reorder'));
   document.querySelectorAll('.task-root-dropzone.drag-over, .task-list.drag-over, .task-group-list.drag-over').forEach((container) => {
     container.classList.remove('drag-over');
   });
@@ -12272,52 +12304,104 @@ function canDropTaskInContainer(parentId, statusKey) {
   return true;
 }
 
-function canReparentTask(targetId) {
-  if (!draggingTaskOrigin || !draggingTaskId) return false;
-  const draggedIds = getSelectedDragTaskIds(draggingTaskOrigin.parentId ?? null);
-  if (draggedIds.includes(targetId)) return false;
-  if (draggedIds.every((taskId) => (state.tasks?.[taskId]?.parent_id ?? null) === targetId)) return false;
-  const descendantIds = new Set();
-  draggedIds.forEach((taskId) => {
-    getDescendants(taskId).forEach((task) => descendantIds.add(task.id));
-  });
-  if (descendantIds.has(targetId)) return false;
-  return true;
+function getTaskPreviewTargetContainer(container) {
+  if (!(container instanceof HTMLElement)) return null;
+  if (container.classList.contains('task-root-dropzone')) {
+    return taskTreeEl?.querySelector('.task-list') instanceof HTMLElement
+      ? taskTreeEl.querySelector('.task-list')
+      : null;
+  }
+  return container;
 }
 
-function isSubtaskDropZone(event, item) {
-  const rect = item.getBoundingClientRect();
-  const y = event.clientY;
-  const margin = rect.height * 0.25;
-  return y > rect.top + margin && y < rect.bottom - margin;
+function getTaskPreviewReferenceNode(referenceNode, elements) {
+  let candidate = referenceNode instanceof Node ? referenceNode : null;
+  const movingSet = new Set(elements);
+  while (candidate && movingSet.has(candidate)) {
+    candidate = candidate.nextSibling;
+  }
+  return candidate;
 }
 
-async function handleSubtaskDrop(targetId) {
+function resolveTaskInsertionReference(targetContainer, clientY) {
+  if (!draggingTaskId) return { container: null, referenceNode: null };
+  const container = getTaskPreviewTargetContainer(targetContainer);
+  if (!container) return { container: null, referenceNode: null };
+  const elements = getTaskElementsByIds(getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null));
+  if (!elements.length) return { container: null, referenceNode: null };
+  const movingSet = new Set(elements);
+  const siblings = Array.from(container.querySelectorAll(':scope > .task-item'))
+    .filter((candidate) => !movingSet.has(candidate));
+  const referenceNode = siblings.find((candidate) => {
+    const rect = candidate.getBoundingClientRect();
+    return clientY < rect.top + rect.height / 2;
+  }) ?? null;
+  const addRow = container.querySelector('.task-add-task');
+  return {
+    container,
+    referenceNode: getTaskPreviewReferenceNode(
+      referenceNode ?? ((addRow && addRow.parentElement === container) ? addRow : null),
+      elements
+    )
+  };
+}
+
+function previewTaskInsertion(targetContainer, referenceNode = null) {
   if (!draggingTaskId) return;
-  if (!canReparentTask(targetId)) return;
-  const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
-  const undoSnapshots = collectTaskDragUndoSnapshots({ taskIds: selectedIds });
-  let nextSort = getNextTaskSortOrder(targetId);
-  try {
-    for (const taskId of selectedIds) {
-      await reparentTaskRecord(taskId, targetId);
-      await updateTaskRecord(taskId, { sort_order: nextSort });
-      nextSort += 10;
-    }
-  } catch (err) {
-    const message = String(err?.message ?? '');
-    if (err?.status === 404 || message.toLowerCase().includes('not found')) {
-      await refreshWorkspace();
+  const container = getTaskPreviewTargetContainer(targetContainer);
+  if (!container) return;
+  const elements = getTaskElementsByIds(getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null));
+  if (!elements.length) return;
+  const addRow = container.querySelector('.task-add-task');
+  const normalizedReference = getTaskPreviewReferenceNode(
+    referenceNode ?? ((addRow && addRow.parentElement === container) ? addRow : null),
+    elements
+  );
+  elements.forEach((element) => {
+    container.insertBefore(element, normalizedReference);
+  });
+}
+
+function previewTaskDropOnItem(item, clientY) {
+  if (!draggingTaskId || draggingColumnKey) return;
+  if (!(item instanceof HTMLElement)) return;
+  const container = item.parentElement;
+  if (!container) return;
+  const {
+    parentId,
+    statusKey
+  } = getTaskContainerContext(container);
+  if (!canDropTaskInContainer(parentId, statusKey)) return;
+  const draggedElements = getTaskElementsByIds(getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null));
+  if (!draggedElements.length) return;
+  if (draggedElements.length === 1 && draggedElements[0] === item) {
+    const rect = item.getBoundingClientRect();
+    if (clientY >= rect.top && clientY <= rect.bottom) {
       return;
     }
-    alert(err?.message ?? 'Unable to move task.');
-    return;
   }
-  registerTaskDragUndo(
-    selectedIds.length === 1 ? 'Task move undone.' : `${selectedIds.length} task moves undone.`,
-    undoSnapshots
-  );
-  render();
+  const insertion = resolveTaskInsertionReference(container, clientY);
+  if (!insertion.container) return;
+  previewTaskInsertion(insertion.container, insertion.referenceNode);
+}
+
+function previewTaskDropInContainer(container, clientY = null) {
+  if (!draggingTaskId || draggingColumnKey) return;
+  const targetContainer = getTaskPreviewTargetContainer(container);
+  if (!targetContainer) return;
+  const {
+    parentId,
+    statusKey
+  } = getTaskContainerContext(targetContainer);
+  if (!canDropTaskInContainer(parentId, statusKey)) return;
+  if (Number.isFinite(clientY)) {
+    const insertion = resolveTaskInsertionReference(targetContainer, clientY);
+    if (insertion.container) {
+      previewTaskInsertion(insertion.container, insertion.referenceNode);
+      return;
+    }
+  }
+  previewTaskInsertion(targetContainer);
 }
 
 function getTaskContainerContext(container) {
@@ -12650,7 +12734,7 @@ async function persistColumnOrder(board) {
   render();
 }
 
-async function dropTaskIntoContainer(container) {
+async function dropTaskIntoContainer(container, clientY = null) {
   if (!draggingTaskId || draggingColumnKey) return;
   const {
     parentId,
@@ -12684,28 +12768,25 @@ async function dropTaskIntoContainer(container) {
       return;
     }
   }
-  if (draggingEl && targetContainer && (draggingEl.parentElement === targetContainer || movingToRoot || movingBetweenRoots)) {
-    const addRow = targetContainer.querySelector('.task-add-task');
+  const insertion = Number.isFinite(clientY)
+    ? resolveTaskInsertionReference(targetContainer, clientY)
+    : { container: targetContainer, referenceNode: null };
+  const insertionContainer = insertion.container ?? targetContainer;
+  const insertionReference = insertion.referenceNode;
+  if (draggingEl && insertionContainer && (draggingEl.parentElement === insertionContainer || movingToRoot || movingBetweenRoots)) {
+    const addRow = insertionContainer.querySelector('.task-add-task');
+    const fallbackReference = insertionReference
+      ?? ((addRow && addRow.parentElement === insertionContainer) ? addRow : null);
     if (selectedIds.length > 1) {
       const elements = getTaskElementsByIds(selectedIds);
-      elements.forEach(el => {
-        if (addRow) {
-          targetContainer.insertBefore(el, addRow);
-        } else {
-          targetContainer.appendChild(el);
-        }
-      });
+      elements.forEach((el) => insertionContainer.insertBefore(el, fallbackReference));
     } else {
-      if (addRow) {
-        targetContainer.insertBefore(draggingEl, addRow);
-      } else {
-        targetContainer.appendChild(draggingEl);
-      }
+      insertionContainer.insertBefore(draggingEl, fallbackReference);
     }
   }
-  if (targetContainer) {
-    await persistTaskOrder(targetContainer, parentId, statusKey, groupMeta);
-    if (originContainer && originContainer !== targetContainer) {
+  if (insertionContainer) {
+    await persistTaskOrder(insertionContainer, parentId, statusKey, groupMeta);
+    if (originContainer && originContainer !== insertionContainer) {
       const originMeta = getGroupMetaForContainer(originContainer);
       await persistTaskOrder(
         originContainer,
@@ -12726,12 +12807,6 @@ async function dropTaskOnItem(item, clientY) {
   const taskId = item?.dataset?.taskId;
   if (!taskId) return;
   const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
-  if (canReparentTask(taskId) && isSubtaskDropZone({ clientY }, item)) {
-    item.classList.remove('drop-subtask');
-    await handleSubtaskDrop(taskId);
-    return;
-  }
-  item.classList.remove('drop-subtask');
   const container = item.parentElement;
   if (!container) return;
   const {
@@ -12766,17 +12841,17 @@ async function dropTaskOnItem(item, clientY) {
       return;
     }
   }
-  const rect = item.getBoundingClientRect();
-  const insertAfter = clientY > rect.top + rect.height / 2;
+  const insertion = resolveTaskInsertionReference(container, clientY);
+  if (!insertion.container) return;
+  const referenceNode = insertion.referenceNode;
   if (selectedIds.length > 1) {
     const elements = getTaskElementsByIds(selectedIds);
-    const referenceNode = insertAfter ? item.nextSibling : item;
-    elements.forEach(el => container.insertBefore(el, referenceNode));
+    elements.forEach((el) => insertion.container.insertBefore(el, referenceNode));
   } else {
-    container.insertBefore(draggingEl, insertAfter ? item.nextSibling : item);
+    insertion.container.insertBefore(draggingEl, referenceNode);
   }
-  await persistTaskOrder(container, parentId, statusKey, groupMeta);
-  if (originContainer && originContainer !== container) {
+  await persistTaskOrder(insertion.container, parentId, statusKey, groupMeta);
+  if (originContainer && originContainer !== insertion.container) {
     const originMeta = getGroupMetaForContainer(originContainer);
     await persistTaskOrder(
       originContainer,
@@ -12796,10 +12871,6 @@ function getTaskDropTargetAtPoint(clientX, clientY) {
   if (!element) return null;
   const item = element.closest('.task-item');
   if (item instanceof HTMLElement) {
-    const taskId = item.dataset.taskId;
-    if (taskId && canReparentTask(taskId) && isSubtaskDropZone({ clientY }, item)) {
-      return { type: 'subtask', item };
-    }
     return { type: 'item', item };
   }
   const container = element.closest('.task-root-dropzone, .task-list, .task-group-list');
@@ -12812,14 +12883,13 @@ function getTaskDropTargetAtPoint(clientX, clientY) {
 function updateTaskPointerDragTarget(clientX, clientY) {
   clearTaskDragIndicators();
   const target = getTaskDropTargetAtPoint(clientX, clientY);
-  if (target?.type === 'subtask') {
-    target.item.classList.add('drop-subtask');
-  } else if (target?.type === 'item') {
-    target.item.classList.add('drop-reorder');
+  if (target?.type === 'item') {
+    previewTaskDropOnItem(target.item, clientY);
   } else if (target?.type === 'container') {
     const { parentId, statusKey } = getTaskContainerContext(target.container);
     if (canDropTaskInContainer(parentId, statusKey)) {
       target.container.classList.add('drag-over');
+      previewTaskDropInContainer(target.container, clientY);
     }
   }
   if (taskPointerDragState) {
@@ -12830,27 +12900,55 @@ function updateTaskPointerDragTarget(clientX, clientY) {
 async function commitTaskPointerDrop(clientX, clientY) {
   const target = taskPointerDragState?.dropTarget ?? getTaskDropTargetAtPoint(clientX, clientY);
   if (!target) return;
-  if (target.type === 'subtask' || target.type === 'item') {
+  if (target.type === 'item') {
     await dropTaskOnItem(target.item, clientY);
     return;
   }
   if (target.type === 'container') {
-    await dropTaskIntoContainer(target.container);
+    await dropTaskIntoContainer(target.container, clientY);
   }
 }
 
 function beginTaskPointerGesture(event, task, item) {
   if (event.button !== 0) return;
   if (event.pointerType === 'mouse') return;
+  const gestureTaskIds = (() => {
+    const selected = getSelectedTaskIds();
+    if (!selected.includes(task.id)) return [task.id];
+    const originContainer = item?.parentElement;
+    if (!originContainer) return [task.id];
+    const ordered = Array.from(originContainer.querySelectorAll(':scope > .task-item, :scope > .kanban-card'))
+      .map((element) => element.dataset.taskId)
+      .filter((taskId) => selected.includes(taskId));
+    return ordered.length > 1 ? ordered : [task.id];
+  })();
+  const gestureElements = getTaskElementsByIds(gestureTaskIds);
+  const gestureRects = gestureElements.map((element) => element.getBoundingClientRect());
+  const itemRect = item?.getBoundingClientRect?.();
+  const gestureTop = gestureRects.length ? Math.min(...gestureRects.map((rect) => rect.top)) : event.clientY;
+  const gestureBottom = gestureRects.length ? Math.max(...gestureRects.map((rect) => rect.bottom)) : event.clientY;
   taskPointerDragState = {
     pointerId: event.pointerId,
     task,
     item,
     startX: event.clientX,
     startY: event.clientY,
+    dragBlockOffsetY: event.clientY - gestureTop,
+    dragBlockHeight: Math.max(gestureBottom - gestureTop, itemRect?.height ?? 0),
     dragging: false,
     dropTarget: null
   };
+}
+
+function getTaskPointerReferenceClientY(clientY, gestureState = taskPointerDragState) {
+  if (!gestureState?.dragging) return clientY;
+  const blockOffset = Number.isFinite(gestureState.dragBlockOffsetY)
+    ? gestureState.dragBlockOffsetY
+    : 0;
+  const blockHeight = Number.isFinite(gestureState.dragBlockHeight)
+    ? gestureState.dragBlockHeight
+    : 0;
+  return clientY - blockOffset + (blockHeight / 2);
 }
 
 function moveTaskPointerGesture(event) {
@@ -12860,18 +12958,15 @@ function moveTaskPointerGesture(event) {
   const deltaY = Math.abs(event.clientY - taskPointerDragState.startY);
   if (!taskPointerDragState.dragging) {
     if (deltaX < 6 && deltaY < 6) return;
-    if (deltaY > deltaX + 2) {
-      taskPointerDragState = null;
-      return;
-    }
     event.currentTarget?.setPointerCapture?.(event.pointerId);
     beginTaskDrag({ target: event.target, stopPropagation() {} }, taskPointerDragState.task, taskPointerDragState.item);
     taskPointerDragState.dragging = true;
-    if (draggingTaskEl) {
-      draggingTaskEl.style.pointerEvents = 'none';
-    }
+    getTaskElementsByIds(getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null))
+      .forEach((element) => {
+        element.style.pointerEvents = 'none';
+      });
   }
-  updateTaskPointerDragTarget(event.clientX, event.clientY);
+  updateTaskPointerDragTarget(event.clientX, getTaskPointerReferenceClientY(event.clientY));
   event.preventDefault();
 }
 
@@ -12884,7 +12979,7 @@ async function finishTaskPointerGesture(event, commit = false) {
     event.currentTarget?.releasePointerCapture?.(event.pointerId);
   }
   if (activeGesture.dragging && commit) {
-    await commitTaskPointerDrop(event.clientX, event.clientY);
+    await commitTaskPointerDrop(event.clientX, getTaskPointerReferenceClientY(event.clientY, activeGesture));
   }
   endTaskDrag();
 }
@@ -12910,6 +13005,7 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
     if (!allowed) return;
     event.preventDefault();
     container.classList.add('drag-over');
+    previewTaskDropInContainer(container, event.clientY);
   });
   container.addEventListener('dragleave', () => {
     container.classList.remove('drag-over');
@@ -12920,7 +13016,7 @@ function attachTaskDropzone(container, { parentId = null, statusKey = null, grou
     if (!allowed) return;
     event.preventDefault();
     container.classList.remove('drag-over');
-    await dropTaskIntoContainer(container);
+    await dropTaskIntoContainer(container, event.clientY);
   });
 }
 
@@ -12950,35 +13046,20 @@ function attachTaskDragHandlers(item, task) {
   }
   item.addEventListener('dragover', (event) => {
     if (!draggingTaskId || draggingColumnKey) return;
-    if (canReparentTask(task.id) && isSubtaskDropZone(event, item)) {
-      event.preventDefault();
-      item.classList.add('drop-subtask');
-      item.classList.remove('drop-reorder');
-      return;
-    }
-    item.classList.remove('drop-subtask');
     const container = item.parentElement;
     const parentId = container?.dataset?.parentId ?? null;
     const statusKey = container?.dataset?.statusKey ?? null;
     const allowed = canDropTaskInContainer(parentId ? parentId : null, statusKey ?? null);
     if (!allowed) return;
     event.preventDefault();
-    item.classList.add('drop-reorder');
+    previewTaskDropOnItem(item, event.clientY);
   });
   item.addEventListener('dragleave', () => {
-    item.classList.remove('drop-subtask');
-    item.classList.remove('drop-reorder');
+    clearTaskDragIndicators();
   });
   item.addEventListener('drop', async (event) => {
     if (!draggingTaskId || draggingColumnKey) return;
-    const selectedIds = getSelectedDragTaskIds(draggingTaskOrigin?.parentId ?? null);
-    if (canReparentTask(task.id) && isSubtaskDropZone(event, item)) {
-      event.preventDefault();
-      await dropTaskOnItem(item, event.clientY);
-      return;
-    }
     event.preventDefault();
-    item.classList.remove('drop-reorder');
     await dropTaskOnItem(item, event.clientY);
   });
 }
@@ -27089,13 +27170,10 @@ function renderTask(task, options = {}) {
     if (event.button !== 0) return;
     if (suppressTaskClick) return;
     if (isChecklistRowDisabled) return;
+    if (isMobileViewport()) return;
     const selected = getSelectedTaskIds();
     if (selected.length) return;
     event.stopPropagation();
-    if (isMobileViewport()) {
-      openTaskEditor(task.id);
-      return;
-    }
     beginInlineTaskEdit(task, item, titleEl);
   });
   item.dataset.status = statusKey;
@@ -27265,6 +27343,20 @@ function renderTask(task, options = {}) {
     if (isChecklistRowDisabled) return;
     if (event.target.closest('button')) return;
     if (event.target.closest('.task-drag-handle')) return;
+    if (isMobileViewport()) {
+      if (getSelectedTaskIds().length) {
+        event.preventDefault();
+        const selected = getSelectedTaskIds();
+        if (!selected.includes(task.id)) {
+          setSelectedTaskIds([...selected, task.id]);
+        } else {
+          setSelectedTaskIds(selected.filter(id => id !== task.id));
+        }
+        return;
+      }
+      openTaskEditor(task.id);
+      return;
+    }
     const selected = getSelectedTaskIds();
     if (!selected.length) return;
     event.preventDefault();

@@ -11,12 +11,14 @@ test('task drag groups selected siblings from the active container', () => {
   assert.match(script, /getTaskElementsByIds\(getSelectedDragTaskIds\(task\.parent_id \?\? null\)\)\s*\.forEach\(\(element\) => element\.classList\.add\('dragging'\)\);/s);
 });
 
-test('task multi-drag reparents and reorders the full selection together', () => {
+test('task multi-drag reorders the full selection together without creating subtasks', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   assert.match(script, /const selectedIds = getSelectedDragTaskIds\(draggingTaskOrigin\?\.parentId \?\? null\);/);
-  assert.match(script, /for \(const taskId of selectedIds\) \{\s*await reparentTaskRecord\(taskId, targetId\);\s*await updateTaskRecord\(taskId, \{ sort_order: nextSort \}\);\s*nextSort \+= 10;/s);
   assert.match(script, /for \(const taskId of selectedIds\) \{\s*const task = state\.tasks\?\.\[taskId\];\s*if \(!task \|\| \(task\.parent_id \?\? null\) === null\) continue;\s*await reparentTaskRecord\(taskId, null\);/s);
+  assert.match(script, /function previewTaskInsertion\(targetContainer, referenceNode = null\) \{[\s\S]*const elements = getTaskElementsByIds\(getSelectedDragTaskIds\(draggingTaskOrigin\?\.parentId \?\? null\)\);[\s\S]*elements\.forEach\(\(element\) => \{\s*container\.insertBefore\(element, normalizedReference\);/s);
+  assert.match(script, /const movingSet = new Set\(elements\);[\s\S]*\.filter\(\(candidate\) => !movingSet\.has\(candidate\)\)/s);
   assert.match(script, /if \(selectedIds\.length > 1\) \{\s*const elements = getTaskElementsByIds\(selectedIds\);/s);
+  assert.doesNotMatch(script, /reparentTaskRecord\(taskId, targetId\)/);
 });
 
 test('kanban drops also move selected tasks together', () => {
