@@ -176,6 +176,8 @@ const SHOPPING_ITEM_STATE_UNAVAILABLE = 'unavailable';
 const SHOPPING_ITEM_LONG_PRESS_MS = 450;
 const SHOPPING_ITEM_REORDER_HOLD_MS = 500;
 const SHOPPING_ITEM_DRAG_THRESHOLD_PX = 6;
+const TASK_ROW_LONG_PRESS_MS = 450;
+const TASK_ROW_GESTURE_THRESHOLD_PX = 6;
 const SHOPPING_KEYWORD_STOPWORDS = new Set([
   'and', 'the', 'with', 'for', 'from', 'into', 'onto', 'your', 'our',
   'of', 'to', 'in', 'on', 'at', 'a', 'an', 'oz', 'lb', 'lbs', 'pkg', 'pack'
@@ -995,7 +997,7 @@ let draggingTaskId = null;
 let draggingTaskEl = null;
 let draggingTaskOrigin = null;
 let taskPointerDragState = null;
-let taskRowPointerGestureState = null;
+let taskRowLongPressState = null;
 let draggingColumnKey = null;
 let draggingColumnEl = null;
 let draggingSectionId = null;
@@ -12952,54 +12954,43 @@ function getTaskPointerReferenceClientY(clientY, gestureState = taskPointerDragS
   return clientY - blockOffset + (blockHeight / 2);
 }
 
-function beginTaskRowPointerGesture(event, task) {
+function cancelTaskRowLongPress(event) {
+  if (!taskRowLongPressState) return;
+  if (event && taskRowLongPressState.pointerId !== event.pointerId) return;
+  if (taskRowLongPressState.timerId) {
+    window.clearTimeout(taskRowLongPressState.timerId);
+  }
+  taskRowLongPressState = null;
+}
+
+function beginTaskRowLongPress(event, task) {
+  if (!isMobileViewport()) return;
   if (event.button !== 0) return;
   if (event.pointerType === 'mouse') return;
   const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest('button')) return;
+  if (target?.closest('button, input, select, textarea, a, label')) return;
   if (target?.closest('.task-drag-handle')) return;
-  taskRowPointerGestureState = {
+  cancelTaskRowLongPress();
+  taskRowLongPressState = {
     pointerId: event.pointerId,
-    taskId: task.id,
     startX: event.clientX,
     startY: event.clientY,
-    moved: false
+    timerId: window.setTimeout(() => {
+      const current = taskRowLongPressState;
+      if (!current || current.pointerId !== event.pointerId) return;
+      taskRowLongPressState = null;
+      openTaskEditor(task.id);
+    }, TASK_ROW_LONG_PRESS_MS)
   };
 }
 
-function moveTaskRowPointerGesture(event) {
-  if (!taskRowPointerGestureState) return;
-  if (taskRowPointerGestureState.pointerId !== event.pointerId) return;
-  const deltaX = Math.abs(event.clientX - taskRowPointerGestureState.startX);
-  const deltaY = Math.abs(event.clientY - taskRowPointerGestureState.startY);
-  if (deltaX >= 8 || deltaY >= 8) {
-    taskRowPointerGestureState.moved = true;
+function updateTaskRowLongPress(event) {
+  if (!taskRowLongPressState || taskRowLongPressState.pointerId !== event.pointerId) return;
+  const deltaX = Math.abs(event.clientX - taskRowLongPressState.startX);
+  const deltaY = Math.abs(event.clientY - taskRowLongPressState.startY);
+  if (deltaX >= TASK_ROW_GESTURE_THRESHOLD_PX || deltaY >= TASK_ROW_GESTURE_THRESHOLD_PX) {
+    cancelTaskRowLongPress();
   }
-}
-
-function cancelTaskRowPointerGesture(event) {
-  if (!taskRowPointerGestureState) return;
-  if (event && taskRowPointerGestureState.pointerId !== event.pointerId) return;
-  taskRowPointerGestureState = null;
-}
-
-function finishTaskRowPointerGesture(event) {
-  if (!taskRowPointerGestureState) return;
-  if (taskRowPointerGestureState.pointerId !== event.pointerId) return;
-  const gesture = taskRowPointerGestureState;
-  taskRowPointerGestureState = null;
-  if (gesture.moved) return;
-  const selected = getSelectedTaskIds();
-  if (selected.length) {
-    if (!selected.includes(gesture.taskId)) {
-      setSelectedTaskIds([...selected, gesture.taskId]);
-    } else {
-      setSelectedTaskIds(selected.filter((id) => id !== gesture.taskId));
-    }
-    render();
-    return;
-  }
-  openTaskEditor(gesture.taskId);
 }
 
 function moveTaskPointerGesture(event) {
@@ -27389,10 +27380,10 @@ function renderTask(task, options = {}) {
   menuButton.disabled = isChecklistRowDisabled;
 
   if (isMobileViewport()) {
-    item.addEventListener('pointerdown', (event) => beginTaskRowPointerGesture(event, task));
-    item.addEventListener('pointermove', moveTaskRowPointerGesture);
-    item.addEventListener('pointerup', finishTaskRowPointerGesture);
-    item.addEventListener('pointercancel', cancelTaskRowPointerGesture);
+    item.addEventListener('pointerdown', (event) => beginTaskRowLongPress(event, task));
+    item.addEventListener('pointermove', updateTaskRowLongPress);
+    item.addEventListener('pointerup', cancelTaskRowLongPress);
+    item.addEventListener('pointercancel', cancelTaskRowLongPress);
   }
 
   item.addEventListener('click', (event) => {

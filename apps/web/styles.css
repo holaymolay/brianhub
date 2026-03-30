@@ -7815,10 +7815,10 @@ body.auth-gated #auth-cancel-invite {
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: flex-start;
-    gap: 0.35rem;
+    gap: 0.35rem 0.4rem;
   }
 
   #tasks-panel .task-title,
@@ -7833,8 +7833,10 @@ body.auth-gated #auth-cancel-invite {
   #tasks-panel .task-title {
     min-width: 0;
     max-width: 100%;
-    order: 10;
-    flex: 1 0 100%;
+    order: 0;
+    flex: 1 1 auto;
+    grid-column: 1;
+    grid-row: 1;
     display: -webkit-box;
     white-space: normal;
     overflow: hidden;
@@ -7868,9 +7870,33 @@ body.auth-gated #auth-cancel-invite {
     text-overflow: ellipsis;
   }
 
+  #tasks-panel .task-select-toggle,
+  #tasks-panel .task-star-button,
+  #tasks-panel .task-toggle {
+    display: none;
+  }
+
+  #tasks-panel .task-complete-button {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    justify-self: end;
+  }
+
+  #tasks-panel .task-drag-handle {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    justify-self: end;
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.9rem;
+    margin-right: 0;
+  }
+
   #tasks-panel .task-actions {
     flex: 0 0 auto;
-    align-self: flex-start;
+    align-self: center;
     margin-left: 0;
     gap: 0.25rem;
   }

@@ -209,10 +209,12 @@ test('mobile tasks view keeps the task panel as the scroll owner', () => {
 test('mobile task rows reflow into a wrapped phone layout', () => {
   const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
   assert.match(css, /#tasks-panel \.task-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto;/);
-  assert.match(css, /#tasks-panel \.task-title-row \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;/);
-  assert.match(css, /#tasks-panel \.task-title \{[\s\S]*flex: 1 0 100%;[\s\S]*white-space: normal;[\s\S]*-webkit-line-clamp: 3;/);
+  assert.match(css, /#tasks-panel \.task-title-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto auto;/);
+  assert.match(css, /#tasks-panel \.task-title \{[\s\S]*grid-column: 1;[\s\S]*white-space: normal;[\s\S]*-webkit-line-clamp: 3;/);
   assert.match(css, /#tasks-panel \.task-meta \{[\s\S]*display: block !important;[\s\S]*white-space: normal;/);
   assert.match(css, /#tasks-panel \.task-item,[\s\S]*#tasks-panel \.task-title-row > \*:not\(\.task-drag-handle\),[\s\S]*#tasks-panel \.task-row-meta \*,[\s\S]*#tasks-panel \.task-actions \*,[\s\S]*#tasks-panel \.task-menu-button \{[\s\S]*touch-action: pan-y;/s);
+  assert.match(css, /#tasks-panel \.task-select-toggle,[\s\S]*#tasks-panel \.task-star-button,[\s\S]*#tasks-panel \.task-toggle \{[\s\S]*display: none;/s);
+  assert.match(css, /#tasks-panel \.task-drag-handle \{[\s\S]*grid-column: 3;[\s\S]*width: 1\.5rem;/s);
   assert.match(css, /#tasks-panel \.task-row-meta,[\s\S]*#tasks-panel \.task-row-meta-item,[\s\S]*#tasks-panel \.task-type-badge,[\s\S]*#tasks-panel \.task-actions/s);
 });
 
@@ -266,17 +268,20 @@ test('mobile workspace management is a simple workspace switcher', () => {
   assert.match(css, /\.workspace-switch-button \{/);
 });
 
-test('mobile task rows use a dedicated tap gesture so swipes can scroll', () => {
+test('mobile task rows use long press so swipes can scroll', () => {
   const script = readFileSync(resolve(process.cwd(), 'apps/web/app.js'), 'utf8');
   const css = readFileSync(resolve(process.cwd(), 'apps/web/styles.css'), 'utf8');
   assert.match(script, /titleEl\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) return;[\s\S]*beginInlineTaskEdit\(task, item, titleEl\);/s);
-  assert.match(script, /let taskRowPointerGestureState = null;/);
-  assert.match(script, /function beginTaskRowPointerGesture\(event, task\)/);
-  assert.match(script, /function moveTaskRowPointerGesture\(event\)/);
-  assert.match(script, /function finishTaskRowPointerGesture\(event\)/);
-  assert.match(script, /item\.addEventListener\('pointerdown', \(event\) => beginTaskRowPointerGesture\(event, task\)\);/);
-  assert.match(script, /item\.addEventListener\('pointermove', moveTaskRowPointerGesture\);/);
-  assert.match(script, /item\.addEventListener\('pointerup', finishTaskRowPointerGesture\);/);
+  assert.match(script, /let taskRowLongPressState = null;/);
+  assert.match(script, /const TASK_ROW_LONG_PRESS_MS = 450;/);
+  assert.match(script, /const TASK_ROW_GESTURE_THRESHOLD_PX = 6;/);
+  assert.match(script, /function beginTaskRowLongPress\(event, task\)/);
+  assert.match(script, /function updateTaskRowLongPress\(event\)/);
+  assert.match(script, /function cancelTaskRowLongPress\(event\)/);
+  assert.match(script, /openTaskEditor\(task\.id\);[\s\S]*\}, TASK_ROW_LONG_PRESS_MS\)/s);
+  assert.match(script, /item\.addEventListener\('pointerdown', \(event\) => beginTaskRowLongPress\(event, task\)\);/);
+  assert.match(script, /item\.addEventListener\('pointermove', updateTaskRowLongPress\);/);
+  assert.match(script, /item\.addEventListener\('pointerup', cancelTaskRowLongPress\);/);
   assert.match(script, /item\.addEventListener\('click', \(event\) => \{[\s\S]*if \(isMobileViewport\(\)\) return;[\s\S]*const selected = getSelectedTaskIds\(\);/s);
   assert.match(css, /#tasks-panel \.task-title,[\s\S]*#tasks-panel \.task-row-meta-item \{\s*pointer-events: none;/s);
 });
