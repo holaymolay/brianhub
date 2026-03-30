@@ -176,8 +176,6 @@ const SHOPPING_ITEM_STATE_UNAVAILABLE = 'unavailable';
 const SHOPPING_ITEM_LONG_PRESS_MS = 450;
 const SHOPPING_ITEM_REORDER_HOLD_MS = 500;
 const SHOPPING_ITEM_DRAG_THRESHOLD_PX = 6;
-const TASK_ROW_LONG_PRESS_MS = 450;
-const TASK_ROW_GESTURE_THRESHOLD_PX = 6;
 const SHOPPING_KEYWORD_STOPWORDS = new Set([
   'and', 'the', 'with', 'for', 'from', 'into', 'onto', 'your', 'our',
   'of', 'to', 'in', 'on', 'at', 'a', 'an', 'oz', 'lb', 'lbs', 'pkg', 'pack'
@@ -997,7 +995,6 @@ let draggingTaskId = null;
 let draggingTaskEl = null;
 let draggingTaskOrigin = null;
 let taskPointerDragState = null;
-let taskRowLongPressState = null;
 let draggingColumnKey = null;
 let draggingColumnEl = null;
 let draggingSectionId = null;
@@ -12952,45 +12949,6 @@ function getTaskPointerReferenceClientY(clientY, gestureState = taskPointerDragS
     ? gestureState.dragBlockHeight
     : 0;
   return clientY - blockOffset + (blockHeight / 2);
-}
-
-function cancelTaskRowLongPress(event) {
-  if (!taskRowLongPressState) return;
-  if (event && taskRowLongPressState.pointerId !== event.pointerId) return;
-  if (taskRowLongPressState.timerId) {
-    window.clearTimeout(taskRowLongPressState.timerId);
-  }
-  taskRowLongPressState = null;
-}
-
-function beginTaskRowLongPress(event, task) {
-  if (!isMobileViewport()) return;
-  if (event.button !== 0) return;
-  if (event.pointerType === 'mouse') return;
-  const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest('button, input, select, textarea, a, label')) return;
-  if (target?.closest('.task-drag-handle')) return;
-  cancelTaskRowLongPress();
-  taskRowLongPressState = {
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    timerId: window.setTimeout(() => {
-      const current = taskRowLongPressState;
-      if (!current || current.pointerId !== event.pointerId) return;
-      taskRowLongPressState = null;
-      openTaskEditor(task.id);
-    }, TASK_ROW_LONG_PRESS_MS)
-  };
-}
-
-function updateTaskRowLongPress(event) {
-  if (!taskRowLongPressState || taskRowLongPressState.pointerId !== event.pointerId) return;
-  const deltaX = Math.abs(event.clientX - taskRowLongPressState.startX);
-  const deltaY = Math.abs(event.clientY - taskRowLongPressState.startY);
-  if (deltaX >= TASK_ROW_GESTURE_THRESHOLD_PX || deltaY >= TASK_ROW_GESTURE_THRESHOLD_PX) {
-    cancelTaskRowLongPress();
-  }
 }
 
 function moveTaskPointerGesture(event) {
@@ -27379,20 +27337,16 @@ function renderTask(task, options = {}) {
   completeButton.disabled = isChecklistRowDisabled;
   menuButton.disabled = isChecklistRowDisabled;
 
-  if (isMobileViewport()) {
-    item.addEventListener('pointerdown', (event) => beginTaskRowLongPress(event, task));
-    item.addEventListener('pointermove', updateTaskRowLongPress);
-    item.addEventListener('pointerup', cancelTaskRowLongPress);
-    item.addEventListener('pointercancel', cancelTaskRowLongPress);
-  }
-
   item.addEventListener('click', (event) => {
     if (suppressTaskClick) return;
     if (event.button !== 0) return;
     if (isChecklistRowDisabled) return;
     if (event.target.closest('button')) return;
     if (event.target.closest('.task-drag-handle')) return;
-    if (isMobileViewport()) return;
+    if (isMobileViewport()) {
+      openTaskEditor(task.id);
+      return;
+    }
     const selected = getSelectedTaskIds();
     if (!selected.length) return;
     event.preventDefault();

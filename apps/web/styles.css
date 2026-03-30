@@ -7821,15 +7821,6 @@ body.auth-gated #auth-cancel-invite {
     gap: 0.35rem 0.4rem;
   }
 
-  #tasks-panel .task-title,
-  #tasks-panel .task-meta,
-  #tasks-panel .task-status-tag,
-  #tasks-panel .task-type-badge,
-  #tasks-panel .task-row-meta,
-  #tasks-panel .task-row-meta-item {
-    pointer-events: none;
-  }
-
   #tasks-panel .task-title {
     min-width: 0;
     max-width: 100%;
@@ -7895,10 +7886,7 @@ body.auth-gated #auth-cancel-invite {
   }
 
   #tasks-panel .task-actions {
-    flex: 0 0 auto;
-    align-self: center;
-    margin-left: 0;
-    gap: 0.25rem;
+    display: none;
   }
 
   #tasks-panel .task-row-meta {
