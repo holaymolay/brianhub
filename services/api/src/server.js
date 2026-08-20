@@ -2668,15 +2668,18 @@ server.get('/shopping-lists', async (request, reply) => {
 });
 
 server.post('/shopping-lists', async (request, reply) => {
-  const { workspace_id, name, store_name, scheduled_for } = request.body ?? {};
+  const { id, workspace_id, name, store_name, scheduled_for } = request.body ?? {};
   if (!workspace_id || !name) {
     return reply.code(400).send({ error: 'workspace_id and name required' });
   }
   const access = await ensureWorkspaceAccess(request, reply, workspace_id);
   if (!access) return;
+  // A client-supplied id makes this idempotent (createShoppingList returns the
+  // existing row), which is what lets an offline client create a list locally
+  // and replay the create later without ending up with two of them.
   return await createShoppingList(
     db,
-    { workspace_id, name, store_name, scheduled_for, archived: request.body?.archived },
+    { id, workspace_id, name, store_name, scheduled_for, archived: request.body?.archived },
     request.headers['x-client-id'] ?? null
   );
 });

@@ -273,6 +273,55 @@ test('sync push returns 409 conflict with server version for stale task mutation
   assert.equal(conflictBody.error.conflict.server_version.updated_at, createdTask.updated_at);
 });
 
+test('a client-supplied shopping list id is honoured and makes the create idempotent', async () => {
+  // Offline clients mint the list id locally and replay the create later, so a
+  // dropped id would orphan every item queued against it.
+  const workspaceRes = await server.inject({
+    method: 'POST',
+    url: '/workspaces',
+    payload: {
+      name: 'Offline list workspace',
+      type: 'personal',
+      org_id: '00000000-0000-4000-8000-000000000001'
+    }
+  });
+  const workspaceId = workspaceRes.json().id;
+  const listId = '11111111-2222-4333-8444-555555555555';
+
+  const firstRes = await server.inject({
+    method: 'POST',
+    url: '/shopping-lists',
+    payload: { id: listId, workspace_id: workspaceId, name: 'Queued offline', store_name: 'Countdown' }
+  });
+  assert.equal(firstRes.statusCode, 200);
+  assert.equal(firstRes.json().id, listId);
+
+  // Replaying the same create (response lost, queue retried) must not duplicate.
+  const replayRes = await server.inject({
+    method: 'POST',
+    url: '/shopping-lists',
+    payload: { id: listId, workspace_id: workspaceId, name: 'Queued offline', store_name: 'Countdown' }
+  });
+  assert.equal(replayRes.statusCode, 200);
+  assert.equal(replayRes.json().id, listId);
+
+  const listsRes = await server.inject({
+    method: 'GET',
+    url: `/shopping-lists?workspace_id=${encodeURIComponent(workspaceId)}`
+  });
+  const matching = listsRes.json().filter((list) => list.id === listId);
+  assert.equal(matching.length, 1);
+
+  // Items queued against the locally-minted id must land, not 404.
+  const itemsRes = await server.inject({
+    method: 'POST',
+    url: '/shopping-items',
+    payload: { list_id: listId, items: [{ name: 'Bananas' }] }
+  });
+  assert.equal(itemsRes.statusCode, 200);
+  assert.equal(itemsRes.json().items[0].list_id, listId);
+});
+
 test('shopping lists persist scheduled_for and tasks can convert into shopping items', async () => {
   const workspaceRes = await server.inject({
     method: 'POST',
