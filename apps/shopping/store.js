@@ -49,6 +49,8 @@ export function emptyState() {
     purchaseSeen: {},
     // The server list acting as the "stuff we need" queue.
     needsListId: null,
+    // Workspaces this account can see, so the switcher works offline too.
+    workspaces: [],
     // itemId -> ISO timestamp of when it was ticked off. Kept out of `items`
     // because a server hydrate replaces that map wholesale, and this is the
     // signal the aisle order is learned from.
@@ -78,6 +80,7 @@ function normalizeState(raw) {
     lists: Array.isArray(raw.lists) ? raw.lists : [],
     items: raw.items && typeof raw.items === 'object' ? raw.items : {},
     pending: Array.isArray(raw.pending) ? raw.pending : [],
+    workspaces: Array.isArray(raw.workspaces) ? raw.workspaces : [],
     catalogue: !staleCatalogue && raw.catalogue && typeof raw.catalogue === 'object' ? raw.catalogue : {},
     catalogued: !staleCatalogue && raw.catalogued && typeof raw.catalogued === 'object' ? raw.catalogued : {},
     aliases: !staleCatalogue && raw.aliases && typeof raw.aliases === 'object' ? raw.aliases : {},

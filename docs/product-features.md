@@ -97,6 +97,19 @@ shopping surface stays authoritative until the PWA has been verified side by sid
 - Item outcomes: bought, substituted (with the substitute name), couldn't get it
 - Filters: open lists, done lists, all; optional hiding of bought items
 
+#### Sign-in and workspace
+
+With `BRIANHUB_REQUIRE_AUTH` on, the PWA shows a sign-in screen before it can sync;
+`/auth/me`, `/auth/login` and `/health` are the only routes reachable without a
+session. The cached lists still render offline once signed in.
+
+The app shows one workspace at a time — whichever the account landed on. Accounts
+with more than one get `Switch workspace…` in the menu, and an empty list screen
+points at it, since "no lists" for an account with several workspaces usually means
+the lists are in a different one. Switching flushes the write queue first and
+refuses to switch while anything is still unsent, so offline edits cannot be
+stranded against a workspace that is no longer shown.
+
 #### The needs queue
 
 `Stuff we need` is a standing backlog, pinned above the trips on the lists screen.

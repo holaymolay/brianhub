@@ -757,6 +757,21 @@ test('cadence wording covers the range without gaps', () => {
   assert.equal(describeCadence(200), 'now and then');
 });
 
+// --- workspace selection --------------------------------------------------
+
+test('an account with several workspaces can change which one it shows', () => {
+  // With auth on, the app lands on whichever workspace came first. If the lists
+  // are in another one that is a dead end unless it can be switched.
+  const app = readSource('apps/shopping/app.js');
+  assert.match(app, /async function switchWorkspace\(workspaceId\)/);
+  assert.match(app, /state\.workspaces = workspaces\.map/);
+  // Switching wipes the cached lists, so it must not strand unsent writes.
+  assert.match(app, /await sync\.flush\(\);\s*\n\s*if \(pendingCount\(state\)\) \{/);
+  assert.match(app, /Lists somewhere else\? Try/);
+  const html = readSource('apps/shopping/index.html');
+  assert.match(html, /id="menu-workspace"/);
+});
+
 // --- persistence ---------------------------------------------------------
 
 test('state round-trips through storage and survives corrupt data', () => {

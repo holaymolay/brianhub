@@ -70,6 +70,7 @@ const dom = {
   menuRefresh: el('menu-refresh'),
   menuToggleCompleted: el('menu-toggle-completed'),
   menuTidyNames: el('menu-tidy-names'),
+  menuWorkspace: el('menu-workspace'),
   tidySheet: el('tidy-sheet'),
   tidyList: el('tidy-list'),
   tidyEmpty: el('tidy-empty'),
@@ -237,6 +238,14 @@ function renderLists() {
       ? 'No completed lists yet.'
       : 'No lists yet. Tap ＋ to start one.';
     container.appendChild(empty);
+    // An empty app when the account has other workspaces almost always means
+    // the lists are in one of the others, not that there are none.
+    if (filter !== 'done' && (state.workspaces ?? []).length > 1) {
+      const hint = document.createElement('p');
+      hint.className = 'empty';
+      hint.textContent = 'Lists somewhere else? Try “Switch workspace” in the menu.';
+      container.appendChild(hint);
+    }
     return;
   }
 
@@ -432,6 +441,7 @@ function render() {
   dom.menuToggleCompleted.textContent = state.ui.hideCompletedItems
     ? 'Show bought items'
     : 'Hide bought items';
+  dom.menuWorkspace.classList.toggle('hidden', (state.workspaces ?? []).length < 2);
 
   if (inListView) {
     renderListDetail();
@@ -1308,8 +1318,38 @@ async function resolveWorkspace(session) {
     }
   }
   if (!Array.isArray(workspaces) || !workspaces.length) return null;
+  // Remembered so the menu can offer a switch without another round trip.
+  state.workspaces = workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name }));
   const stored = workspaces.find((workspace) => workspace.id === state.workspaceId);
   return stored ?? workspaces[0];
+}
+
+// An account with more than one workspace lands on whichever came first, which
+// is a dead end if the lists live in another one. Let it be changed.
+async function switchWorkspace(workspaceId) {
+  const target = (state.workspaces ?? []).find((workspace) => workspace.id === workspaceId);
+  if (!target || target.id === state.workspaceId) return;
+
+  await sync.flush();
+  if (pendingCount(state)) {
+    showToast('Finish syncing before switching workspace');
+    return;
+  }
+
+  state.workspaceId = target.id;
+  state.lists = [];
+  state.items = {};
+  state.cursor = 0;
+  state.needsListId = null;
+  state.ui.activeListId = null;
+  persist();
+  render();
+  try {
+    await sync.hydrate();
+    showToast(`Switched to ${target.name}`);
+  } catch {
+    showToast('Could not load that workspace');
+  }
 }
 
 async function adoptSession(session) {
@@ -1500,6 +1540,19 @@ dom.menuToggleCompleted.addEventListener('click', () => {
 });
 
 dom.menuTidyNames.addEventListener('click', openTidySheet);
+
+dom.menuWorkspace.addEventListener('click', () => {
+  const workspaces = state.workspaces ?? [];
+  closeSheets();
+  if (workspaces.length < 2) return;
+  openPrompt({
+    title: 'Switch workspace',
+    label: 'Show lists from',
+    options: workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name })),
+    selected: state.workspaceId,
+    onSubmit: (value) => { void switchWorkspace(value); }
+  });
+});
 dom.tidyClose.addEventListener('click', closeSheets);
 
 dom.menuEditList.addEventListener('click', () => openListEditor('edit'));
