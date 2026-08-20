@@ -4,6 +4,9 @@ BrianHub is a local-first planning application with two active modules:
 - `Tasks` for task management, workflows, projects, shopping, and notices
 - `Scheduling` for calendar-first planning (events, time blocks, and day-off entries)
 
+It also serves a standalone installable shopping PWA at `/shoppinglist`, backed by
+the same API and data.
+
 ## Product snapshot
 
 ### Tasks module
@@ -34,8 +37,13 @@ BrianHub is a local-first planning application with two active modules:
 
 For detailed module behavior, see `docs/product-features.md`.
 
+### Shopping PWA
+- Standalone offline-first app at `/shoppinglist` (`apps/shopping`)
+- Installable, works with no network, queues writes and replays them in order
+- Shares the API, workspace, and trained per-store aisle order with the web app
+
 ## Stack
-- Frontend: vanilla HTML/CSS/JS (`apps/web`)
+- Frontend: vanilla HTML/CSS/JS (`apps/web`, `apps/shopping`)
 - API: Fastify v4 (`services/api/src/server.js`)
 - Data: SQLite (`data/brianhub.sqlite`) via `sql.js`
 - Runtime: Node.js ESM (`"type": "module"`)
@@ -57,6 +65,7 @@ npm run dev
 
 Default endpoints:
 - Web UI: `http://localhost:5173/apps/web/`
+- Shopping PWA: `http://localhost:5173/shoppinglist`
 - API: `http://localhost:3000`
 
 ## Common scripts

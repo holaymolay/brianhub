@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Shopping" />
+    <title>BrianHub Shopping</title>
+    <link rel="manifest" href="/apps/shopping/manifest.webmanifest" />
+    <link rel="icon" href="/apps/shopping/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apps/shopping/icon-192.png" />
+    <link rel="stylesheet" href="/apps/shopping/styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="app-bar">
+        <button id="back-button" class="icon-button hidden" type="button" aria-label="Back to lists">←</button>
+        <div class="app-bar-titles">
+          <h1 id="app-title">Shopping</h1>
+          <p id="app-subtitle" class="app-subtitle">Loading…</p>
+        </div>
+        <button id="install-button" class="icon-button hidden" type="button" aria-label="Install app" title="Install app">⤓</button>
+        <button id="menu-button" class="icon-button" type="button" aria-label="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
+        <div id="app-menu" class="menu hidden" role="menu">
+          <button id="menu-refresh" class="menu-item" type="button" role="menuitem">Refresh from server</button>
+          <button id="menu-toggle-completed" class="menu-item" type="button" role="menuitem">Hide bought items</button>
+          <button id="menu-tidy-names" class="menu-item" type="button" role="menuitem">Tidy up item names…</button>
+          <button id="menu-edit-list" class="menu-item hidden" type="button" role="menuitem">List details…</button>
+          <button id="menu-delete-list" class="menu-item danger hidden" type="button" role="menuitem">Delete list</button>
+          <button id="menu-logout" class="menu-item" type="button" role="menuitem">Sign out</button>
+        </div>
+      </header>
+
+      <div id="status-banner" class="status-banner hidden" role="status" aria-live="polite"></div>
+
+      <main class="app-body">
+        <section id="auth-gate" class="auth-gate hidden">
+          <h2>Sign in</h2>
+          <p class="muted">BrianHub needs a session before your lists can sync.</p>
+          <form id="auth-form" class="auth-form">
+            <label for="auth-email">Email</label>
+            <input id="auth-email" type="email" autocomplete="username" required />
+            <label for="auth-password">Password</label>
+            <input id="auth-password" type="password" autocomplete="current-password" required />
+            <p id="auth-error" class="auth-error hidden"></p>
+            <button id="auth-submit" class="primary-button" type="submit">Sign in</button>
+          </form>
+        </section>
+
+        <section id="lists-view" class="view hidden">
+          <button id="needs-card" class="needs-card" type="button">
+            <span class="needs-card-title">Stuff we need</span>
+            <span id="needs-card-meta" class="needs-card-meta">nothing waiting</span>
+          </button>
+          <div class="filter-row" role="tablist" aria-label="List filter">
+            <button class="chip" type="button" data-filter="open" role="tab">Open</button>
+            <button class="chip" type="button" data-filter="done" role="tab">Done</button>
+            <button class="chip" type="button" data-filter="all" role="tab">All</button>
+          </div>
+          <div id="lists-container" class="lists"></div>
+          <button id="new-list-button" class="fab" type="button" aria-label="New shopping list">＋</button>
+        </section>
+
+        <section id="list-view" class="view hidden">
+          <form id="add-item-form" class="add-row" autocomplete="off">
+            <input
+              id="add-item-input"
+              class="add-input"
+              type="text"
+              placeholder="Add an item — paste a whole list to add many"
+              aria-label="Add an item"
+              enterkeyhint="done"
+              list="item-suggestions"
+            />
+            <datalist id="item-suggestions"></datalist>
+            <button id="needs-pull-button" class="secondary-button hidden" type="button" title="Add things from the needs queue">Needs</button>
+            <button id="usual-items-button" class="secondary-button" type="button" title="Pick from your usual items">Usual</button>
+            <button id="add-item-button" class="primary-button" type="submit">Add</button>
+          </form>
+          <div id="due-strip" class="due-strip hidden">
+            <span id="due-strip-text" class="due-strip-text"></span>
+            <button id="due-strip-add" class="due-strip-add" type="button">Add all</button>
+          </div>
+          <div id="items-container" class="items"></div>
+          <div id="list-empty" class="empty hidden">Nothing on this list yet.</div>
+          <div class="list-footer">
+            <button id="complete-list-button" class="secondary-button" type="button">Complete list</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="sheet-backdrop" class="backdrop hidden"></div>
+
+    <div id="list-editor" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="list-editor-title">
+      <h2 id="list-editor-title">New list</h2>
+      <form id="list-editor-form" class="sheet-form">
+        <label for="list-editor-name">Name</label>
+        <input id="list-editor-name" type="text" required maxlength="256" />
+        <label for="list-editor-store">Store</label>
+        <input
+          id="list-editor-store"
+          type="text"
+          maxlength="256"
+          list="store-suggestions"
+          placeholder="e.g. Countdown"
+        />
+        <datalist id="store-suggestions"></datalist>
+        <p class="field-note">The store name is what trains aisle order — items you reorder here come back in that order next time.</p>
+        <label for="list-editor-date">Shopping day</label>
+        <input id="list-editor-date" type="date" />
+        <div class="sheet-actions">
+          <button id="list-editor-cancel" class="secondary-button" type="button">Cancel</button>
+          <button id="list-editor-save" class="primary-button" type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="item-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="item-sheet-title">
+      <h2 id="item-sheet-title">Item</h2>
+      <div class="sheet-actions-list">
+        <button id="item-action-bought" class="menu-item" type="button">Bought</button>
+        <button id="item-action-substituted" class="menu-item" type="button">Substituted…</button>
+        <button id="item-action-unavailable" class="menu-item" type="button">Couldn't get it</button>
+        <button id="item-action-pending" class="menu-item" type="button">Back to pending</button>
+        <button id="item-action-rename" class="menu-item" type="button">Rename…</button>
+        <button id="item-action-stores" class="menu-item" type="button">Where to buy it…</button>
+        <button id="item-action-move" class="menu-item" type="button">Move to another list…</button>
+        <button id="item-action-delete" class="menu-item danger" type="button">Delete</button>
+        <button id="item-action-cancel" class="menu-item subtle" type="button">Cancel</button>
+      </div>
+    </div>
+
+    <div id="usual-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="usual-sheet-title">
+      <h2 id="usual-sheet-title">Your usual items</h2>
+      <input
+        id="usual-search"
+        type="text"
+        placeholder="Search your usual items"
+        aria-label="Search your usual items"
+        autocomplete="off"
+      />
+      <div id="usual-list" class="usual-list"></div>
+      <p id="usual-empty" class="field-note hidden">
+        Nothing here yet — items you add build this list automatically.
+      </p>
+      <div class="sheet-actions">
+        <button id="usual-cancel" class="secondary-button" type="button">Cancel</button>
+        <button id="usual-add" class="primary-button" type="button">Add selected</button>
+      </div>
+    </div>
+
+    <div id="needs-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="needs-sheet-title">
+      <h2 id="needs-sheet-title">Things you need</h2>
+      <p id="needs-sheet-note" class="field-note"></p>
+      <div id="needs-sheet-list" class="usual-list"></div>
+      <p id="needs-sheet-empty" class="field-note hidden">Nothing in the queue for this store.</p>
+      <div class="sheet-actions">
+        <button id="needs-sheet-cancel" class="secondary-button" type="button">Cancel</button>
+        <button id="needs-sheet-add" class="primary-button" type="button">Add selected</button>
+      </div>
+    </div>
+
+    <div id="tidy-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="tidy-title">
+      <h2 id="tidy-title">Tidy up item names</h2>
+      <p class="field-note">
+        These look like the same thing written different ways. Merging picks one spelling,
+        renames it everywhere it is still on a list, and uses it from now on.
+      </p>
+      <div id="tidy-list" class="tidy-list"></div>
+      <p id="tidy-empty" class="field-note hidden">Nothing to tidy — your item names are already consistent.</p>
+      <div class="sheet-actions">
+        <button id="tidy-close" class="secondary-button" type="button">Done</button>
+      </div>
+    </div>
+
+    <div id="prompt-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+      <h2 id="prompt-title">Rename</h2>
+      <form id="prompt-form" class="sheet-form">
+        <label id="prompt-label" for="prompt-input">Value</label>
+        <input id="prompt-input" type="text" maxlength="512" />
+        <datalist id="prompt-suggestions"></datalist>
+        <select id="prompt-select" class="hidden"></select>
+        <div class="sheet-actions">
+          <button id="prompt-cancel" class="secondary-button" type="button">Cancel</button>
+          <button id="prompt-save" class="primary-button" type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/apps/shopping/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Shopping basket">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <g transform="translate(0 8)">
+    <!-- handle -->
+    <path d="M188 196v-24a68 68 0 0 1 136 0v24"
+          fill="none" stroke="#38bdf8" stroke-width="26" stroke-linecap="round"/>
+    <!-- basket body, tapered -->
+    <path d="M132 208h248l-26 150a34 34 0 0 1-33 28H191a34 34 0 0 1-33-28z"
+          fill="none" stroke="#38bdf8" stroke-width="26" stroke-linejoin="round"/>
+    <!-- check mark: the point of the app -->
+    <path d="M212 288l34 34 62-62"
+          fill="none" stroke="#4ade80" stroke-width="26"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

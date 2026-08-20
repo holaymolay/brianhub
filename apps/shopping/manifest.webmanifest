@@ -1,0 +1,40 @@
+{
+  "id": "/apps/shopping/",
+  "name": "BrianHub Shopping",
+  "short_name": "Shopping",
+  "description": "Shopping lists — offline-first.",
+  "start_url": "/apps/shopping/",
+  "scope": "/apps/shopping/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "categories": ["productivity", "shopping", "lifestyle"],
+  "icons": [
+    {
+      "src": "/apps/shopping/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apps/shopping/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apps/shopping/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/apps/shopping/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

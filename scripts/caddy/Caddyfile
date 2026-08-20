@@ -7,11 +7,18 @@ brianhub.com {
 
   redir / /apps/web/ 302
   redir /apps/web /apps/web/ 302
+  redir /shoppinglist /apps/shopping/ 302
+  redir /apps/shopping /apps/shopping/ 302
 
   @favicon path /favicon.ico /favicon.svg
   rewrite @favicon /apps/web/favicon.svg
 
   handle /apps/web/* {
+    root * /opt/brianhub/current
+    file_server
+  }
+
+  handle /apps/shopping/* {
     root * /opt/brianhub/current
     file_server
   }

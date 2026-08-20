@@ -70,11 +70,134 @@ This file captures the behavior currently implemented in BrianHub.
 
 ## Shopping
 
+Shopping exists on two surfaces today: inside the web app (`apps/web`), and as a
+standalone installable PWA at `/shoppinglist` (`apps/shopping`). Both read and write
+the same API, the same workspace, and the same trained aisle order. The web app's
+shopping surface stays authoritative until the PWA has been verified side by side.
+
+### Web app surface
+
 - Multiple shopping lists
 - Shopping inbox capture and later assignment
 - List completion and archive behavior
 - Item editing, move, substitution, and unavailable outcomes
 - Task-to-shopping conversion for leaf tasks
+
+### Shopping PWA (`/shoppinglist`)
+
+- Installable, offline-first: launches, renders and accepts edits with no network
+- Every write is applied locally and queued, then replayed to the API in order.
+  A 4xx halts the queue for attention; 5xx and network failures retry with backoff,
+  and reconnecting (or reopening the app) cancels the backoff and retries at once
+- Status banner distinguishes "offline", "can't reach the server", and "sync blocked"
+- Lists: create, rename, set store and shopping day, complete/reopen, delete
+- Items: single add, multi-line paste to add many at once (bullets and numbering
+  stripped, duplicates dropped), tap to mark bought, drag to reorder, rename,
+  move to another list, delete
+- Item outcomes: bought, substituted (with the substitute name), couldn't get it
+- Filters: open lists, done lists, all; optional hiding of bought items
+
+#### The needs queue
+
+`Stuff we need` is a standing backlog, pinned above the trips on the lists screen.
+It is an ordinary shopping list on the server — so it syncs and works offline like
+everything else — but it never appears as a shopping trip and is never "completed".
+
+Each item can be marked as sold only at a particular store (`Where to buy it…` in
+the item menu), or left available anywhere, which is the default. The store can be
+typed in, so `only at Bunnings` can be recorded before any Bunnings list exists.
+
+On a trip, `Needs` offers the queue filtered to what that store actually sells:
+everything unrestricted, plus anything restricted to this store. Chosen items are
+added to the trip and leave the queue. They are added fresh rather than moved, so
+they land in the learned aisle position for that store.
+
+A trip with no store set only sees unrestricted items — nothing can promise a
+restricted item is available at an unnamed shop.
+
+#### How often things get bought
+
+Ticking an item off records a purchase, and the gaps between purchases give an
+estimate of how often it is bought. The **median** gap is used, not the average, so
+one holiday-sized gap cannot turn a weekly item into a monthly one. Two purchases
+give one interval, which is treated as a guess: such an item must be clearly
+overdue (25% past its interval) before it is suggested at all.
+
+Cadence is reported as `about weekly`, `about fortnightly`, `about monthly`,
+`every couple of months` or `now and then`, and appears against each item in the
+`Usual` picker along with when it is next expected.
+
+Items at or past their interval appear in a `Probably due` strip at the top of a
+list, filtered to what that store sells, excluding anything already on the list.
+`Add all` puts the lot on the trip in one tap. Something bought only once has no
+interval and is never guessed at.
+
+Purchase history rebuilds from the server on a new device, since bought items carry
+the time they were ticked.
+
+#### Learning the aisle order
+
+The order items are **ticked off** is recorded, and completing a list writes that
+sequence back as the per-store order. Walking the shop once teaches it; no dragging
+is required. Dragging still works and still teaches, it is just no longer the only
+way. Next time, items added to a list at that store arrive already in that order.
+
+The store name is the key the order is learned against, so a list with no store
+learns nothing. To stop that happening silently: a new list pre-fills the store
+field with the last store used, and completing a list with no store says so.
+
+Ticking a single item teaches nothing (one tick implies no ordering), and items
+left un-ticked keep their relative position behind the ones that were.
+
+#### Usual items
+
+Every item ever added builds a per-device catalogue, which powers the `Usual`
+picker next to the add box and the type-ahead suggestions in it. Entries are
+ranked by how often they are bought, weighted towards this store and towards
+recent use, and anything already on the current list is filtered out. Multi-select
+adds several at once. The catalogue outlives the lists it came from, seeds itself
+from existing server history on first run, and individual entries can be dropped
+with `×`.
+
+#### Standardised item names
+
+The same item typed differently across trips is treated as one item. Case,
+punctuation, accents, plurals, filler words and **word order** are all ignored, so
+`Milk 2L`, `2L milk` and `Milk, 2 L` are the same thing. Quantities are not
+ignored: `Milk 2L` and `Milk 3L` stay separate, as do `Chicken` and `Chicken stock`.
+Only formatting is ever resolved automatically — a different word or a different
+amount always means a different item.
+
+When an item is added that matches something bought before, it is entered under
+the spelling used most often, and the app says so. An item never bought before is
+kept exactly as typed. This also protects the aisle order: the server keys its
+per-store hints on the item name, so three spellings of one item would otherwise
+train three separate half-learned positions.
+
+`Tidy up item names…` in the menu handles names that already drifted. It groups
+entries that differ only by a quantity or packaging word (`Milk` / `Milk 2L`) or
+that are within two characters of each other (`Yoghurt` / `Yogurt`), and never
+groups things that differ by a real word. Merging picks one spelling, renames the
+item everywhere it is still on a list, and records the old spelling as an alias so
+typing it again lands on the kept name rather than recreating what was tidied away.
+
+One limit worth knowing: aisle-order hints already learned under a merged-away
+spelling are orphaned on the server, since hints are keyed by name. They are
+harmless — they simply stop matching — and the kept name relearns its position on
+the next completed shop.
+
+Adding something already waiting on the current list is skipped rather than
+duplicated. Re-adding something already ticked off does add it again.
+
+#### Checked items get out of the way
+
+Ticked items leave the working list and collapse into an `In the trolley (n)`
+group at the bottom, so what is left to get stays at the top of the screen instead
+of being scattered between things already in the trolley. The group expands to
+correct a mis-tap, and lists the most recently ticked item first.
+
+Not carried over from the web surface: the shopping inbox and task-to-shopping
+conversion, both of which belong to the task module.
 
 ## Notices
 

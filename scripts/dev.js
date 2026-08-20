@@ -15,7 +15,8 @@ const contentTypes = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
-  '.png': 'image/png'
+  '.png': 'image/png',
+  '.webmanifest': 'application/manifest+json; charset=utf-8'
 };
 
 function startApi() {
@@ -33,6 +34,11 @@ function startWeb() {
       let pathname = url.pathname;
       if (pathname === '/') {
         res.writeHead(302, { Location: '/apps/web/' });
+        res.end();
+        return;
+      }
+      if (pathname === '/shoppinglist' || pathname === '/shoppinglist/') {
+        res.writeHead(302, { Location: '/apps/shopping/' });
         res.end();
         return;
       }

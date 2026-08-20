@@ -1,0 +1,763 @@
+/* BrianHub Shopping — mobile-first. Designed for one thumb in a supermarket:
+   big targets, high contrast, nothing that needs precision. */
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-raised: #273449;
+  --border: #334155;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-strong: #0ea5e9;
+  --danger: #f87171;
+  --warn: #fbbf24;
+  --done: #4ade80;
+  --row-height: 56px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  overscroll-behavior-y: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+/* --- app bar --- */
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-bar-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.app-bar h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-button {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.icon-button:active {
+  background: var(--surface-raised);
+}
+
+/* --- menus and sheets --- */
+.menu {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 8px;
+  min-width: 220px;
+  padding: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  z-index: 40;
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:active {
+  background: var(--surface);
+}
+
+.menu-item.danger {
+  color: var(--danger);
+}
+
+.menu-item.subtle {
+  color: var(--text-muted);
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.7);
+  z-index: 50;
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  padding: 20px 16px calc(20px + var(--safe-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.sheet h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+
+.sheet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sheet-form label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.field-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.sheet-actions button {
+  flex: 1 1 0;
+}
+
+.sheet-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+input[type='text'],
+input[type='email'],
+input[type='password'],
+input[type='date'],
+select {
+  width: 100%;
+  padding: 13px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 16px; /* 16px stops iOS zooming the viewport on focus */
+}
+
+input:focus,
+select:focus,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.primary-button,
+.secondary-button {
+  padding: 13px 18px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.primary-button {
+  background: var(--accent-strong);
+  color: #04263a;
+}
+
+.secondary-button {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* --- status --- */
+.status-banner {
+  padding: 9px 16px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.status-banner.warn {
+  background: rgba(251, 191, 36, 0.14);
+  color: var(--warn);
+}
+
+.status-banner.error {
+  background: rgba(248, 113, 113, 0.16);
+  color: var(--danger);
+}
+
+/* --- body --- */
+.app-body {
+  flex: 1 1 auto;
+  position: relative;
+}
+
+.view {
+  padding: 12px 12px calc(96px + var(--safe-bottom));
+}
+
+.empty {
+  padding: 32px 12px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* --- lists --- */
+/* --- needs queue --- */
+.needs-card {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.needs-card:active {
+  background: var(--surface);
+}
+
+.needs-card-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.needs-card-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* --- due now --- */
+.due-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.due-strip-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.due-strip-add {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-strong);
+  color: #04263a;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.usual-meta.due {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.filter-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.chip {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #04263a;
+  font-weight: 600;
+}
+
+.lists {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.list-card:active {
+  background: var(--surface-raised);
+}
+
+.list-card.complete .list-card-name {
+  color: var(--text-muted);
+}
+
+.list-card-name {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.list-card-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.list-card-bar {
+  display: block;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.list-card-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--done);
+}
+
+.fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(22px + var(--safe-bottom));
+  width: 60px;
+  height: 60px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  color: #04263a;
+  font-size: 30px;
+  box-shadow: 0 10px 28px rgba(14, 165, 233, 0.4);
+  cursor: pointer;
+  z-index: 15;
+}
+
+/* --- item list --- */
+.add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.add-input {
+  flex: 1 1 auto;
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--row-height);
+  padding: 6px 4px 6px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  touch-action: pan-y;
+}
+
+.item-row.dragging {
+  position: relative;
+  z-index: 10;
+  background: var(--surface-raised);
+  border-radius: 10px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+}
+
+.item-check {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: transparent;
+  color: transparent;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.item-row.done .item-check {
+  border-color: var(--done);
+  background: var(--done);
+  color: #05240f;
+}
+
+.item-row[data-state='unavailable'] .item-check {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #2b0707;
+}
+
+.item-row[data-state='substituted'] .item-check {
+  border-color: var(--warn);
+  background: var(--warn);
+  color: #2b1d02;
+}
+
+.item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.item-name {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.item-row.done .item-name {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.item-note {
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.item-menu {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 19px;
+  cursor: pointer;
+}
+
+.drag-handle {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 17px;
+  cursor: grab;
+  touch-action: none;
+}
+
+/* The divider the ticked-off items collapse behind. */
+.done-divider {
+  width: 100%;
+  margin-top: 18px;
+  padding: 12px 4px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.drag-handle.inert {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* --- usual items --- */
+.usual-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.usual-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.usual-pick {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.usual-pick.selected {
+  border-color: var(--accent);
+  background: rgba(56, 189, 248, 0.14);
+}
+
+.usual-pick.selected .usual-name::before {
+  content: '✓ ';
+  color: var(--accent);
+}
+
+.usual-name {
+  overflow-wrap: anywhere;
+}
+
+.usual-meta {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.usual-forget {
+  flex: 0 0 auto;
+  width: 40px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.usual-forget:active {
+  background: var(--surface-raised);
+}
+
+/* --- tidy up names --- */
+.tidy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0 4px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.tidy-group {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.tidy-variants {
+  font-size: 14px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.tidy-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tidy-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tidy-merge {
+  flex: 0 0 auto;
+}
+
+.primary-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.list-footer {
+  margin-top: 22px;
+}
+
+.list-footer button {
+  width: 100%;
+}
+
+/* --- auth --- */
+.auth-gate {
+  padding: 32px 20px;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.auth-form label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.auth-form button {
+  margin-top: 20px;
+}
+
+.auth-error {
+  margin: 12px 0 0;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+/* --- toast --- */
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(94px + var(--safe-bottom));
+  z-index: 80;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* --- wider screens --- */
+@media (min-width: 720px) {
+  .app-bar,
+  .view,
+  .status-banner {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .sheet {
+    left: 50%;
+    right: auto;
+    bottom: 50%;
+    transform: translate(-50%, 50%);
+    width: min(480px, 92vw);
+    border-radius: 16px;
+  }
+
+  .fab {
+    right: max(18px, calc(50vw - 344px));
+  }
+}
