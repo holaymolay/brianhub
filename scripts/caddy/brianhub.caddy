@@ -1,3 +1,12 @@
+# BrianHub's site blocks ONLY. Install as /etc/caddy/sites/brianhub.caddy,
+# picked up by `import sites/*.caddy` in the main Caddyfile.
+#
+# Never copy this over /etc/caddy/Caddyfile. This host serves other sites from
+# the same Caddy, and overwriting the main file removes them along with their
+# certificates — on 2026-08-21 that took brianhub.com and pipecam.report down
+# together for 16 minutes, dead at the TLS handshake with every on-box signal
+# still reading green.
+
 www.brianhub.com {
   redir https://brianhub.com{uri} 308
 }

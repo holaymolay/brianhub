@@ -83,10 +83,17 @@ install_service_units() {
 }
 
 install_caddy_config() {
+  install -d -m 755 /etc/caddy/sites
   sed \
     -e "s/^www\\.brianhub\\.com {/www.${DOMAIN} {/" \
     -e "s/^brianhub\\.com {/${DOMAIN} {/" \
-    "$REPO_DIR/scripts/caddy/Caddyfile" >/etc/caddy/Caddyfile
+    "$REPO_DIR/scripts/caddy/brianhub.caddy" >/etc/caddy/sites/brianhub.caddy
+  # This Caddy serves other sites too. Add the include if it is missing, but
+  # never rewrite the main file — that drops their blocks and their certs.
+  if ! grep -q '^import sites/\*\.caddy' /etc/caddy/Caddyfile 2>/dev/null; then
+    printf '\nimport sites/*.caddy\n' >>/etc/caddy/Caddyfile
+  fi
+  caddy validate --config /etc/caddy/Caddyfile
   systemctl reload caddy
 }
 

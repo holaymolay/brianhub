@@ -905,7 +905,21 @@ test('both dev and production serve /shoppinglist and the app directory', () => 
   const dev = readSource('scripts/dev.js');
   assert.match(dev, /'\/shoppinglist'/);
   assert.match(dev, /\.webmanifest/);
-  const caddy = readSource('scripts/caddy/Caddyfile');
+  const caddy = readSource('scripts/caddy/brianhub.caddy');
   assert.match(caddy, /redir \/shoppinglist \/apps\/shopping\/ 302/);
   assert.match(caddy, /handle \/apps\/shopping\/\*/);
+});
+
+test('nothing in the repo overwrites the shared main Caddyfile', () => {
+  // This box serves other sites from the same Caddy. On 2026-08-21 copying our
+  // config over /etc/caddy/Caddyfile removed their blocks and their certs, and
+  // took both hosts down at the TLS handshake. Our config installs as its own
+  // fragment under /etc/caddy/sites/ and the main file is only ever appended to.
+  for (const path of ['scripts/provision-vps.sh', 'docs/deployment.md']) {
+    const source = readSource(path);
+    // `>>` appending the import line is fine; a single `>` truncates the file.
+    assert.doesNotMatch(source, /[^>]>\s*\/etc\/caddy\/Caddyfile/, `${path} truncates the main Caddyfile`);
+    assert.doesNotMatch(source, /tee \/etc\/caddy\/Caddyfile/, `${path} overwrites the main Caddyfile`);
+    assert.match(source, /\/etc\/caddy\/sites\/brianhub\.caddy/);
+  }
 });

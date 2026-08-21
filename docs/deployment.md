@@ -82,10 +82,13 @@ DOMAIN=brianhub.com
 sudo cp /opt/brianhub/repo/scripts/systemd/brianhub.service /etc/systemd/system/brianhub.service
 sudo cp /opt/brianhub/repo/scripts/systemd/brianhub-backup.service /etc/systemd/system/brianhub-backup.service
 sudo cp /opt/brianhub/repo/scripts/systemd/brianhub-backup.timer /etc/systemd/system/brianhub-backup.timer
+sudo install -d -m 755 /etc/caddy/sites
 sudo sed \
   -e "s/^www\\.brianhub\\.com {/www.${DOMAIN} {/" \
   -e "s/^brianhub\\.com {/${DOMAIN} {/" \
-  /opt/brianhub/repo/scripts/caddy/Caddyfile | sudo tee /etc/caddy/Caddyfile >/dev/null
+  /opt/brianhub/repo/scripts/caddy/brianhub.caddy | sudo tee /etc/caddy/sites/brianhub.caddy >/dev/null
+grep -q '^import sites/\*\.caddy' /etc/caddy/Caddyfile || printf '\nimport sites/*.caddy\n' | sudo tee -a /etc/caddy/Caddyfile >/dev/null
+sudo caddy validate --config /etc/caddy/Caddyfile
 sudo sed \
   -e 's|__RUNTIME_USER__|brianhub|g' \
   -e 's|__SERVICE_NAME__|brianhub.service|g' \
@@ -148,6 +151,19 @@ The deploy script:
 - switches `/opt/brianhub/current`
 - restarts `brianhub.service`
 - verifies `http://127.0.0.1:$PORT/health`
+
+`deploy.sh` does not touch Caddy. If a release changes `scripts/caddy/brianhub.caddy`, refresh the
+fragment separately, as root, after the deploy:
+
+```bash
+cp /opt/brianhub/current/scripts/caddy/brianhub.caddy /etc/caddy/sites/brianhub.caddy
+caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+```
+
+**This host serves other sites from the same Caddy.** Write only
+`/etc/caddy/sites/brianhub.caddy`; never copy anything over `/etc/caddy/Caddyfile`. Doing that on
+2026-08-21 removed the other sites' blocks and certificates and took every host on the box down at the
+TLS handshake for 16 minutes, while every on-box health check still reported green.
 
 Non-root deploys require passwordless `sudo` access to restart the system service. The restricted Roger admin path handles this through the wrapper described above.
 The runtime user also needs restricted passwordless access to `systemctl daemon-reload`, `systemctl restart brianhub.service`, and `systemctl is-active --quiet brianhub.service`. `scripts/provision-vps.sh` installs that sudoers file automatically.
