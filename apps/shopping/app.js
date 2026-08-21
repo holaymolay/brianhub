@@ -29,6 +29,8 @@ import {
   getItemsForList,
   getList,
   getListProgress,
+  listNameFor,
+  todayIso,
   getUsualItems,
   getVisibleLists,
   groupItemsByProgress,
@@ -56,6 +58,7 @@ let pollTimer = null;
 let activeItemId = null;
 let serverReachable = true;
 let listEditorMode = 'create';
+let listNameEdited = false;
 let promptHandler = null;
 
 const el = (id) => document.getElementById(id);
@@ -660,13 +663,22 @@ function openListEditor(mode) {
   listEditorMode = mode;
   const list = mode === 'edit' ? getList(state, state.ui.activeListId) : null;
   dom.listEditorTitle.textContent = mode === 'edit' ? 'List details' : 'New list';
-  dom.listEditorName.value = list?.name ?? '';
   // A new list defaults to the last store used. The store name is the key the
   // aisle order is learned against, so a blank one silently disables learning.
   dom.listEditorStore.value = list?.store_name ?? (mode === 'create' ? state.lastStoreName ?? '' : '');
-  dom.listEditorDate.value = list?.scheduled_for ?? '';
+  dom.listEditorDate.value = list?.scheduled_for ?? (mode === 'create' ? todayIso() : '');
+  dom.listEditorName.value =
+    list?.name ?? listNameFor(dom.listEditorStore.value, dom.listEditorDate.value);
+  // An existing list keeps whatever it is called; a new one follows the store
+  // and date fields until you type a name of your own.
+  listNameEdited = mode === 'edit';
   openSheet(dom.listEditor);
   dom.listEditorName.focus();
+}
+
+function syncDerivedListName() {
+  if (listEditorMode !== 'create' || listNameEdited) return;
+  dom.listEditorName.value = listNameFor(dom.listEditorStore.value, dom.listEditorDate.value);
 }
 
 function submitListEditor(event) {
@@ -1449,6 +1461,13 @@ dom.backButton.addEventListener('click', showListsView);
 dom.newListButton.addEventListener('click', () => openListEditor('create'));
 dom.listEditorForm.addEventListener('submit', submitListEditor);
 dom.listEditorCancel.addEventListener('click', closeSheets);
+dom.listEditorName.addEventListener('input', () => {
+  listNameEdited = true;
+});
+dom.listEditorStore.addEventListener('input', syncDerivedListName);
+// Mobile date pickers commit on change rather than firing input as you scroll.
+dom.listEditorDate.addEventListener('input', syncDerivedListName);
+dom.listEditorDate.addEventListener('change', syncDerivedListName);
 dom.addItemForm.addEventListener('submit', addItemsFromInput);
 
 dom.needsCard.addEventListener('click', openNeeds);

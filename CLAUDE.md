@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev                      # API (:3000) + static web server (:5173) together
 npm run dev:api                  # API only
-npm test                         # node --test tests/*.test.js  (239 tests, ~1.5s)
+npm test                         # node --test tests/*.test.js  (245 tests, ~1.5s)
 node --test tests/notices.test.js                       # one file
 node --test --test-name-pattern="reparent" tests/       # one test by name
 npm run migrate                  # apply services/api/db/migrations to data/brianhub.sqlite

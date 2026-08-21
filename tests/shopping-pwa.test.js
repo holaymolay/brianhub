@@ -6,6 +6,8 @@ import { resolve } from 'node:path';
 import {
   NEEDS_LIST_NAME,
   applyRemoteChange,
+  listNameFor,
+  todayIso,
   canBuyAt,
   canonicalKey,
   describeCadence,
@@ -758,6 +760,47 @@ test('cadence wording covers the range without gaps', () => {
 });
 
 // --- workspace selection --------------------------------------------------
+
+// --- naming a new trip ---------------------------------------------------
+
+test('a new list is named for the store and the day it is for', () => {
+  assert.equal(listNameFor('Pak n Save', '2026-08-21', 'en-US'), 'Pak n Save - Aug 21');
+  assert.equal(listNameFor('Safeway', '2026-12-01', 'en-US'), 'Safeway - Dec 1');
+});
+
+test('the date in the name is absolute, so it still reads right next week', () => {
+  // formatDate() renders "Today" for the list meta line. A stored name must not,
+  // or every list created today is called the same thing forever.
+  const name = listNameFor('Safeway', todayIso(), 'en-US');
+  assert.doesNotMatch(name, /Today|Tomorrow|Yesterday/);
+});
+
+test('a missing store or date just drops out of the name', () => {
+  assert.equal(listNameFor('', '2026-08-21', 'en-US'), 'Aug 21');
+  assert.equal(listNameFor('Safeway', '', 'en-US'), 'Safeway');
+  assert.equal(listNameFor('', '', 'en-US'), '');
+});
+
+test('today is the local calendar day, not the UTC one', () => {
+  // toISOString() would hand back tomorrow's date all evening in California.
+  const evening = new Date(2026, 7, 21, 23, 30);
+  assert.equal(todayIso(evening), '2026-08-21');
+});
+
+test('a new list starts on today at the last store used, named to match', () => {
+  const app = readSource('apps/shopping/app.js');
+  assert.match(app, /dom\.listEditorDate\.value = list\?\.scheduled_for \?\? \(mode === 'create' \? todayIso\(\) : ''\)/);
+  assert.match(app, /listNameFor\(dom\.listEditorStore\.value, dom\.listEditorDate\.value\)/);
+});
+
+test('the derived name follows the store and date until you type your own', () => {
+  const app = readSource('apps/shopping/app.js');
+  assert.match(app, /if \(listEditorMode !== 'create' \|\| listNameEdited\) return;/);
+  assert.match(app, /dom\.listEditorName\.addEventListener\('input', \(\) => \{\s*\n\s*listNameEdited = true;/);
+  assert.match(app, /dom\.listEditorStore\.addEventListener\('input', syncDerivedListName\)/);
+  // Mobile date pickers commit on change, not input.
+  assert.match(app, /dom\.listEditorDate\.addEventListener\('change', syncDerivedListName\)/);
+});
 
 test('an account with several workspaces can change which one it shows', () => {
   // With auth on, the app lands on whichever workspace came first. If the lists

@@ -189,6 +189,36 @@ export function isListComplete(state, list) {
   return total > 0 && remaining === 0;
 }
 
+// Local calendar day, not UTC — toISOString() would roll over the date for
+// anyone west of Greenwich for part of the evening.
+export function todayIso(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// A shopping trip is identified by where and when, so that is what a new list
+// is called. The date is absolute rather than "Today" — the name is stored and
+// outlives the day it was written on.
+export function listNameFor(storeName, scheduledFor, locale = undefined) {
+  const parts = [];
+  const store = String(storeName ?? '').trim();
+  if (store) parts.push(store);
+
+  const date = String(scheduledFor ?? '').trim();
+  if (date) {
+    const parsed = new Date(`${date}T00:00:00`);
+    parts.push(
+      Number.isNaN(parsed.getTime())
+        ? date
+        : parsed.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
+    );
+  }
+
+  return parts.join(' - ');
+}
+
 export const NEEDS_LIST_NAME = 'Stuff we need';
 
 // The needs queue is an ordinary server-backed list, which is what gives it
