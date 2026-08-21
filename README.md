@@ -146,7 +146,7 @@ Production is designed for:
 - a dedicated VPS
 - `systemd + Caddy + Node 22`
 - immutable releases under `/opt/brianhub/releases`
-- a manual `origin/main` deploy flow with rollback
+- deploy on push to `main` via GitHub Actions, with rollback and a manual fallback
 
 See `docs/deployment.md` for the complete host layout, service templates, Caddy config, upgrade workflow, and off-host backup pull process.
 

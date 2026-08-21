@@ -127,7 +127,33 @@ That creates `roger-admin`, installs `/usr/local/bin/brianhub-admin`, and grants
 
 ## Upgrades from GitHub
 
-Production tracks GitHub manually.
+**A push to `main` deploys.** `.github/workflows/deploy.yml` runs the suite on the runner, then SSHes
+in as the restricted admin account and runs `brianhub-admin deploy`, then verifies `brianhub.com` from
+off the box. `workflow_dispatch` takes an optional ref for a redeploy or a targeted release.
+
+CI needs four repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `BRIANHUB_SSH_USER` | `roger-admin` |
+| `BRIANHUB_SSH_HOST` | the VPS **public** IP — runners are not on the tailnet |
+| `BRIANHUB_SSH_KEY` | base64 of a passphrase-less ed25519 private key |
+| `BRIANHUB_SSH_HOST_KEY` | `ssh-keyscan -t ed25519 <host>` output, pinned |
+
+The CI key is its own key, not a copy of a human's. Mint it and authorize it once:
+
+```bash
+ssh-keygen -t ed25519 -N '' -C brianhub-ci -f ./brianhub-ci
+base64 -w0 < ./brianhub-ci | gh secret set BRIANHUB_SSH_KEY --repo holaymolay/brianhub
+ssh-keyscan -t ed25519 <host> | gh secret set BRIANHUB_SSH_HOST_KEY --repo holaymolay/brianhub
+# then, as root on the VPS, append ./brianhub-ci.pub to roger-admin's authorized_keys
+```
+
+That account's sudo is scoped to `/usr/local/bin/brianhub-admin`, so CI holds exactly the capability a
+human operator has — it cannot write Caddy config or anything else on the box. Delete the local private
+key once the secret is set.
+
+The manual path below still works and is the fallback if CI is unavailable.
 
 ```bash
 sudo -u brianhub BRIANHUB_REPO_DIR=/opt/brianhub/repo BRIANHUB_ENV_FILE=/etc/brianhub.env /opt/brianhub/current/scripts/deploy.sh

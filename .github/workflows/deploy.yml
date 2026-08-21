@@ -1,0 +1,88 @@
+name: Deploy BrianHub to VPS
+
+# Push to main deploys. There is deliberately no `paths:` filter: this repo is
+# small, a redeploy is cheap, and a filter silently skips the deploy for any
+# path someone forgets to list — prod then drifts from main with nothing saying
+# so. PCIUS learned that the hard way; see its deploy.yml comments.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to deploy (defaults to origin/main on the host)
+        type: string
+        required: false
+
+# Never let two deploys interleave a symlink flip.
+concurrency:
+  group: brianhub-prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test, deploy, verify from outside
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to a SHA, not a tag: a tag can be silently repointed.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      # deploy.sh runs the suite on the host as its own gate. Running it here
+      # first means a broken commit never reaches the box at all.
+      - name: Run tests
+        run: |
+          npm ci
+          npm test
+
+      - name: Authorize against the VPS
+        env:
+          SSH_KEY_B64: ${{ secrets.BRIANHUB_SSH_KEY }}
+          SSH_HOST_KEY: ${{ secrets.BRIANHUB_SSH_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s' "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          # Pinned, not scanned — a scanned key trusts whatever answers today.
+          # Refresh after a reprovision:
+          #   ssh-keyscan -t ed25519 <host> | gh secret set BRIANHUB_SSH_HOST_KEY
+          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # roger-admin's sudo is scoped to this one wrapper, so CI gets exactly the
+      # capability a human operator has and nothing else. It does not touch
+      # Caddy: web-server config is shared with other sites on this box and is
+      # never written by a deploy.
+      - name: Deploy
+        env:
+          SSH_USER: ${{ secrets.BRIANHUB_SSH_USER }}
+          SSH_HOST: ${{ secrets.BRIANHUB_SSH_HOST }}
+          REF: ${{ inputs.ref }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=20 \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo /usr/local/bin/brianhub-admin deploy $REF"
+
+      # Verified from off the box on purpose. On 2026-08-21 every on-box check
+      # reported green while both sites were dead at the TLS handshake, because
+      # the failure was in the shared reverse proxy, below the app.
+      - name: Verify from outside
+        run: |
+          set -e
+          health=$(curl -fsS --retry 5 --retry-delay 3 https://brianhub.com/health)
+          printf 'health: %s\n' "$health"
+          case "$health" in
+            *'"ok":true'*) ;;
+            *) echo "health endpoint did not report ok"; exit 1 ;;
+          esac
+
+          shopping=$(curl -sS -o /dev/null -w '%{http_code}' https://brianhub.com/apps/shopping/)
+          web=$(curl -sS -o /dev/null -w '%{http_code}' https://brianhub.com/apps/web/)
+          printf 'shopping: %s  web: %s\n' "$shopping" "$web"
+          test "$shopping" = "200"
+          test "$web" = "200"
