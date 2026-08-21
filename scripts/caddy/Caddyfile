@@ -20,6 +20,8 @@ brianhub.com {
 
   handle /apps/shopping/* {
     root * /opt/brianhub/current
+    @webmanifest path *.webmanifest
+    header @webmanifest Content-Type application/manifest+json
     file_server
   }
 
