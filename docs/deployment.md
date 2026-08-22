@@ -131,22 +131,24 @@ That creates `roger-admin`, installs `/usr/local/bin/brianhub-admin`, and grants
 in as the restricted admin account and runs `brianhub-admin deploy`, then verifies `brianhub.com` from
 off the box. `workflow_dispatch` takes an optional ref for a redeploy or a targeted release.
 
-CI needs four repository secrets:
+CI needs two repository secrets:
 
 | Secret | Value |
 | --- | --- |
-| `BRIANHUB_SSH_USER` | `roger-admin` |
-| `BRIANHUB_SSH_HOST` | the VPS **public** IP — runners are not on the tailnet |
 | `BRIANHUB_SSH_KEY` | base64 of a passphrase-less ed25519 private key |
 | `BRIANHUB_SSH_HOST_KEY` | `ssh-keyscan -t ed25519 <host>` output, pinned |
+
+The SSH user and host are written plainly in the workflow rather than stored as secrets. Neither is
+sensitive, and masking them as `***` only obscures which one is wrong when a connection fails. Runners
+reach the VPS on its **public** IP — they are not on the tailnet.
 
 The CI key is its own key, not a copy of a human's. Mint it and authorize it once:
 
 ```bash
-ssh-keygen -t ed25519 -N '' -C brianhub-ci -f ./brianhub-ci
-base64 -w0 < ./brianhub-ci | gh secret set BRIANHUB_SSH_KEY --repo holaymolay/brianhub
+ssh-keygen -t ed25519 -N '' -C brianhub-ci -f ~/.ssh/brianhub_ci
+base64 -w0 < ~/.ssh/brianhub_ci | gh secret set BRIANHUB_SSH_KEY --repo holaymolay/brianhub
 ssh-keyscan -t ed25519 <host> | gh secret set BRIANHUB_SSH_HOST_KEY --repo holaymolay/brianhub
-# then, as root on the VPS, append ./brianhub-ci.pub to roger-admin's authorized_keys
+# then, as root on the VPS, append ~/.ssh/brianhub_ci.pub to roger-admin's authorized_keys
 ```
 
 That account's sudo is scoped to `/usr/local/bin/brianhub-admin`, so CI holds exactly the capability a

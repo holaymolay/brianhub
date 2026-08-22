@@ -58,14 +58,15 @@ jobs:
       # capability a human operator has and nothing else. It does not touch
       # Caddy: web-server config is shared with other sites on this box and is
       # never written by a deploy.
+      # User and host are deliberately not secrets. Neither is sensitive — both
+      # are in docs/deployment.md — and masking them as *** only hides which of
+      # them is wrong when authentication fails. The private key is the secret.
       - name: Deploy
         env:
-          SSH_USER: ${{ secrets.BRIANHUB_SSH_USER }}
-          SSH_HOST: ${{ secrets.BRIANHUB_SSH_HOST }}
           REF: ${{ inputs.ref }}
         run: |
-          ssh -o BatchMode=yes -o ConnectTimeout=20 \
-            "$SSH_USER@$SSH_HOST" \
+          ssh -v -o BatchMode=yes -o ConnectTimeout=20 \
+            roger-admin@187.124.228.180 \
             "sudo /usr/local/bin/brianhub-admin deploy $REF"
 
       # Verified from off the box on purpose. On 2026-08-21 every on-box check
