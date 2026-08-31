@@ -27,6 +27,16 @@ brianhub.com {
     file_server
   }
 
+  # apps/web/app.js and syncState.js import ../../packages/core/*.js, so the
+  # browser asks for them at /packages/core/. Without this block they fall
+  # through to the API below, which answers 401 — the module graph never
+  # resolves and every handler in the app is dead while index.html still
+  # returns 200.
+  handle /packages/* {
+    root * /opt/brianhub/current
+    file_server
+  }
+
   handle /apps/shopping/* {
     root * /opt/brianhub/current
     @webmanifest path *.webmanifest

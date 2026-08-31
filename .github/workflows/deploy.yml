@@ -87,3 +87,18 @@ jobs:
           printf 'shopping: %s  web: %s\n' "$shopping" "$web"
           test "$shopping" = "200"
           test "$web" = "200"
+
+          # index.html returning 200 proves nothing: on 2026-08-30 the web app
+          # was dead on every path because /packages/core/*.js fell through to
+          # the API and answered 401, so app.js never finished importing. Fetch
+          # the entry module and the modules it pulls in from outside its own
+          # directory, and require JavaScript back rather than just a status.
+          for module in /apps/web/app.js /packages/core/priority.js /packages/core/tree.js /packages/core/taskState.js; do
+            type=$(curl -fsS -o /tmp/module.js -w '%{content_type}' "https://brianhub.com${module}")
+            printf '%s: %s\n' "$module" "$type"
+            case "$type" in
+              *javascript*) ;;
+              *) echo "$module did not come back as JavaScript"; exit 1 ;;
+            esac
+            head -c 1 /tmp/module.js | grep -q '[^[:space:]]' || { echo "$module was empty"; exit 1; }
+          done
