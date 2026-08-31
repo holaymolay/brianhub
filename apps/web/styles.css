@@ -138,6 +138,52 @@ body.mobile-bottom-ui-hidden {
   opacity: 0.68;
 }
 
+/* The shopping entry is an <a>, not a <button>, so it needs the box model the
+   button siblings get for free. */
+.module-nav-item-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  text-decoration: none;
+}
+
+.module-nav-item-link:hover {
+  border-color: rgba(115, 158, 255, 0.6);
+  color: var(--text);
+}
+
+.module-nav-badge {
+  border-radius: 999px;
+  background: rgba(47, 140, 255, 0.22);
+  color: #dff2ff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.34rem;
+  line-height: 1;
+}
+
+.beta-app-link {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(115, 158, 255, 0.45);
+  border-radius: 8px;
+  background: rgba(47, 140, 255, 0.14);
+  color: #dff2ff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.42rem 0.7rem;
+  text-decoration: none;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.beta-app-link:hover {
+  background: rgba(47, 140, 255, 0.24);
+}
+
 .header-left {
   display: flex;
   align-items: center;

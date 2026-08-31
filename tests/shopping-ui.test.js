@@ -105,3 +105,25 @@ test('shopping item list reassignment is supported in service and schema layers'
   assert.ok(schemas.includes("item_state: shoppingItemStateSchema"));
   assert.ok(schemas.includes("substitute_name: nullableString(512)"));
 });
+
+test('web app links out to the beta shopping PWA without disturbing its own shopping surface', () => {
+  const html = read('apps/web/index.html');
+  const css = read('apps/web/styles.css');
+
+  // Both entry points are plain anchors to /shoppinglist — the redirect both the
+  // dev server and the production Caddy config already serve.
+  assert.match(html, /id="module-nav-shopping-beta"[\s\S]*?href="\/shoppinglist"/);
+  assert.match(html, /id="shopping-open-beta"[\s\S]*?href="\/shoppinglist"/);
+  assert.ok(html.includes('module-nav-badge'));
+
+  // The module navbar is display:none below the mobile breakpoint, so the link in
+  // the shopping panel header is the only way a phone reaches the beta app.
+  assert.ok(css.includes('.beta-app-link'));
+  assert.ok(css.includes('.module-nav-item-link'));
+
+  // The in-app shopping surface has to keep working until the PWA replaces it.
+  for (const id of ['shopping-page', 'shopping-list-items', 'shopping-add-item', 'shopping-complete-btn']) {
+    assert.ok(html.includes(`id="${id}"`), `${id} disappeared from the web shopping surface`);
+  }
+  assert.match(html, /id="mobile-nav-shopping"[\s\S]*?data-view="shopping"/);
+});

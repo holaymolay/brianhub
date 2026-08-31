@@ -82,6 +82,10 @@ shopping surface stays authoritative until the PWA has been verified side by sid
 - List completion and archive behavior
 - Item editing, move, substitution, and unavailable outcomes
 - Task-to-shopping conversion for leaf tasks
+- Two links out to the beta PWA, both pointing at `/shoppinglist`: a "Shopping · Beta"
+  entry in the module navbar, and a "Beta app" link in the shopping panel header. The
+  navbar is hidden below the mobile breakpoint, so the panel link is how a phone gets
+  there. Neither replaces anything — this surface stays fully operational.
 
 ### Shopping PWA (`/shoppinglist`)
 

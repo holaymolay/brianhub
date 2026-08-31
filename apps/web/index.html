@@ -119,6 +119,15 @@
       <div class="module-navbar-inner">
         <button id="module-nav-todo" class="module-nav-item is-active" type="button" aria-current="page">Tasks</button>
         <button id="module-nav-scheduling" class="module-nav-item" type="button">Scheduling</button>
+        <!-- A real navigation out of this SPA into the standalone shopping PWA, so it
+             is an anchor rather than a module-switching button. The shopping surface
+             inside this app stays exactly where it is until the PWA replaces it. -->
+        <a
+          id="module-nav-shopping-beta"
+          class="module-nav-item module-nav-item-link"
+          href="/shoppinglist"
+          title="Open the new standalone shopping app"
+        >Shopping<span class="module-nav-badge">Beta</span></a>
         <button class="module-nav-item" type="button" disabled title="Coming soon">CRM</button>
         <button class="module-nav-item" type="button" disabled title="Coming soon">Knowledge</button>
       </div>
@@ -495,6 +504,14 @@
                 </div>
               </div>
               <div class="shopping-panel-actions">
+                <!-- The module navbar is hidden below the mobile breakpoint, so this is
+                     how a phone reaches the beta app. Same destination as the navbar link. -->
+                <a
+                  id="shopping-open-beta"
+                  class="beta-app-link"
+                  href="/shoppinglist"
+                  title="Open the new standalone shopping app"
+                >Beta app ↗</a>
                 <div class="task-filter">
                   <button id="shopping-filter-button" class="subtle-button" type="button">Open lists ▾</button>
                   <div id="shopping-filter-menu" class="workspace-menu hidden">
